@@ -17,6 +17,8 @@
 
 #include <atomic>
 
+#include <python3.10/Python.h>
+
 #include "include/types.h"
 #include "include/interval_set.h"
 #include "common/Thread.h"
@@ -27,9 +29,69 @@
 
 #define RW_IO_MAX (INT_MAX & CEPH_PAGE_MASK)
 
+class HeatPredictor {
+protected:
+  uint64_t n_instr = 0;
+  PyObject* pModule = nullptr;
+  PyObject* pDict = nullptr;
+  PyObject* pClassHP = nullptr;
+  PyObject* pConstructor = nullptr;
+  PyObject* predictor = nullptr;
+public:
+  HeatPredictor() {
+    Py_Initialize();
+    PyRun_SimpleString("import sys");
+    PyRun_SimpleString("sys.path.append('/etc/ceph/')");
+    pModule = PyImport_ImportModule("river_module");
+    if (!pModule) {
+        printf("pModule not found\n");
+    }
+    pDict = PyModule_GetDict(pModule);
+    if (!pDict) {
+        printf("Cant find dictionary./n");
+    }
+    pClassHP = PyDict_GetItemString(pDict, "heat_predictor");
+    if (!pClassHP) {
+        printf("Cant find HP class./n");
+    }
+    pConstructor = PyInstanceMethod_New(pClassHP);
+    if (!pConstructor) {
+        printf("Cant find HP class pConstructor./n");
+    }
+    predictor = PyObject_CallObject(pConstructor, nullptr);
+    if (!predictor) {
+        printf("Cant create HP instance./n");
+    }
+  }
+
+  ~HeatPredictor() {
+    PyGILState_STATE gstate;
+    gstate = PyGILState_Ensure();
+    Py_DECREF(predictor);
+    Py_DECREF(pClassHP);
+    Py_DECREF(pDict);
+    Py_DECREF(pModule);
+    PyGILState_Release(gstate);
+    Py_FinalizeEx();
+  }
+
+  uint64_t notify(uint64_t off, uint64_t len, int type) {
+    ++n_instr;
+    PyObject* pRet = PyObject_CallMethod(predictor, "predict", "lill" ,n_instr ,type, len, off);
+    if (!pRet) {
+        printf ("fail to call predict\n");
+        return -1;
+    }
+    uint64_t r;
+    PyArg_Parse(pRet, "l", &r);
+    return r;
+  }
+};
+
 class KernelDevice : public BlockDevice {
 protected:
   std::string path;
+  HeatPredictor hp;
 private:
   std::vector<int> fd_directs, fd_buffereds;
   bool enable_wrt = true;
@@ -151,6 +213,11 @@ public:
   int invalidate_cache(uint64_t off, uint64_t len) override;
   int open(const std::string& path) override;
   void close() override;
+
+  // MLModify
+  void _notify(uint64_t off, uint64_t len, int type);
+  void _notify_read(uint64_t off, uint64_t len) { _notify(off, len, 1); }
+  void _notify_write(uint64_t off, uint64_t len) { _notify(off, len, 0); }
 };
 
 #endif

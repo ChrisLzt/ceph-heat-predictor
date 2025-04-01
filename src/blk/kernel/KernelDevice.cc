@@ -870,6 +870,7 @@ void KernelDevice::aio_submit(IOContext *ioc)
 int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int write_hint)
 {
   uint64_t len = bl.length();
+  _notify_write(off, len);
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len
 	  << std::dec << " " << buffermode(buffered) << dendl;
   if (cct->_conf->bdev_inject_crash &&
@@ -966,6 +967,7 @@ int KernelDevice::aio_write(
   int write_hint)
 {
   uint64_t len = bl.length();
+  _notify_write(off, len);
   dout(20) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	   << " " << buffermode(buffered)
 	   << dendl;
@@ -1242,6 +1244,7 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
 		      IOContext *ioc,
 		      bool buffered)
 {
+  _notify_read(off, len);
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << " " << buffermode(buffered)
 	  << dendl;
@@ -1291,6 +1294,7 @@ int KernelDevice::aio_read(
   bufferlist *pbl,
   IOContext *ioc)
 {
+  _notify_read(off, len);
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << dendl;
 
@@ -1321,6 +1325,7 @@ int KernelDevice::aio_read(
 
 int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 {
+  _notify_read(off, len);
   uint64_t aligned_off = p2align(off, block_size);
   uint64_t aligned_len = p2roundup(off+len, block_size) - aligned_off;
   bufferptr p = ceph::buffer::create_small_page_aligned(aligned_len);
@@ -1359,6 +1364,7 @@ int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
                        bool buffered)
 {
+  _notify_read(off, len);
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
           << "buffered " << buffered
 	  << dendl;
@@ -1442,4 +1448,11 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 	 << " error: " << cpp_strerror(r) << dendl;
   }
   return r;
+}
+
+// MLModify
+void KernelDevice::_notify(uint64_t off, uint64_t len, int type) 
+{
+  dout(0) << "MLNotify 0x" << std::hex << off << "~" << len << std::dec << " " << type << 
+    " " << std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) << dendl;
 }
