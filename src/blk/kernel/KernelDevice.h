@@ -62,6 +62,8 @@ public:
     if (!predictor) {
         printf("Cant create HP instance./n");
     }
+    PyThreadState *_save;
+    _save = PyEval_SaveThread();
   }
 
   ~HeatPredictor() {
