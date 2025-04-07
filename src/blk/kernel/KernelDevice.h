@@ -39,29 +39,41 @@ protected:
   PyObject* predictor = nullptr;
 public:
   HeatPredictor() {
+    printf("HeatPredictor\n");
     Py_Initialize();
+    printf("Initialized\n");
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append('/etc/ceph/')");
+    printf("To import\n");
     pModule = PyImport_ImportModule("river_module");
     if (!pModule) {
         printf("pModule not found\n");
+        return;
     }
+    printf("To getdict\n");
     pDict = PyModule_GetDict(pModule);
     if (!pDict) {
         printf("Cant find dictionary./n");
+        return;
     }
+    printf("To getclass\n");
     pClassHP = PyDict_GetItemString(pDict, "heat_predictor");
     if (!pClassHP) {
         printf("Cant find HP class./n");
+        return;
     }
-    pConstructor = PyInstanceMethod_New(pClassHP);
-    if (!pConstructor) {
-        printf("Cant find HP class pConstructor./n");
-    }
-    predictor = PyObject_CallObject(pConstructor, nullptr);
+    // pConstructor = PyInstanceMethod_New(pClassHP);
+    // if (!pConstructor) {
+    //     printf("Cant find HP class pConstructor./n");
+    //     return;
+    // }
+    printf("To callobject\n");
+    predictor = PyObject_CallObject(pClassHP, NULL);
     if (!predictor) {
         printf("Cant create HP instance./n");
+        return;
     }
+    printf("To release lock\n");
     PyThreadState *_save;
     _save = PyEval_SaveThread();
   }
@@ -93,7 +105,7 @@ public:
 class KernelDevice : public BlockDevice {
 protected:
   std::string path;
-  HeatPredictor hp;
+  static HeatPredictor hp;
 private:
   std::vector<int> fd_directs, fd_buffereds;
   bool enable_wrt = true;

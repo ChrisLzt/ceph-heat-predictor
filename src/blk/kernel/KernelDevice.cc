@@ -1453,6 +1453,5 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 // MLModify
 void KernelDevice::_notify(uint64_t off, uint64_t len, int type) 
 {
-  dout(0) << "MLNotify 0x" << std::hex << off << "~" << len << std::dec << " " << type << 
-    " " << std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) << dendl;
+  KernelDevice::hp.notify(off, len, type);
 }
