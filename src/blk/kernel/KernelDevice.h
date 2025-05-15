@@ -18,6 +18,8 @@
 #include <atomic>
 
 #include <python3.10/Python.h>
+#include <python3.10/frameobject.h>
+#include <python3.10/traceback.h>
 
 #include "include/types.h"
 #include "include/interval_set.h"
@@ -31,6 +33,7 @@
 
 class HeatPredictor {
 protected:
+  CephContext* cct;
   uint64_t n_instr = 0;
   PyObject* pModule = nullptr;
   PyObject* pDict = nullptr;
@@ -86,20 +89,10 @@ public:
     Py_DECREF(pDict);
     Py_DECREF(pModule);
     PyGILState_Release(gstate);
-    Py_FinalizeEx();
+    //Py_FinalizeEx();
   }
 
-  uint64_t notify(uint64_t off, uint64_t len, int type) {
-    ++n_instr;
-    PyObject* pRet = PyObject_CallMethod(predictor, "predict", "lill" ,n_instr ,type, len, off);
-    if (!pRet) {
-        printf ("fail to call predict\n");
-        return -1;
-    }
-    uint64_t r;
-    PyArg_Parse(pRet, "l", &r);
-    return r;
-  }
+  uint64_t notify(uint64_t off, uint64_t len, int type);
 };
 
 class KernelDevice : public BlockDevice {
