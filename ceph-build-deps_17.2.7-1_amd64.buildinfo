@@ -4,14 +4,14 @@ Binary: ceph-build-deps
 Architecture: amd64
 Version: 17.2.7-1
 Checksums-Md5:
- 912e189ca1c1bde2d0118aff8644377c 3056 ceph-build-deps_17.2.7-1_amd64.deb
+ acffbb6b3db06f92af6a826b273c98d2 3060 ceph-build-deps_17.2.7-1_amd64.deb
 Checksums-Sha1:
- ef399776594ab01ec056e07be71ead81d892bcc8 3056 ceph-build-deps_17.2.7-1_amd64.deb
+ 0b70e552867edf70f65bc666caf7535092edbe58 3060 ceph-build-deps_17.2.7-1_amd64.deb
 Checksums-Sha256:
- bea4d5b3cdd97674e8ef2bf89ec6dc81c9612316acb4fdf1937fa07e6b1324b9 3056 ceph-build-deps_17.2.7-1_amd64.deb
+ c185e3464ebf965dabd3fa4ffbbbda4f752065d03bfad99f1abb1f1bded44281 3060 ceph-build-deps_17.2.7-1_amd64.deb
 Build-Origin: Ubuntu
 Build-Architecture: amd64
-Build-Date: Tue, 22 Apr 2025 16:00:30 +0800
+Build-Date: Thu, 22 May 2025 16:18:27 +0800
 Build-Tainted-By:
  merged-usr-via-aliased-dirs
  usr-local-has-configs
@@ -182,9 +182,9 @@ Installed-Build-Depends:
  libudev1 (= 249.11-0ubuntu3.15),
  libunistring2 (= 1.0-1),
  libuuid1 (= 2.37.2-4ubuntu3.4),
- libxml2 (= 2.9.13+dfsg-1ubuntu0.6),
+ libxml2 (= 2.9.13+dfsg-1ubuntu0.7),
  libzstd1 (= 1.4.8+dfsg-3build1),
- linux-libc-dev (= 5.15.0-136.147),
+ linux-libc-dev (= 5.15.0-140.150),
  llvm-18-linker-tools (= 1:18.1.8~++20240731024944+3b5b5c1ec4a3-1~exp1~20240731145000.144),
  llvm-19-linker-tools (= 1:19.1.7~++20250114103320+cd708029e0b2-1~exp1~20250114103432.75),
  login (= 1:4.8.1-2ubuntu2.2),
@@ -215,4 +215,4 @@ Environment:
  DEB_BUILD_PROFILES="noudeb"
  LANG="en_US.UTF-8"
  LC_ALL="C"
- SOURCE_DATE_EPOCH="1745308828"
+ SOURCE_DATE_EPOCH="1747901906"
