@@ -17,9 +17,7 @@
 
 #include <atomic>
 
-#include <python3.10/Python.h>
-#include <python3.10/frameobject.h>
-#include <python3.10/traceback.h>
+#include "heat_predictor.h"
 
 #include "include/types.h"
 #include "include/interval_set.h"
@@ -30,70 +28,6 @@
 #include "BlockDevice.h"
 
 #define RW_IO_MAX (INT_MAX & CEPH_PAGE_MASK)
-
-class HeatPredictor {
-protected:
-  CephContext* cct;
-  uint64_t n_instr = 0;
-  PyObject* pModule = nullptr;
-  PyObject* pDict = nullptr;
-  PyObject* pClassHP = nullptr;
-  PyObject* pConstructor = nullptr;
-  PyObject* predictor = nullptr;
-public:
-  HeatPredictor() {
-    printf("HeatPredictor\n");
-    Py_Initialize();
-    printf("Initialized\n");
-    PyRun_SimpleString("import sys");
-    PyRun_SimpleString("sys.path.append('/etc/ceph/')");
-    printf("To import\n");
-    pModule = PyImport_ImportModule("river_module");
-    if (!pModule) {
-        printf("pModule not found\n");
-        return;
-    }
-    printf("To getdict\n");
-    pDict = PyModule_GetDict(pModule);
-    if (!pDict) {
-        printf("Cant find dictionary./n");
-        return;
-    }
-    printf("To getclass\n");
-    pClassHP = PyDict_GetItemString(pDict, "heat_predictor");
-    if (!pClassHP) {
-        printf("Cant find HP class./n");
-        return;
-    }
-    // pConstructor = PyInstanceMethod_New(pClassHP);
-    // if (!pConstructor) {
-    //     printf("Cant find HP class pConstructor./n");
-    //     return;
-    // }
-    printf("To callobject\n");
-    predictor = PyObject_CallObject(pClassHP, NULL);
-    if (!predictor) {
-        printf("Cant create HP instance./n");
-        return;
-    }
-    printf("To release lock\n");
-    PyThreadState *_save;
-    _save = PyEval_SaveThread();
-  }
-
-  ~HeatPredictor() {
-    PyGILState_STATE gstate;
-    gstate = PyGILState_Ensure();
-    Py_DECREF(predictor);
-    Py_DECREF(pClassHP);
-    Py_DECREF(pDict);
-    Py_DECREF(pModule);
-    PyGILState_Release(gstate);
-    //Py_FinalizeEx();
-  }
-
-  uint64_t notify(uint64_t off, uint64_t len, int type);
-};
 
 class KernelDevice : public BlockDevice {
 protected:

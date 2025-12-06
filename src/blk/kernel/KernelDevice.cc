@@ -1453,55 +1453,16 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 }
 
 // MLModify
-void KernelDevice::_notify(uint64_t off, uint64_t len, int type) 
-{
-  KernelDevice::hp.notify(off, len, type);
-}
-
 #undef dout_context
 #define dout_context g_ceph_context
 #undef dout_prefix
 #define dout_prefix *_dout 
 
-uint64_t HeatPredictor::notify(uint64_t off, uint64_t len, int type) {
+void KernelDevice::_notify(uint64_t off, uint64_t len, int type) 
+{
+  KernelDevice::hp.n_instr++;
   dout(0) << __func__ << " start" << dendl;
-  ++n_instr;
-  PyGILState_STATE gstate;
-  dout(0) << __func__ << " try to ensure GIL" << dendl;
-  gstate = PyGILState_Ensure();
-  dout(0) << __func__ << " GIL Ensured" << dendl;
-  PyObject* pRet = PyObject_CallMethod(predictor, "predict", "lill" ,n_instr ,type, len, off);
-  if (!pRet) {
-      dout(0) << __func__ << " Failed to predict" << dendl;
-      if (PyErr_Occurred()) {
-        PyObject *type, *value, *traceback;
-        PyErr_Fetch(&type, &value, &traceback);
-        if (type) {
-          dout(0) << __func__ << " " << PyExceptionClass_Name(type) << ": " << dendl;
-        }
-        if (value) {
-          PyObject* line = PyObject_Str(value);
-          if (line && PyUnicode_Check(line)) {dout(0) << __func__ << " " << PyUnicode_1BYTE_DATA(line) << dendl;}
-        }
-        dout(0) << __func__ << dendl;
-        if (traceback) {
-          for (PyTracebackObject* tb = (PyTracebackObject*)traceback;tb;tb=tb->tb_next) {
-            PyObject* line = PyUnicode_FromFormat("  File \"%U\", line %d, in %U\n", 
-              tb->tb_frame->f_code->co_filename,
-              tb->tb_lineno,
-              tb->tb_frame->f_code->co_name);
-            dout(0) << __func__ << " " << PyUnicode_1BYTE_DATA(line) << dendl;
-          }
-        }
-      }
-      PyGILState_Release(gstate);
-      return -1;
-  }
-  int r;
-  double accuracy;
-  PyArg_ParseTuple(pRet, "pd", &r, &accuracy);
-  PyGILState_Release(gstate);
-  
-  dout(0) << __func__ << " Accuracy:" << accuracy << dendl;
-  return r;
+  auto pRet = KernelDevice::hp.predict(KernelDevice::hp.n_instr, type, len, off);
+
+  dout(0) << __func__ << " Accuracy:" << pRet.second << dendl;
 }
