@@ -969,7 +969,7 @@ int KernelDevice::aio_write(
   int write_hint)
 {
   uint64_t len = bl.length();
-  _notify_write(off, len);
+  // _notify_write(off, len); // 这里可能导致重复调用
   dout(20) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	   << " " << buffermode(buffered)
 	   << dendl;
@@ -992,6 +992,7 @@ int KernelDevice::aio_write(
 
 #ifdef HAVE_LIBAIO
   if (aio && dio && !buffered) {
+    _notify_write(off, len); // 这里调用不会重复
     if (cct->_conf->bdev_inject_crash &&
 	rand() % cct->_conf->bdev_inject_crash == 0) {
       derr << __func__ << " bdev_inject_crash: dropping io 0x" << std::hex
@@ -1246,7 +1247,7 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
 		      IOContext *ioc,
 		      bool buffered)
 {
-  _notify_read(off, len);
+  _notify_read(off, len); // 不会重复
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << " " << buffermode(buffered)
 	  << dendl;
@@ -1296,13 +1297,14 @@ int KernelDevice::aio_read(
   bufferlist *pbl,
   IOContext *ioc)
 {
-  _notify_read(off, len);
+  // _notify_read(off, len); // 这里调用可能导致 read 函数中重复调用
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << dendl;
 
   int r = 0;
 #ifdef HAVE_LIBAIO
   if (aio && dio) {
+    _notify_read(off, len); // 这里调用不会重复
     ceph_assert(is_valid_io(off, len));
     _aio_log_start(ioc, off, len);
     ioc->pending_aios.push_back(aio_t(ioc, fd_directs[WRITE_LIFE_NOT_SET]));
@@ -1327,7 +1329,7 @@ int KernelDevice::aio_read(
 
 int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 {
-  _notify_read(off, len);
+  // _notify_read(off, len); // 已被 read_random 函数的冷热识别调用覆盖
   uint64_t aligned_off = p2align(off, block_size);
   uint64_t aligned_len = p2roundup(off+len, block_size) - aligned_off;
   bufferptr p = ceph::buffer::create_small_page_aligned(aligned_len);
@@ -1366,7 +1368,7 @@ int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
                        bool buffered)
 {
-  _notify_read(off, len);
+  _notify_read(off, len); // 可覆盖 direct_read_unaligned 函数的冷热识别调用
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
           << "buffered " << buffered
 	  << dendl;
@@ -1456,13 +1458,21 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 #undef dout_context
 #define dout_context g_ceph_context
 #undef dout_prefix
-#define dout_prefix *_dout 
+#define dout_prefix *_dout
 
-void KernelDevice::_notify(uint64_t off, uint64_t len, int type) 
+void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
 {
+  // static uint64_t hotCnt = 0, coldCnt = 0;
   KernelDevice::hp.n_instr++;
-  dout(0) << __func__ << " start" << dendl;
-  auto pRet = KernelDevice::hp.predict(KernelDevice::hp.n_instr, type, len, off);
-
-  dout(0) << __func__ << " Accuracy:" << pRet.second << dendl;
+  // dout(0) << __func__ << " start" << dendl;
+  int isHot = KernelDevice::hp.predict(KernelDevice::hp.n_instr, type, len, off, 1);
+  // isHot % 10 ? hotCnt++ : coldCnt++;
+  // dout(0) << __func__ << " Chris isHot: " << isHot % 10 << " label: " << (isHot >= 100 ? -1 : isHot / 10)
+  //   << " accuracy: " << KernelDevice::hp.get_accuracy() << " hotPercent: " << (double) hotCnt / (hotCnt + coldCnt)
+  //   << " hotThreshold: " << KernelDevice::hp.get_hot_threshold()
+  //   << " length: " << len << " offset: " << off << dendl;
+  // dout(0) << __func__ << " n_instr: " << KernelDevice::hp.n_instr << dendl;
+  // dout(0) << __func__ << " Total: " << KernelDevice::hp.get_total_weight() << dendl;
+  // dout(0) << __func__ << " offset: " << off << " length: " << len << " type : " << type << dendl;
+  // dout(0) << __func__ << " Accuracy: " << KernelDevice::hp.get_accuracy() << dendl;
 }

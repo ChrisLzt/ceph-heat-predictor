@@ -142,7 +142,7 @@ public:
                         _background[i] = nullptr;
                         _warning_detectors[i] = WarningDetectorFactory::create();
                         _drift_detectors[i] = DriftDetectorFactory::create();
-                        _metrics[i] = Accuracy<num_labels>();
+                        _metrics[i].clear();
                     } else {
                         if (models[i]) {
                             delete models[i];
@@ -150,7 +150,7 @@ public:
                         models[i] = new BaseTreeClassifier<num_features, num_labels>
                             (max_features, grace_period, delta, tau, max_share_to_split, min_branch_fraction);
                         _drift_detectors[i] = DriftDetectorFactory::create();
-                        _metrics[i] = Accuracy<num_labels>();
+                        _metrics[i].clear();
                     }
                     _drift_tracker[i]++;
                 }
@@ -165,7 +165,7 @@ public:
             for (int i=0;i<n_models;i++) {
                 Classifier* model = models[i];
                 std::vector<double> y_proba_temp = model->predict_proba_one(x);
-                double metric_value = _metrics[i].get();
+                double metric_value = _metrics[i].get_accuracy();
                 for (int j=0;j<num_labels;j++) {
                     proba[j] += (metric_value > 0.0) ? y_proba_temp[j] * metric_value : y_proba_temp[j];
                 }

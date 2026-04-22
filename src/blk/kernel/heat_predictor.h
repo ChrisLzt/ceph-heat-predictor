@@ -7,8 +7,12 @@
 #include <unordered_map>
 #include <set>
 #include <mutex>
+#include <ext/pb_ds/assoc_container.hpp>
+#include <ext/pb_ds/tree_policy.hpp>
 
 #include "include/ARFClassifier.h"
+
+#include "common/debug.h"
 
 #define NUM_FEATURES 4
 
@@ -28,8 +32,9 @@ struct QueueValue {
 };
 
 class EvaluationQueue {
+private:
     int max_size;
-    double hot_thred;
+    double hot_threshold;
     bool training;
     double alpha;
     int heating;
@@ -37,17 +42,29 @@ class EvaluationQueue {
 
     uint64_t ts;
 
-    std::list<uint64_t> key_order; 
+    std::list<uint64_t> key_order;
     std::unordered_map<uint64_t, QueueValue> item_map;
 
-    std::multiset<double> hot_list;
-    std::multiset<double> backup_hot_list;
     size_t hot_list_cap;
+    // std::vector <double> hot_list;
+    // std::vector <double> hot_list_backup;
+    typedef __gnu_pbds::tree<
+        std::pair<double, int>, 
+        __gnu_pbds::null_type, 
+        std::less<std::pair<double, int>>, 
+        __gnu_pbds::rb_tree_tag, 
+        __gnu_pbds::tree_order_statistics_node_update
+    > pbds_set;
+    pbds_set hot_list;
+    pbds_set hot_list_backup;
+    int pbds_counter = 0;
+    int hot_threshold_update_counter = 0;
+
 public:
-    EvaluationQueue(int max_size, double hot_thred, bool training=false, 
-            double alpha=-0.03, int heating=200, uint64_t waiting=10000) :
-            max_size(max_size), hot_thred(hot_thred), training(training), 
-            alpha(alpha), heating(heating), waiting(waiting) {
+    EvaluationQueue(int max_size, double hot_threshold, bool training = false, 
+            double alpha = -0.001, int heating = 200, uint64_t waiting = 10000) :
+            max_size(max_size), hot_threshold(hot_threshold),
+            training(training), alpha(alpha), heating(heating), waiting(waiting) {
         if (training) { hot_list_cap = 50 * max_size; }
     }
 
@@ -55,16 +72,21 @@ public:
         return std::exp((cur_ts - last_ts) * alpha) * last_heat + (access ? heating : 0);
     }
 
-    double get_p80hot() {
-        if (hot_list.empty()) return hot_thred;
+    double get_hot_threshold() {
+        if (hot_list.empty()) return hot_threshold;
 
-        size_t idx = static_cast<size_t>(0.8 * hot_list.size());
-        auto it = hot_list.begin();
-        std::advance(it, idx);
-        if (it != hot_list.end()) {
-            return *it;
+        if (++hot_threshold_update_counter >= 10) {
+            hot_threshold_update_counter = 0;
+            size_t idx = static_cast <size_t> (0.9 * hot_list.size());
+            hot_threshold = hot_list.find_by_order(idx)->first;
+            // auto it = hot_list.begin() + idx;
+            // std::nth_element(hot_list.begin(), it, hot_list.end());
+            // if (it != hot_list.end()) {
+            //     hot_threshold = *it;
+            // }
         }
-        return hot_thred;
+
+        return hot_threshold;
     }
 
     std::optional<std::pair<QueueValue, bool>> dequeue() {
@@ -75,7 +97,7 @@ public:
         key_order.pop_front();
 
         auto it = item_map.find(key);
-        if (it == item_map.end()) return std::nullopt; // Should not happen
+        if (it == item_map.end()) return std::nullopt; // should not happen
 
         QueueValue val = it->second;
         item_map.erase(it);
@@ -84,15 +106,17 @@ public:
         double new_heat = heat_calculation(val.heat, false, val.last_access, this->ts);
         val.heat = new_heat;
         val.last_access = this->ts;
-        bool is_hot = val.heat > get_p80hot();
+        bool is_hot = val.heat > get_hot_threshold();
 
         if (training) {
-            hot_list.insert(val.heat);
+            // hot_list.emplace_back(val.heat);
+            hot_list.insert({val.heat, ++pbds_counter});
             if (hot_list.size() > hot_list_cap) {
-                backup_hot_list.insert(val.heat);
-                if (backup_hot_list.size() > hot_list_cap) {
-                    hot_list = backup_hot_list; // copy assignment
-                    backup_hot_list.clear();
+                // hot_list_backup.emplace_back(val.heat);
+                hot_list_backup.insert({val.heat, pbds_counter});
+                if (hot_list_backup.size() > hot_list_cap) {
+                    hot_list = hot_list_backup; // copy assignment
+                    hot_list_backup.clear();
                 }
             }
         }
@@ -102,22 +126,18 @@ public:
 
     std::optional<std::pair<QueueValue, bool>> enqueue(TraceItem item) {
         uint64_t item_key = item.address;
-        std::optional<std::pair<QueueValue, bool>> return_val = std::nullopt;
-        
         this->ts = item.n_instr;
+        std::optional<std::pair<QueueValue, bool>> return_val = std::nullopt;
 
         if (item_map.find(item_key) != item_map.end()) {
-            QueueValue& existing_val = item_map[item_key];
-            
+            QueueValue &existing_val = item_map[item_key];
             double new_heat = heat_calculation(existing_val.heat, true, existing_val.last_access, this->ts);
-
             existing_val.heat = new_heat;
             existing_val.last_access = this->ts;
 
             if (!key_order.empty()) {
                 int64_t first_key = key_order.front();
                 QueueValue& first_val = item_map[first_key];
-                
                 if (this->ts - first_val.init_access > this->waiting) {
                     return_val = dequeue();
                 }
@@ -129,7 +149,6 @@ public:
         }
 
         QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, item};
-
         item_map[item_key] = new_val;
         key_order.push_back(item_key);
 
@@ -140,7 +159,7 @@ public:
 class HeatPredictor {
     Classifier* model;
     EvaluationQueue* eq;
-    Accuracy<2> accu;
+    Accuracy <2> accu;
     std::mutex model_mutex;
 
     static std::vector<double> item_to_vector(const TraceItem& item) {
@@ -151,19 +170,19 @@ class HeatPredictor {
     }
 public:
     uint64_t n_instr;
-    HeatPredictor() {
-        model = new ARFClassifier<NUM_FEATURES, 2, DetectorFactory<ADWIN<5>, 10>, DetectorFactory<ADWIN<5>, 1> >
+    HeatPredictor() : n_instr(0) {
+        model = new ARFClassifier <NUM_FEATURES, 2, DetectorFactory <ADWIN <5>, 10>, DetectorFactory <ADWIN <5>, 1>>
             (10, 5, 42); // (n_models, max_features, seed);
-        eq = new EvaluationQueue(30, 0.134, true);
+        eq = new EvaluationQueue(500, 200, true);
     }
     ~HeatPredictor() {
         delete model;
         delete eq;
     }
-    std::pair<int, double> predict(uint64_t n_instr, int operation, uint64_t size, uint64_t address) {
+    int predict(uint64_t n_instr, int operation, uint64_t size, uint64_t address, int count_stats) {
         std::lock_guard<std::mutex> lock(model_mutex);
-        TraceItem item = {n_instr, static_cast<uint64_t>(operation), size, address, 0};
 
+        TraceItem item = {n_instr, static_cast<uint64_t>(operation), size, address, 0};
         int res = model->predict_one(item_to_vector(item));
         item.pred = res;
         auto r_item_opt = eq->enqueue(item);
@@ -171,12 +190,20 @@ public:
         if (r_item_opt.has_value()) {
             TraceItem r_item = r_item_opt->first.item;
             bool label = r_item_opt->second;
-            accu.update(label?1:0, r_item.pred);
-            model->learn_one(item_to_vector(r_item), label?1:0);
+            if (count_stats)
+                accu.update(label?1:0, r_item.pred);
+            model->learn_one(item_to_vector(r_item), label ? 1 : 0);
+            // res += label * 10;
         }
-
-        return std::make_pair(res, accu.get());
+        // else {
+        //     return res + 100;
+        // }
+        return res;
     }
+
+    uint64_t get_total_weight() { return accu.get_total_weight(); }
+    double get_accuracy() { return accu.get_accuracy(); }
+    double get_hot_threshold() { return eq->get_hot_threshold(); }
 };
 
 #endif
