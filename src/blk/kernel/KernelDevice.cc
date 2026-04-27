@@ -60,6 +60,9 @@ using ceph::mono_clock;
 using ceph::operator <<;
 
 HeatPredictor KernelDevice::hp;
+PerfCounters* KernelDevice::logger = nullptr;
+std::atomic<int> KernelDevice::logger_ref{0};
+std::mutex KernelDevice::logger_mtx;
 
 KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, aio_callback_t d_cb, void *d_cbpriv)
   : BlockDevice(cct, cb, cbpriv),
@@ -91,6 +94,29 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
       once = true;
     }
     io_queue = std::make_unique<aio_queue_t>(iodepth);
+  }
+
+  if (logger == nullptr && logger_ref == 0) {
+    std::lock_guard<std::mutex> lock(logger_mtx);
+    if (logger == nullptr && logger_ref == 0) {
+      PerfCountersBuilder b(cct, "hp_status", hp_first, hp_last);
+      b.add_u64(hp_count, "hp_count", "count");
+      b.add_u64(hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
+      b.add_u64(hp_accuracy, "hp_accuracy", "accuracy (x10000)");
+      b.add_u64(hp_hot_threshold, "hp_threshold", "threshold (x10000)");
+      b.add_time_avg(hp_predict_latency, "hp_predict_latency", "predict latency");
+      logger = b.create_perf_counters();
+      cct->get_perfcounters_collection()->add(logger);
+    }
+  }
+  logger_ref++;
+}
+
+KernelDevice::~KernelDevice() {
+  if (--logger_ref == 0 && logger) {
+    if (cct) cct->get_perfcounters_collection()->remove(logger);
+    delete logger;
+    logger = nullptr;
   }
 }
 
@@ -1455,24 +1481,22 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 }
 
 // MLModify
-#undef dout_context
-#define dout_context g_ceph_context
-#undef dout_prefix
-#define dout_prefix *_dout
+
+uint64_t mul10000(double x) {
+  return static_cast<uint64_t>(x * 10000);
+}
 
 void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
 {
-  // static uint64_t hotCnt = 0, coldCnt = 0;
+  auto start_time = ceph::mono_clock::now();
   KernelDevice::hp.n_instr++;
-  // dout(0) << __func__ << " start" << dendl;
   int isHot = KernelDevice::hp.predict(KernelDevice::hp.n_instr, type, len, off, 1);
-  // isHot % 10 ? hotCnt++ : coldCnt++;
-  // dout(0) << __func__ << " Chris isHot: " << isHot % 10 << " label: " << (isHot >= 100 ? -1 : isHot / 10)
-  //   << " accuracy: " << KernelDevice::hp.get_accuracy() << " hotPercent: " << (double) hotCnt / (hotCnt + coldCnt)
-  //   << " hotThreshold: " << KernelDevice::hp.get_hot_threshold()
-  //   << " length: " << len << " offset: " << off << dendl;
-  // dout(0) << __func__ << " n_instr: " << KernelDevice::hp.n_instr << dendl;
-  // dout(0) << __func__ << " Total: " << KernelDevice::hp.get_total_weight() << dendl;
-  // dout(0) << __func__ << " offset: " << off << " length: " << len << " type : " << type << dendl;
-  // dout(0) << __func__ << " Accuracy: " << KernelDevice::hp.get_accuracy() << dendl;
+  auto end_time = ceph::mono_clock::now();
+  if (logger == nullptr) return;
+  logger->tinc(hp_predict_latency, end_time - start_time);
+  uint64_t cnt = KernelDevice::hp.n_instr, hot_cnt = KernelDevice::hp.hot_cnt, cold_cnt = KernelDevice::hp.cold_cnt;
+  logger->set(hp_count, cnt);
+  logger->set(hp_hot_percent, (hot_cnt + cold_cnt > 0) ? mul10000(static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt)) : 0);
+  logger->set(hp_accuracy, mul10000(KernelDevice::hp.get_accuracy()));
+  logger->set(hp_hot_threshold, mul10000(KernelDevice::hp.get_hot_threshold()));
 }

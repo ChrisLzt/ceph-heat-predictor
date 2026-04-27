@@ -12,6 +12,7 @@
 
 #include "include/ARFClassifier.h"
 
+#include <atomic>
 #include "common/debug.h"
 
 #define NUM_FEATURES 4
@@ -115,7 +116,7 @@ public:
                 // hot_list_backup.emplace_back(val.heat);
                 hot_list_backup.insert({val.heat, pbds_counter});
                 if (hot_list_backup.size() > hot_list_cap) {
-                    hot_list = hot_list_backup; // copy assignment
+                    hot_list.swap(hot_list_backup);
                     hot_list_backup.clear();
                 }
             }
@@ -169,8 +170,9 @@ class HeatPredictor {
                                 static_cast<double>(item.address) };
     }
 public:
-    uint64_t n_instr;
-    HeatPredictor() : n_instr(0) {
+    std::atomic<uint64_t> n_instr{0};
+    std::atomic<uint64_t> hot_cnt{0}, cold_cnt{0};
+    HeatPredictor() {
         model = new ARFClassifier <NUM_FEATURES, 2, DetectorFactory <ADWIN <5>, 10>, DetectorFactory <ADWIN <5>, 1>>
             (10, 5, 42); // (n_models, max_features, seed);
         eq = new EvaluationQueue(500, 200, true);
@@ -184,6 +186,7 @@ public:
 
         TraceItem item = {n_instr, static_cast<uint64_t>(operation), size, address, 0};
         int res = model->predict_one(item_to_vector(item));
+        res ? hot_cnt++ : cold_cnt++;
         item.pred = res;
         auto r_item_opt = eq->enqueue(item);
 
@@ -193,11 +196,7 @@ public:
             if (count_stats)
                 accu.update(label?1:0, r_item.pred);
             model->learn_one(item_to_vector(r_item), label ? 1 : 0);
-            // res += label * 10;
         }
-        // else {
-        //     return res + 100;
-        // }
         return res;
     }
 

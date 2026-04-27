@@ -18,6 +18,7 @@
 #include <atomic>
 
 #include "heat_predictor.h"
+#include "common/perf_counters.h"
 
 #include "include/types.h"
 #include "include/interval_set.h"
@@ -117,8 +118,23 @@ private:
 
   ceph::unique_leakable_ptr<buffer::raw> create_custom_aligned(size_t len, IOContext* ioc) const;
 
+  static PerfCounters *logger;
+  static std::atomic<int> logger_ref;
+  static std::mutex logger_mtx;
+
+  enum {
+      hp_first = 591422,
+      hp_count,
+      hp_hot_percent,
+      hp_accuracy,
+      hp_hot_threshold,
+      hp_predict_latency,
+      hp_last
+  };
+
 public:
   KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, aio_callback_t d_cb, void *d_cbpriv);
+  ~KernelDevice();
 
   void aio_submit(IOContext *ioc) override;
   void discard_drain() override;

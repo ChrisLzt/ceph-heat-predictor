@@ -15,6 +15,8 @@ fi
 
 PYBUILD="3"
 ARGS="-GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=on -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBOOST_J=64"
+ARGS+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_INSTALL_LIBDIR=lib"
+
 if [ -r /etc/os-release ]; then
   source /etc/os-release
   case "$ID" in
