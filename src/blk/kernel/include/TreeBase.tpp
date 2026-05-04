@@ -165,11 +165,12 @@ void RandomLeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(co
         _sample_features(feature_indices, max_features);
     }
     for (size_t i=0;i<feature_indices.size();i++) {
-        if (this->splitters.at(i) == nullptr) {
+        int fi = feature_indices[i];
+        if (this->splitters[fi] == nullptr) {
             // should copy from saved splitter but we'll just let go
-            this->splitters[i] = new GaussianSplitter<num_features, num_labels>(i);
+            this->splitters[fi] = new GaussianSplitter<num_features, num_labels>(fi);
         }
-        this->splitters[i]->update(x.at(i), y, w);
+        this->splitters[fi]->update(x[fi], y, w);
     }
 }
 

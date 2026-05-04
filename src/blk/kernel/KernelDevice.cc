@@ -101,9 +101,13 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
     if (logger == nullptr && logger_ref == 0) {
       PerfCountersBuilder b(cct, "hp_status", hp_first, hp_last);
       b.add_u64(hp_count, "hp_count", "count");
+      b.add_u64(hp_train_total, "hp_train_total", "train total");
       b.add_u64(hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
+      b.add_u64(hp_actual_hot_percent, "hp_actual_hot_percent", "actual hot percent (x10000)");
       b.add_u64(hp_accuracy, "hp_accuracy", "accuracy (x10000)");
-      b.add_u64(hp_hot_threshold, "hp_threshold", "threshold (x10000)");
+      b.add_u64(hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
+      b.add_u64(hp_train_queue_length, "hp_train_queue_length", "train queue length");
+      b.add_u64(hp_swap_count, "hp_swap_count", "model swap count");
       b.add_time_avg(hp_predict_latency, "hp_predict_latency", "predict latency");
       logger = b.create_perf_counters();
       cct->get_perfcounters_collection()->add(logger);
@@ -1481,6 +1485,10 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 }
 
 // MLModify
+#undef dout_context
+#define dout_context g_ceph_context
+#undef dout_prefix
+#define dout_prefix *_dout
 
 uint64_t mul10000(double x) {
   return static_cast<uint64_t>(x * 10000);
@@ -1489,14 +1497,36 @@ uint64_t mul10000(double x) {
 void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
 {
   auto start_time = ceph::mono_clock::now();
-  KernelDevice::hp.n_instr++;
-  int isHot = KernelDevice::hp.predict(KernelDevice::hp.n_instr, type, len, off, 1);
+  KernelDevice::hp.hp_index++;
+  KernelDevice::hp.predict(KernelDevice::hp.hp_index.load(), type, len, off, 1);
   auto end_time = ceph::mono_clock::now();
-  if (logger == nullptr) return;
+
+  if (logger == nullptr) {
+    return;
+  }
+
+  uint64_t cnt = KernelDevice::hp.hp_index.load();
+  uint64_t train_total = KernelDevice::hp.get_total_weight();
+  uint64_t hot_cnt = KernelDevice::hp.hot_cnt;
+  uint64_t cold_cnt = KernelDevice::hp.cold_cnt;
+  double hot_percent = (hot_cnt + cold_cnt > 0)
+      ? static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt) : 0;
+  uint64_t actual_hot = KernelDevice::hp.get_actual_hot();
+  uint64_t actual_cold = KernelDevice::hp.get_actual_cold();
+  double actual_hot_percent = (actual_hot + actual_cold > 0)
+      ? static_cast<double>(actual_hot) / (actual_hot + actual_cold) : 0;
+  double accuracy = KernelDevice::hp.get_accuracy();
+  double hot_threshold = KernelDevice::hp.get_hot_threshold();
+  size_t train_queue_len = KernelDevice::hp.get_train_queue_length();
+  uint64_t swap_cnt = KernelDevice::hp.get_swap_count();
+
   logger->tinc(hp_predict_latency, end_time - start_time);
-  uint64_t cnt = KernelDevice::hp.n_instr, hot_cnt = KernelDevice::hp.hot_cnt, cold_cnt = KernelDevice::hp.cold_cnt;
   logger->set(hp_count, cnt);
-  logger->set(hp_hot_percent, (hot_cnt + cold_cnt > 0) ? mul10000(static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt)) : 0);
-  logger->set(hp_accuracy, mul10000(KernelDevice::hp.get_accuracy()));
-  logger->set(hp_hot_threshold, mul10000(KernelDevice::hp.get_hot_threshold()));
+  logger->set(hp_train_total, train_total);
+  logger->set(hp_hot_percent, mul10000(hot_percent));
+  logger->set(hp_actual_hot_percent, mul10000(actual_hot_percent));
+  logger->set(hp_accuracy, mul10000(accuracy));
+  logger->set(hp_hot_threshold, mul10000(hot_threshold));
+  logger->set(hp_train_queue_length, train_queue_len);
+  logger->set(hp_swap_count, swap_cnt);
 }

@@ -12,7 +12,7 @@
 
 template <int num_features> 
 constexpr std::array<int, num_features> feature_array() {
-    std::array<int, num_features> res;
+    std::array<int, num_features> res{};
     for (int i = 0; i < num_features; i++) res[i] = i;
     return res;
 }

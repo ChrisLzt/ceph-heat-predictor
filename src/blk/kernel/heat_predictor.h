@@ -3,10 +3,14 @@
 
 #include <cmath>
 #include <optional>
-#include <list>
+#include <queue>
+#include <vector>
+#include <memory>
 #include <unordered_map>
-#include <set>
 #include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <chrono>
 #include <ext/pb_ds/assoc_container.hpp>
 #include <ext/pb_ds/tree_policy.hpp>
 
@@ -18,7 +22,7 @@
 #define NUM_FEATURES 4
 
 struct TraceItem {
-    uint64_t n_instr;
+    uint64_t index;
     uint64_t operation;
     uint64_t size;
     uint64_t address;
@@ -33,7 +37,7 @@ struct QueueValue {
 };
 
 class EvaluationQueue {
-private:
+public:
     int max_size;
     double hot_threshold;
     bool training;
@@ -43,17 +47,15 @@ private:
 
     uint64_t ts;
 
-    std::list<uint64_t> key_order;
+    std::queue<uint64_t> key_order;
     std::unordered_map<uint64_t, QueueValue> item_map;
 
     size_t hot_list_cap;
-    // std::vector <double> hot_list;
-    // std::vector <double> hot_list_backup;
     typedef __gnu_pbds::tree<
-        std::pair<double, int>, 
-        __gnu_pbds::null_type, 
-        std::less<std::pair<double, int>>, 
-        __gnu_pbds::rb_tree_tag, 
+        std::pair<double, int>,
+        __gnu_pbds::null_type,
+        std::less<std::pair<double, int>>,
+        __gnu_pbds::rb_tree_tag,
         __gnu_pbds::tree_order_statistics_node_update
     > pbds_set;
     pbds_set hot_list;
@@ -61,16 +63,22 @@ private:
     int pbds_counter = 0;
     int hot_threshold_update_counter = 0;
 
-public:
-    EvaluationQueue(int max_size, double hot_threshold, bool training = false, 
+    std::vector<double> exp_table;
+
+    EvaluationQueue(int max_size, double hot_threshold, bool training = false,
             double alpha = -0.001, int heating = 200, uint64_t waiting = 10000) :
             max_size(max_size), hot_threshold(hot_threshold),
-            training(training), alpha(alpha), heating(heating), waiting(waiting) {
+            training(training), alpha(alpha), heating(heating),
+            waiting(waiting) {
         if (training) { hot_list_cap = 50 * max_size; }
+        exp_table.resize(waiting * 2);
+        for (size_t i = 0; i < exp_table.size(); ++i) {
+            exp_table[i] = std::exp(i * alpha);
+        }
     }
 
     double heat_calculation(double last_heat, bool access, int64_t last_ts, int64_t cur_ts) {
-        return std::exp((cur_ts - last_ts) * alpha) * last_heat + (access ? heating : 0);
+        return exp_table[std::min(static_cast<size_t>(cur_ts - last_ts), exp_table.size() - 1)] * last_heat + (access ? heating : 0);
     }
 
     double get_hot_threshold() {
@@ -78,13 +86,8 @@ public:
 
         if (++hot_threshold_update_counter >= 10) {
             hot_threshold_update_counter = 0;
-            size_t idx = static_cast <size_t> (0.9 * hot_list.size());
+            size_t idx = static_cast<size_t>(0.9 * hot_list.size());
             hot_threshold = hot_list.find_by_order(idx)->first;
-            // auto it = hot_list.begin() + idx;
-            // std::nth_element(hot_list.begin(), it, hot_list.end());
-            // if (it != hot_list.end()) {
-            //     hot_threshold = *it;
-            // }
         }
 
         return hot_threshold;
@@ -93,27 +96,23 @@ public:
     std::optional<std::pair<QueueValue, bool>> dequeue() {
         if (key_order.empty()) return std::nullopt;
 
-        // pop the earliest
-        int64_t key = key_order.front();
-        key_order.pop_front();
+        uint64_t key = key_order.front();
+        key_order.pop();
 
         auto it = item_map.find(key);
-        if (it == item_map.end()) return std::nullopt; // should not happen
+        if (it == item_map.end()) return std::nullopt;
 
         QueueValue val = it->second;
         item_map.erase(it);
 
-        // update heat
         double new_heat = heat_calculation(val.heat, false, val.last_access, this->ts);
         val.heat = new_heat;
         val.last_access = this->ts;
         bool is_hot = val.heat > get_hot_threshold();
 
         if (training) {
-            // hot_list.emplace_back(val.heat);
             hot_list.insert({val.heat, ++pbds_counter});
             if (hot_list.size() > hot_list_cap) {
-                // hot_list_backup.emplace_back(val.heat);
                 hot_list_backup.insert({val.heat, pbds_counter});
                 if (hot_list_backup.size() > hot_list_cap) {
                     hot_list.swap(hot_list_backup);
@@ -127,75 +126,186 @@ public:
 
     std::optional<std::pair<QueueValue, bool>> enqueue(TraceItem item) {
         uint64_t item_key = item.address;
-        this->ts = item.n_instr;
+        this->ts = item.index;
         std::optional<std::pair<QueueValue, bool>> return_val = std::nullopt;
 
         if (item_map.find(item_key) != item_map.end()) {
-            QueueValue &existing_val = item_map[item_key];
+            QueueValue& existing_val = item_map[item_key];
             double new_heat = heat_calculation(existing_val.heat, true, existing_val.last_access, this->ts);
             existing_val.heat = new_heat;
             existing_val.last_access = this->ts;
 
             if (!key_order.empty()) {
-                int64_t first_key = key_order.front();
+                uint64_t first_key = key_order.front();
                 QueueValue& first_val = item_map[first_key];
-                if (this->ts - first_val.init_access > this->waiting) {
+                if (this->ts - first_val.init_access >= this->waiting) {
                     return_val = dequeue();
                 }
             }
             return return_val;
-        } 
+        }
         else if (item_map.size() == (size_t)max_size) {
             return_val = dequeue();
         }
 
         QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, item};
         item_map[item_key] = new_val;
-        key_order.push_back(item_key);
+        key_order.push(item_key);
 
         return return_val;
     }
 };
 
+struct TrainingSample {
+    TraceItem item;
+    int label;
+    int update_accu;
+};
+
 class HeatPredictor {
-    Classifier* model;
-    EvaluationQueue* eq;
-    Accuracy <2> accu;
-    std::mutex model_mutex;
-
-    static std::vector<double> item_to_vector(const TraceItem& item) {
-        return std::vector<double> {static_cast<double>(item.n_instr), 
-                                static_cast<double>(item.operation), 
-                                static_cast<double>(item.size), 
-                                static_cast<double>(item.address) };
-    }
 public:
-    std::atomic<uint64_t> n_instr{0};
-    std::atomic<uint64_t> hot_cnt{0}, cold_cnt{0};
-    HeatPredictor() {
-        model = new ARFClassifier <NUM_FEATURES, 2, DetectorFactory <ADWIN <5>, 10>, DetectorFactory <ADWIN <5>, 1>>
-            (10, 5, 42); // (n_models, max_features, seed);
-        eq = new EvaluationQueue(500, 200, true);
+    static Classifier* make_model() {
+        return new ARFClassifier<NUM_FEATURES, 2,
+            DetectorFactory<ADWIN<5>, 10>,
+            DetectorFactory<ADWIN<5>, 1>>(10, 5, 42);
     }
-    ~HeatPredictor() {
-        delete model;
-        delete eq;
-    }
-    int predict(uint64_t n_instr, int operation, uint64_t size, uint64_t address, int count_stats) {
-        std::lock_guard<std::mutex> lock(model_mutex);
 
-        TraceItem item = {n_instr, static_cast<uint64_t>(operation), size, address, 0};
-        int res = model->predict_one(item_to_vector(item));
+    // ── 双缓冲模型 ──────────────────────────────────────────────
+    // active_model : 前台预测，predict() 在 swap_mutex 下拷贝 shared_ptr 后无锁读取
+    // shadow_model : 后台训练线程独占，每 SWAP_INTERVAL 次训练后与 active_model 直接 swap
+    std::shared_ptr<Classifier> active_model;
+    std::shared_ptr<Classifier> shadow_model;
+    mutable std::mutex swap_mutex;
+
+    std::unique_ptr<EvaluationQueue> eq;
+    std::mutex eq_mutex;
+    Accuracy<2> accu;
+
+    static constexpr int SWAP_INTERVAL = 1000;
+    int shadow_train_count{0};
+    std::atomic<uint64_t> swap_count{0};
+
+    // ── 后台训练线程 ────────────────────────────────────────────
+    static constexpr int BATCH_SIZE = 100;
+    std::queue<TrainingSample> train_queue;
+    std::mutex train_queue_mutex;
+    std::condition_variable train_queue_cv;
+    std::thread train_thread;
+    std::once_flag start_flag;
+    std::atomic<bool> train_running{false};
+    std::atomic<int> pending_notify{0};
+
+    static const std::vector<double>& to_feat(const TraceItem& item) {
+        thread_local std::vector<double> feat(NUM_FEATURES);
+        feat[0] = static_cast<double>(item.index);
+        feat[1] = static_cast<double>(item.operation);
+        feat[2] = static_cast<double>(item.size);
+        feat[3] = static_cast<double>(item.address);
+        return feat;
+    }
+
+    void try_swap() {
+        if (++shadow_train_count < SWAP_INTERVAL) return;
+        shadow_train_count = 0;
+        swap_count++;
+        {
+            std::lock_guard<std::mutex> lock(swap_mutex);
+            std::swap(active_model, shadow_model);
+        }
+    }
+
+    void train_worker() {
+        while (true) {
+            std::unique_lock<std::mutex> lock(train_queue_mutex);
+            train_queue_cv.wait_for(lock, std::chrono::milliseconds(50), [this] {
+                return !train_queue.empty() || !train_running;
+            });
+
+            if (!train_running && train_queue.empty()) break;
+
+            std::queue<TrainingSample> batch;
+            std::swap(batch, train_queue);
+            lock.unlock();
+
+            while (!batch.empty()) {
+                TrainingSample sample = batch.front();
+                batch.pop();
+
+                sample.label ? actual_hot++ : actual_cold++;
+                shadow_model->learn_one(to_feat(sample.item), sample.label);
+                if (sample.update_accu)
+                    accu.update(sample.label, sample.item.pred);
+                try_swap();
+            }
+        }
+    }
+
+    std::atomic<uint64_t> hp_index{0};
+    std::atomic<uint64_t> hot_cnt{0}, cold_cnt{0};
+    std::atomic<uint64_t> actual_hot{0}, actual_cold{0};
+
+    HeatPredictor() {
+        active_model.reset(make_model());
+        shadow_model.reset(make_model());
+        eq = std::make_unique<EvaluationQueue>(500, 200, true);
+    }
+
+    ~HeatPredictor() {
+        if (train_running.exchange(false)) {
+            train_queue_cv.notify_all();
+            if (train_thread.joinable()) {
+                train_thread.join();
+            }
+        }
+    }
+
+    // 懒启动：首次 predict() 调用时才创建后台训练线程，避免静态初始化阶段 spawn thread
+    void ensure_started() {
+        std::call_once(start_flag, [this] {
+            train_running = true;
+            train_thread = std::thread(&HeatPredictor::train_worker, this);
+        });
+    }
+
+    HeatPredictor(const HeatPredictor&) = delete;
+    HeatPredictor& operator=(const HeatPredictor&) = delete;
+
+    int predict(uint64_t index, int operation, uint64_t size, uint64_t address, int update_accu) {
+        ensure_started();
+
+        TraceItem item = {index, static_cast<uint64_t>(operation), size, address, 0};
+
+        int res;
+        {
+            std::shared_ptr<Classifier> m;
+            {
+                std::lock_guard<std::mutex> lock(swap_mutex);
+                m = active_model;
+            }
+            res = m->predict_one(to_feat(item));
+        }
         res ? hot_cnt++ : cold_cnt++;
         item.pred = res;
-        auto r_item_opt = eq->enqueue(item);
+
+        std::optional<std::pair<QueueValue, bool>> r_item_opt;
+        {
+            std::lock_guard<std::mutex> lock(eq_mutex);
+            r_item_opt = eq->enqueue(item);
+        }
 
         if (r_item_opt.has_value()) {
-            TraceItem r_item = r_item_opt->first.item;
-            bool label = r_item_opt->second;
-            if (count_stats)
-                accu.update(label?1:0, r_item.pred);
-            model->learn_one(item_to_vector(r_item), label ? 1 : 0);
+            TrainingSample sample;
+            sample.item = r_item_opt->first.item;
+            sample.label = r_item_opt->second ? 1 : 0;
+            sample.update_accu = update_accu;
+            {
+                std::lock_guard<std::mutex> lock(train_queue_mutex);
+                train_queue.push(sample);
+            }
+            if (++pending_notify >= BATCH_SIZE) {
+                pending_notify = 0;
+                train_queue_cv.notify_one();
+            }
         }
         return res;
     }
@@ -203,6 +313,13 @@ public:
     uint64_t get_total_weight() { return accu.get_total_weight(); }
     double get_accuracy() { return accu.get_accuracy(); }
     double get_hot_threshold() { return eq->get_hot_threshold(); }
+    size_t get_train_queue_length() {
+        std::lock_guard<std::mutex> lock(train_queue_mutex);
+        return train_queue.size();
+    }
+    uint64_t get_swap_count() { return swap_count.load(); }
+    uint64_t get_actual_hot() { return actual_hot.load(); }
+    uint64_t get_actual_cold() { return actual_cold.load(); }
 };
 
 #endif

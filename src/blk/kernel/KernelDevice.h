@@ -125,9 +125,13 @@ private:
   enum {
       hp_first = 591422,
       hp_count,
+      hp_train_total,
       hp_hot_percent,
+      hp_actual_hot_percent,
       hp_accuracy,
       hp_hot_threshold,
+      hp_train_queue_length,
+      hp_swap_count,
       hp_predict_latency,
       hp_last
   };

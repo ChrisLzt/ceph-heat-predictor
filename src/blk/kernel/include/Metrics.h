@@ -1,6 +1,9 @@
 # ifndef METRICS_H
 # define METRICS_H
 
+#include <cstdint>
+#include <mutex>
+
 template <int num_labels>
 class ConfusionMatrix {
 private:

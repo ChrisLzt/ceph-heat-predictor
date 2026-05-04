@@ -21,13 +21,16 @@ inline double max_value(const std::unordered_map<int, double>& x) {
     return std::max_element(x.begin(), x.end(), [](const auto& a, const auto& b) { return a.second < b.second;})->second;
 }
 
-inline double max_index(const std::vector<double>& x) {
+inline int max_index(const std::vector<double>& x) {
     return std::distance(x.begin(), std::max_element(x.begin(), x.end()));
 }
 
 inline int poisson(int lambda, std::default_random_engine* gen) {
-    static std::poisson_distribution<> dis(lambda);
-    return dis(*gen, std::poisson_distribution<>::param_type(lambda));
+    thread_local std::poisson_distribution<> dis(lambda);
+    if (dis.mean() != lambda) {
+        dis = std::poisson_distribution<>(lambda);
+    }
+    return dis(*gen);
 }
 
 template <int num_features, int num_labels>
