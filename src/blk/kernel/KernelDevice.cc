@@ -105,6 +105,8 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
       b.add_u64(hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
       b.add_u64(hp_actual_hot_percent, "hp_actual_hot_percent", "actual hot percent (x10000)");
       b.add_u64(hp_accuracy, "hp_accuracy", "accuracy (x10000)");
+      b.add_u64(hp_hot_precision, "hp_hot_precision", "hot precision (x10000)");
+      b.add_u64(hp_hot_recall, "hp_hot_recall", "hot recall (x10000)");
       b.add_u64(hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
       b.add_u64(hp_train_queue_length, "hp_train_queue_length", "train queue length");
       b.add_u64(hp_swap_count, "hp_swap_count", "model swap count");
@@ -1516,6 +1518,8 @@ void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
   double actual_hot_percent = (actual_hot + actual_cold > 0)
       ? static_cast<double>(actual_hot) / (actual_hot + actual_cold) : 0;
   double accuracy = KernelDevice::hp.get_accuracy();
+  double hot_precision = KernelDevice::hp.get_hot_precision();
+  double hot_recall = KernelDevice::hp.get_hot_recall();
   double hot_threshold = KernelDevice::hp.get_hot_threshold();
   size_t train_queue_len = KernelDevice::hp.get_train_queue_length();
   uint64_t swap_cnt = KernelDevice::hp.get_swap_count();
@@ -1526,6 +1530,8 @@ void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
   logger->set(hp_hot_percent, mul10000(hot_percent));
   logger->set(hp_actual_hot_percent, mul10000(actual_hot_percent));
   logger->set(hp_accuracy, mul10000(accuracy));
+  logger->set(hp_hot_precision, mul10000(hot_precision));
+  logger->set(hp_hot_recall, mul10000(hot_recall));
   logger->set(hp_hot_threshold, mul10000(hot_threshold));
   logger->set(hp_train_queue_length, train_queue_len);
   logger->set(hp_swap_count, swap_cnt);

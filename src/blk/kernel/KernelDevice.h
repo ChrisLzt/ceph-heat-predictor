@@ -129,6 +129,8 @@ private:
       hp_hot_percent,
       hp_actual_hot_percent,
       hp_accuracy,
+      hp_hot_precision,
+      hp_hot_recall,
       hp_hot_threshold,
       hp_train_queue_length,
       hp_swap_count,

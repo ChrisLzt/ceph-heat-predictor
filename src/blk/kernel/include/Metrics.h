@@ -30,6 +30,10 @@ public:
         }
         return total;
     }
+    uint64_t get(int row, int col) {
+        std::lock_guard<std::mutex> lock(mtx);
+        return data[row][col];
+    }
     void clear() {
         std::lock_guard<std::mutex> lock(mtx);
         for (int i = 0; i < num_labels; ++i) {
@@ -58,6 +62,21 @@ public:
         } else {
             return 0;
         }
+    }
+    // label=1=hot, label=0=cold
+    // TP: 预测热，实际热   TN: 预测冷，实际冷
+    // FP: 预测热，实际冷   FN: 预测冷，实际热
+    uint64_t true_positives()  { return cm.get(1, 1); }
+    uint64_t true_negatives()  { return cm.get(0, 0); }
+    uint64_t false_positives() { return cm.get(0, 1); }
+    uint64_t false_negatives() { return cm.get(1, 0); }
+    double get_hot_precision() {
+        uint64_t tp = true_positives(), fp = false_positives();
+        return (tp + fp > 0) ? (double) tp / (tp + fp) : 0;
+    }
+    double get_hot_recall() {
+        uint64_t tp = true_positives(), fn = false_negatives();
+        return (tp + fn > 0) ? (double) tp / (tp + fn) : 0;
     }
     void clear() {
         cm.clear();

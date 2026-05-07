@@ -15,6 +15,8 @@
 #include <ext/pb_ds/tree_policy.hpp>
 
 #include "include/ARFClassifier.h"
+#include "include/PipelineClassifier.h"
+#include "include/StandardScaler.h"
 
 #include <atomic>
 #include "common/debug.h"
@@ -61,7 +63,6 @@ public:
     pbds_set hot_list;
     pbds_set hot_list_backup;
     int pbds_counter = 0;
-    int hot_threshold_update_counter = 0;
 
     std::vector<double> exp_table;
 
@@ -84,11 +85,8 @@ public:
     double get_hot_threshold() {
         if (hot_list.empty()) return hot_threshold;
 
-        if (++hot_threshold_update_counter >= 10) {
-            hot_threshold_update_counter = 0;
-            size_t idx = static_cast<size_t>(0.9 * hot_list.size());
-            hot_threshold = hot_list.find_by_order(idx)->first;
-        }
+        size_t idx = static_cast<size_t>(0.9 * hot_list.size());
+        hot_threshold = hot_list.find_by_order(idx)->first;
 
         return hot_threshold;
     }
@@ -165,9 +163,12 @@ struct TrainingSample {
 class HeatPredictor {
 public:
     static Classifier* make_model() {
-        return new ARFClassifier<NUM_FEATURES, 2,
-            DetectorFactory<ADWIN<5>, 10>,
-            DetectorFactory<ADWIN<5>, 1>>(10, 5, 42);
+        return new PipelineClassifier(
+            new StandardScaler<NUM_FEATURES>(),
+            new ARFClassifier<NUM_FEATURES, 2,
+                DetectorFactory<ADWIN<5>, 10>,
+                DetectorFactory<ADWIN<5>, 1>>(10, 5, 42)
+        );
     }
 
     // ── 双缓冲模型 ──────────────────────────────────────────────
@@ -312,6 +313,8 @@ public:
 
     uint64_t get_total_weight() { return accu.get_total_weight(); }
     double get_accuracy() { return accu.get_accuracy(); }
+    double get_hot_precision() { return accu.get_hot_precision(); }
+    double get_hot_recall() { return accu.get_hot_recall(); }
     double get_hot_threshold() { return eq->get_hot_threshold(); }
     size_t get_train_queue_length() {
         std::lock_guard<std::mutex> lock(train_queue_mutex);
