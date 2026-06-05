@@ -42,6 +42,7 @@ public:
         _max_byte_size(max_size * (1 << 20)) {
         estimate_leaves();
     }
+    virtual ~HoeffdingTree();
 
     void estimate_leaves();
 

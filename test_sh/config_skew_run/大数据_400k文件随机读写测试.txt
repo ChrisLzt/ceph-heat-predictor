@@ -1,0 +1,11 @@
+data_errors=1
+create_anchors=yes
+messagescan=nodisplay
+
+fsd=fsd_hot,anchor=/mnt/cephfs/vdbench/bigdata_400k_skew/hot,depth=1,width=20,files=2000,sizes=400k,openflags=o_direct
+fsd=fsd_cold,anchor=/mnt/cephfs/vdbench/bigdata_400k_skew/cold,depth=1,width=80,files=2000,sizes=400k,openflags=o_direct
+
+fwd=fwd_hot,fsd=fsd_hot,rdpct=90,xfersizes=128k,fileio=random,fileselect=random,threads=32,skew=80
+fwd=fwd_cold,fsd=fsd_cold,rdpct=90,xfersizes=128k,fileio=random,fileselect=random,threads=32,skew=20
+
+rd=rd1,fwd=(fwd_hot,fwd_cold),elapsed=600,interval=1,format=no,fwdrate=max,warmup=60

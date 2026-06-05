@@ -1499,8 +1499,8 @@ uint64_t mul10000(double x) {
 void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
 {
   auto start_time = ceph::mono_clock::now();
-  KernelDevice::hp.hp_index++;
-  KernelDevice::hp.predict(KernelDevice::hp.hp_index.load(), type, len, off, 1);
+  uint64_t index = KernelDevice::hp.hp_index.fetch_add(1) + 1;
+  KernelDevice::hp.predict(index, type, len, off, 1);
   auto end_time = ceph::mono_clock::now();
 
   if (logger == nullptr) {
@@ -1520,7 +1520,7 @@ void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
   double accuracy = KernelDevice::hp.get_accuracy();
   double hot_precision = KernelDevice::hp.get_hot_precision();
   double hot_recall = KernelDevice::hp.get_hot_recall();
-  double hot_threshold = KernelDevice::hp.get_hot_threshold();
+  double hot_threshold = KernelDevice::hp.eq->hot_threshold.load();
   size_t train_queue_len = KernelDevice::hp.get_train_queue_length();
   uint64_t swap_cnt = KernelDevice::hp.get_swap_count();
 

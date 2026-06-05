@@ -58,6 +58,7 @@ protected:
                     } else {
                         parent->children[parent_branch] = new_split;
                     }
+                    delete leaf;
                 }
                 this->_enforce_size_limit();
             }

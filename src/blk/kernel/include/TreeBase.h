@@ -49,6 +49,10 @@ public:
     NumericBinaryBranch(int feature, double threshold, BranchOrLeaf<num_features, num_labels>* left, 
         BranchOrLeaf<num_features, num_labels>* right, std::unordered_map<int, double> stats={}) : 
         BranchOrLeaf<num_features, num_labels>(false, stats), threshold(threshold), feature(feature), children{left, right} {}
+    ~NumericBinaryBranch() override {
+        delete children[0];
+        delete children[1];
+    }
     inline int branch_no(const std::vector<double>& x) const { return x[feature] <= threshold ? 0 : 1; }
 
     double total_weight() override { return children[0]->total_weight() + children[1]->total_weight(); }
@@ -116,6 +120,11 @@ public:
     int depth;
     bool is_active = true;
     LeafNaiveBayesAdaptive(int depth) : BranchOrLeaf<num_features, num_labels>(true), depth(depth) {}
+    ~LeafNaiveBayesAdaptive() override {
+        for (auto splitter : splitters) {
+            delete splitter;
+        }
+    }
     double total_weight() override {
         return sum(this->stats);
     }

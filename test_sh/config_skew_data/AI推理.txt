@@ -1,0 +1,10 @@
+data_errors=1
+create_anchors=yes
+messagescan=nodisplay
+fsd=default,openflags=o_direct
+fsd=fsd_hot,anchor=/mnt/cephfs/vdbench/ai_infer_skew/hot,depth=1,width=1,files=80,sizes=(256k,5,1m,5,8m,10,64m,10,128m,25,256m,30,1g,15)
+fsd=fsd_cold,anchor=/mnt/cephfs/vdbench/ai_infer_skew/cold,depth=1,width=3,files=80,sizes=(256k,5,1m,5,8m,10,64m,10,128m,25,256m,30,1g,15)
+
+fwd=fwd_data,fsd=(fsd_hot,fsd_cold),xfersizes=4m,threads=32
+
+rd=rd_format,fwd=fwd_data,elapsed=2,interval=1,format=restart,fwdrate=max

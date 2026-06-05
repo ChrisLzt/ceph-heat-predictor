@@ -1,0 +1,12 @@
+data_errors=1
+create_anchors=yes
+messagescan=nodisplay
+fsd=default,openflags=o_direct
+fsd=fsd_hot_small,anchor=/mnt/cephfs/vdbench/ccf_skew/bw_hot_small,depth=1,width=4,files=256,sizes=(64k,67,128k,33)
+fsd=fsd_cold_small,anchor=/mnt/cephfs/vdbench/ccf_skew/bw_cold_small,depth=1,width=12,files=256,sizes=(64k,67,128k,33)
+fsd=fsd_hot_large,anchor=/mnt/cephfs/vdbench/ccf_skew/bw_hot_large,depth=1,width=2,files=64,sizes=(1m,50,2m,20,8m,10,128m,10,1g,10)
+fsd=fsd_cold_large,anchor=/mnt/cephfs/vdbench/ccf_skew/bw_cold_large,depth=1,width=6,files=64,sizes=(1m,50,2m,20,8m,10,128m,10,1g,10)
+
+fwd=fwd_data,fsd=(fsd_hot_small,fsd_cold_small,fsd_hot_large,fsd_cold_large),xfersizes=4m,threads=32
+
+rd=rd_format,fwd=fwd_data,elapsed=2,interval=1,format=restart,fwdrate=max

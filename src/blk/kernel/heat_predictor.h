@@ -22,6 +22,11 @@
 #include "common/debug.h"
 
 #define NUM_FEATURES 4
+static constexpr uint64_t HP_BUCKET_SHIFT = 20;
+static constexpr uint64_t HP_PAGE_SHIFT = 12;
+static constexpr uint64_t HP_PAGE_OFFSET_MASK =
+    (1ULL << (HP_BUCKET_SHIFT - HP_PAGE_SHIFT)) - 1;
+static constexpr double HP_HOT_QUANTILE = 0.85;
 
 struct TraceItem {
     uint64_t index;
@@ -41,7 +46,7 @@ struct QueueValue {
 class EvaluationQueue {
 public:
     int max_size;
-    double hot_threshold;
+    std::atomic<double> hot_threshold;
     bool training;
     double alpha;
     int heating;
@@ -66,12 +71,12 @@ public:
 
     std::vector<double> exp_table;
 
-    EvaluationQueue(int max_size, double hot_threshold, bool training = false,
-            double alpha = -0.001, int heating = 200, uint64_t waiting = 10000) :
+    EvaluationQueue(int max_size = 30000, double hot_threshold = 200, bool training = true,
+            double alpha = -0.00008, int heating = 200, uint64_t waiting = 80000) :
             max_size(max_size), hot_threshold(hot_threshold),
             training(training), alpha(alpha), heating(heating),
             waiting(waiting) {
-        if (training) { hot_list_cap = 50 * max_size; }
+        if (training) { hot_list_cap = 20 * max_size; }
         exp_table.resize(waiting * 2);
         for (size_t i = 0; i < exp_table.size(); ++i) {
             exp_table[i] = std::exp(i * alpha);
@@ -83,12 +88,13 @@ public:
     }
 
     double get_hot_threshold() {
-        if (hot_list.empty()) return hot_threshold;
+        if (hot_list.empty()) return hot_threshold.load();
 
-        size_t idx = static_cast<size_t>(0.9 * hot_list.size());
-        hot_threshold = hot_list.find_by_order(idx)->first;
+        size_t idx = static_cast<size_t>(HP_HOT_QUANTILE * hot_list.size());
+        double threshold = hot_list.find_by_order(idx)->first;
+        hot_threshold.store(threshold);
 
-        return hot_threshold;
+        return threshold;
     }
 
     std::optional<std::pair<QueueValue, bool>> dequeue() {
@@ -123,32 +129,39 @@ public:
     }
 
     std::optional<std::pair<QueueValue, bool>> enqueue(TraceItem item) {
-        uint64_t item_key = item.address;
+        uint64_t item_key = item.address >> HP_BUCKET_SHIFT;
         this->ts = item.index;
         std::optional<std::pair<QueueValue, bool>> return_val = std::nullopt;
 
-        if (item_map.find(item_key) != item_map.end()) {
-            QueueValue& existing_val = item_map[item_key];
+        auto existing_it = item_map.find(item_key);
+        if (existing_it != item_map.end()) {
+            QueueValue& existing_val = existing_it->second;
             double new_heat = heat_calculation(existing_val.heat, true, existing_val.last_access, this->ts);
             existing_val.heat = new_heat;
             existing_val.last_access = this->ts;
-
-            if (!key_order.empty()) {
-                uint64_t first_key = key_order.front();
-                QueueValue& first_val = item_map[first_key];
-                if (this->ts - first_val.init_access >= this->waiting) {
-                    return_val = dequeue();
-                }
-            }
-            return return_val;
+        } else {
+            QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, item};
+            item_map[item_key] = new_val;
+            key_order.push(item_key);
         }
-        else if (item_map.size() == (size_t)max_size) {
+
+        while (!key_order.empty()) {
+            uint64_t first_key = key_order.front();
+            auto first_it = item_map.find(first_key);
+            if (first_it == item_map.end()) {
+                key_order.pop();
+                continue;
+            }
+
+            if (this->ts - first_it->second.init_access >= this->waiting) {
+                return_val = dequeue();
+            }
+            break;
+        }
+
+        if (!return_val.has_value() && item_map.size() > static_cast<size_t>(max_size)) {
             return_val = dequeue();
         }
-
-        QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, item};
-        item_map[item_key] = new_val;
-        key_order.push(item_key);
 
         return return_val;
     }
@@ -167,7 +180,7 @@ public:
             new StandardScaler<NUM_FEATURES>(),
             new ARFClassifier<NUM_FEATURES, 2,
                 DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(10, 5, 42)
+                DetectorFactory<ADWIN<5>, 1>>(6, 4, 591422, 100, 4, 0.001, 0.05, 0.99, 0.01)
         );
     }
 
@@ -182,12 +195,12 @@ public:
     std::mutex eq_mutex;
     Accuracy<2> accu;
 
-    static constexpr int SWAP_INTERVAL = 1000;
+    static constexpr int SWAP_INTERVAL = 2000;
     int shadow_train_count{0};
     std::atomic<uint64_t> swap_count{0};
 
     // ── 后台训练线程 ────────────────────────────────────────────
-    static constexpr int BATCH_SIZE = 100;
+    static constexpr int BATCH_SIZE = 500;
     std::queue<TrainingSample> train_queue;
     std::mutex train_queue_mutex;
     std::condition_variable train_queue_cv;
@@ -198,10 +211,13 @@ public:
 
     static const std::vector<double>& to_feat(const TraceItem& item) {
         thread_local std::vector<double> feat(NUM_FEATURES);
-        feat[0] = static_cast<double>(item.index);
+        uint64_t bucket = item.address >> HP_BUCKET_SHIFT;
+        uint64_t page_offset = (item.address >> HP_PAGE_SHIFT) & HP_PAGE_OFFSET_MASK;
+
+        feat[0] = static_cast<double>(bucket);
         feat[1] = static_cast<double>(item.operation);
-        feat[2] = static_cast<double>(item.size);
-        feat[3] = static_cast<double>(item.address);
+        feat[2] = std::log2(static_cast<double>(item.size) + 1.0);
+        feat[3] = static_cast<double>(page_offset);
         return feat;
     }
 
@@ -233,7 +249,8 @@ public:
                 batch.pop();
 
                 sample.label ? actual_hot++ : actual_cold++;
-                shadow_model->learn_one(to_feat(sample.item), sample.label);
+                double weight = sample.label ? 1.5 : 1.0;
+                shadow_model->learn_one(to_feat(sample.item), sample.label, weight);
                 if (sample.update_accu)
                     accu.update(sample.label, sample.item.pred);
                 try_swap();
@@ -248,7 +265,7 @@ public:
     HeatPredictor() {
         active_model.reset(make_model());
         shadow_model.reset(make_model());
-        eq = std::make_unique<EvaluationQueue>(500, 200, true);
+        eq = std::make_unique<EvaluationQueue>();
     }
 
     ~HeatPredictor() {
@@ -282,8 +299,8 @@ public:
             {
                 std::lock_guard<std::mutex> lock(swap_mutex);
                 m = active_model;
+                res = m->predict_one(to_feat(item));
             }
-            res = m->predict_one(to_feat(item));
         }
         res ? hot_cnt++ : cold_cnt++;
         item.pred = res;
@@ -315,7 +332,7 @@ public:
     double get_accuracy() { return accu.get_accuracy(); }
     double get_hot_precision() { return accu.get_hot_precision(); }
     double get_hot_recall() { return accu.get_hot_recall(); }
-    double get_hot_threshold() { return eq->get_hot_threshold(); }
+    double get_hot_threshold() { return eq->hot_threshold.load(); }
     size_t get_train_queue_length() {
         std::lock_guard<std::mutex> lock(train_queue_mutex);
         return train_queue.size();

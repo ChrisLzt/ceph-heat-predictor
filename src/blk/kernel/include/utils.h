@@ -18,6 +18,7 @@ inline double sum(const std::unordered_map<int, double>& x) {
 }
 
 inline double max_value(const std::unordered_map<int, double>& x) {
+    if (x.empty()) return 0.0;
     return std::max_element(x.begin(), x.end(), [](const auto& a, const auto& b) { return a.second < b.second;})->second;
 }
 
@@ -26,9 +27,12 @@ inline int max_index(const std::vector<double>& x) {
 }
 
 inline int poisson(int lambda, std::default_random_engine* gen) {
-    thread_local std::poisson_distribution<> dis(lambda);
-    if (dis.mean() != lambda) {
-        dis = std::poisson_distribution<>(lambda);
+    thread_local int cached_lambda = -1;
+    thread_local std::poisson_distribution<int> dis(1);
+
+    if (cached_lambda != lambda) {
+        dis = std::poisson_distribution<int>(lambda);
+        cached_lambda = lambda;
     }
     return dis(*gen);
 }
@@ -58,7 +62,7 @@ void do_naive_bayes_prediction(std::vector<double>& votes, const std::vector<dou
         }
     }
 
-    int max_ll = *std::max_element(votes.begin(), votes.end());
+    double max_ll = *std::max_element(votes.begin(), votes.end());
 
     double lse = 0.0;
     for (double d : votes) {

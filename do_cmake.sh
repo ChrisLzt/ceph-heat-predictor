@@ -16,6 +16,7 @@ fi
 PYBUILD="3"
 ARGS="-GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=on -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBOOST_J=64"
 ARGS+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_INSTALL_LIBDIR=lib"
+ARGS+=" -DTHREADS_PREFER_PTHREAD_FLAG=ON -DCMAKE_C_FLAGS=-pthread -DCMAKE_CXX_FLAGS=-pthread -DCMAKE_EXE_LINKER_FLAGS=-pthread"
 
 if [ -r /etc/os-release ]; then
   source /etc/os-release
@@ -90,4 +91,3 @@ if a performance sensitive build is required.
 ****
 EOF
 fi
-

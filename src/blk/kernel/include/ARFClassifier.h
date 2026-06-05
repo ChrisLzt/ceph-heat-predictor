@@ -77,12 +77,12 @@ protected:
         return (y_true == y_pred) ? 0 : 1;
     }
 public:
-    ARFClassifier(int n_models=10, int max_features=(int)(std::sqrt(num_features)),  
-        int seed=-1, int grace_period=50, int lambda_value=6, 
-        double delta=0.01, double tau = 0.05, 
-        double max_share_to_split = 0.99, double min_branch_fraction = 0.01) 
-        : n_models(n_models), max_features(max_features), seed(seed), 
-        grace_period(grace_period), lambda_value(lambda_value), delta(delta), tau(tau), 
+    ARFClassifier(int n_models=10, int max_features=(int)(std::sqrt(num_features)),
+        int seed=1037, int grace_period=100, int lambda_value=4,
+        double delta=0.001, double tau = 0.05,
+        double max_share_to_split = 0.99, double min_branch_fraction = 0.01)
+        : n_models(n_models), max_features(max_features), seed(seed),
+        grace_period(grace_period), lambda_value(lambda_value), delta(delta), tau(tau),
         max_share_to_split(max_share_to_split), min_branch_fraction(min_branch_fraction) {
         _metrics = std::vector<Accuracy<num_labels> >(n_models);
         _background = std::vector<BaseTreeClassifier<num_features, num_labels>*>(n_models, nullptr);
@@ -115,10 +115,12 @@ public:
             _metrics[i].update(y, y_pred);
             int k = poisson(lambda_value, &_rng);
             if (k > 0) {
+                double sample_weight = w * k;
+
                 if (_background[i] != nullptr) {
-                    _background[i]->learn_one(x, y, k);
+                    _background[i]->learn_one(x, y, sample_weight);
                 }
-                model->learn_one(x, y, k);
+                model->learn_one(x, y, sample_weight);
 
                 int drift_input = _drift_detector_input(y, y_pred);
                 _warning_detectors[i].update(drift_input);

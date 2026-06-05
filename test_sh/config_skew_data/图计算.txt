@@ -1,0 +1,14 @@
+data_errors=1
+messagescan=nodisplay
+sd=default,threads=32,openflags=o_sync
+sd=sd_edge_hot,lun=/mnt/cephfs/vdbench/graph_skew/edge_hot.props,size=10g
+sd=sd_edge_cold,lun=/mnt/cephfs/vdbench/graph_skew/edge_cold.props,size=38g
+sd=sd_vertex_hot,lun=/mnt/cephfs/vdbench/graph_skew/vertex_hot.props,size=1g
+sd=sd_vertex_cold,lun=/mnt/cephfs/vdbench/graph_skew/vertex_cold.props,size=3g
+wd=wd_edge_write_hot,sd=sd_edge_hot,rdpct=0,seekpct=0,xfersize=64m,skew=80
+wd=wd_edge_write_cold,sd=sd_edge_cold,rdpct=0,seekpct=0,xfersize=64m,skew=20
+wd=wd_vertex_write_hot,sd=sd_vertex_hot,rdpct=0,seekpct=0,xfersize=64m,skew=80
+wd=wd_vertex_write_cold,sd=sd_vertex_cold,rdpct=0,seekpct=0,xfersize=64m,skew=20
+rd=default,iorate=max,interval=1,warmup=60
+rd=rd1_graph_edge_write,wd=(wd_edge_write_hot,wd_edge_write_cold),maxdata=48g,format=restart,elapsed=600
+rd=rd2_graph_vertex_write,wd=(wd_vertex_write_hot,wd_vertex_write_cold),maxdata=4g,format=restart,elapsed=600

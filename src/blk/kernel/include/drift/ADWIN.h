@@ -231,6 +231,7 @@ public:
             delete bucket;
         }
         this->bucket_deque = std::move(other.bucket_deque);
+        other.bucket_deque.clear();
         this->width = other.width;
         this->total = other.total;
         this->variance = other.variance;

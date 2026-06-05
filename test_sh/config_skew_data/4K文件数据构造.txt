@@ -1,0 +1,9 @@
+data_errors=1
+create_anchors=yes
+messagescan=nodisplay
+fsd=fsd_hot,anchor=/mnt/cephfs/vdbench/4K_skew/hot,depth=1,width=16,files=1024,sizes=4k,openflags=o_direct
+fsd=fsd_cold,anchor=/mnt/cephfs/vdbench/4K_skew/cold,depth=1,width=48,files=1024,sizes=4k,openflags=o_direct
+
+fwd=fwd_data,fsd=(fsd_hot,fsd_cold),xfersizes=4k,threads=32
+
+rd=rd_format,fwd=fwd_data,elapsed=2,interval=1,format=restart,fwdrate=max
