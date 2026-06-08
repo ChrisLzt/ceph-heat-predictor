@@ -19,6 +19,7 @@
 #include <errno.h>
 
 #include <charconv>
+#include <functional>
 #include <sstream>
 #include <utility>
 
@@ -62,6 +63,7 @@
 #include "OpRequest.h"
 #include "PG.h"
 #include "Session.h"
+#include "heatpredictor/heat_predictor.h"
 
 // required includes order:
 #include "json_spirit/json_spirit_value.h"
@@ -78,6 +80,188 @@
 #define dout_context cct
 #define dout_subsys ceph_subsys_osd
 #define DOUT_PREFIX_ARGS this, osd->whoami, get_osdmap()
+
+namespace {
+
+HeatPredictor osd_object_heat_predictor;
+PerfCounters *osd_object_hp_logger = nullptr;
+std::mutex osd_object_hp_logger_mtx;
+static constexpr uint64_t object_hp_logger_warmup_updates = 1024;
+static constexpr uint64_t object_hp_logger_update_interval = 4096;
+
+enum {
+  object_hp_first = 592000,
+  object_hp_count,
+  object_hp_train_total,
+  object_hp_hot_percent,
+  object_hp_actual_hot_percent,
+  object_hp_accuracy,
+  object_hp_hot_precision,
+  object_hp_hot_recall,
+  object_hp_hot_threshold,
+  object_hp_train_queue_length,
+  object_hp_swap_count,
+  object_hp_predict_latency,
+  object_hp_last
+};
+
+static inline uint64_t hp_mul10000(double x)
+{
+  return static_cast<uint64_t>(x * 10000);
+}
+
+static void hp_ensure_object_logger(CephContext *cct)
+{
+  if (osd_object_hp_logger != nullptr) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(osd_object_hp_logger_mtx);
+  if (osd_object_hp_logger != nullptr) {
+    return;
+  }
+
+  PerfCountersBuilder b(cct, "object_hp_status", object_hp_first, object_hp_last);
+  b.add_u64(object_hp_count, "hp_count", "count");
+  b.add_u64(object_hp_train_total, "hp_train_total", "train total");
+  b.add_u64(object_hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
+  b.add_u64(object_hp_actual_hot_percent, "hp_actual_hot_percent", "actual hot percent (x10000)");
+  b.add_u64(object_hp_accuracy, "hp_accuracy", "accuracy (x10000)");
+  b.add_u64(object_hp_hot_precision, "hp_hot_precision", "hot precision (x10000)");
+  b.add_u64(object_hp_hot_recall, "hp_hot_recall", "hot recall (x10000)");
+  b.add_u64(object_hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
+  b.add_u64(object_hp_train_queue_length, "hp_train_queue_length", "train queue length");
+  b.add_u64(object_hp_swap_count, "hp_swap_count", "model swap count");
+  b.add_time_avg(object_hp_predict_latency, "hp_predict_latency", "predict latency");
+  osd_object_hp_logger = b.create_perf_counters();
+  cct->get_perfcounters_collection()->add(osd_object_hp_logger);
+}
+
+static void hp_update_object_logger(ceph::timespan predict_latency)
+{
+  PerfCounters *logger = osd_object_hp_logger;
+  if (logger == nullptr) {
+    return;
+  }
+
+  uint64_t cnt = osd_object_heat_predictor.hp_index.load();
+  uint64_t train_total = osd_object_heat_predictor.get_total_weight();
+  uint64_t hot_cnt = osd_object_heat_predictor.hot_cnt.load();
+  uint64_t cold_cnt = osd_object_heat_predictor.cold_cnt.load();
+  double hot_percent = (hot_cnt + cold_cnt > 0)
+    ? static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt) : 0;
+  uint64_t actual_hot = osd_object_heat_predictor.get_actual_hot();
+  uint64_t actual_cold = osd_object_heat_predictor.get_actual_cold();
+  double actual_hot_percent = (actual_hot + actual_cold > 0)
+    ? static_cast<double>(actual_hot) / (actual_hot + actual_cold) : 0;
+
+  logger->tinc(object_hp_predict_latency, predict_latency);
+  logger->set(object_hp_count, cnt);
+  logger->set(object_hp_train_total, train_total);
+  logger->set(object_hp_hot_percent, hp_mul10000(hot_percent));
+  logger->set(object_hp_actual_hot_percent, hp_mul10000(actual_hot_percent));
+  logger->set(object_hp_accuracy, hp_mul10000(osd_object_heat_predictor.get_accuracy()));
+  logger->set(object_hp_hot_precision, hp_mul10000(osd_object_heat_predictor.get_hot_precision()));
+  logger->set(object_hp_hot_recall, hp_mul10000(osd_object_heat_predictor.get_hot_recall()));
+  logger->set(object_hp_hot_threshold, hp_mul10000(osd_object_heat_predictor.get_hot_threshold()));
+  logger->set(object_hp_train_queue_length, osd_object_heat_predictor.get_train_queue_length());
+  logger->set(object_hp_swap_count, osd_object_heat_predictor.get_swap_count());
+}
+
+static inline bool hp_should_update_object_logger(uint64_t index)
+{
+  return index <= object_hp_logger_warmup_updates ||
+    (index % object_hp_logger_update_interval) == 0;
+}
+
+static inline bool hp_track_osd_op(uint16_t op)
+{
+  switch (op) {
+  case CEPH_OSD_OP_READ:
+  case CEPH_OSD_OP_SYNC_READ:
+  case CEPH_OSD_OP_SPARSE_READ:
+  case CEPH_OSD_OP_WRITE:
+  case CEPH_OSD_OP_WRITEFULL:
+  case CEPH_OSD_OP_WRITESAME:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static inline int hp_osd_op_type(uint16_t op)
+{
+  switch (op) {
+  case CEPH_OSD_OP_READ:
+  case CEPH_OSD_OP_SYNC_READ:
+  case CEPH_OSD_OP_SPARSE_READ:
+    return 1;
+  case CEPH_OSD_OP_WRITE:
+  case CEPH_OSD_OP_WRITEFULL:
+  case CEPH_OSD_OP_WRITESAME:
+    return 0;
+  default:
+    return 0;
+  }
+}
+
+static inline void hp_osd_op_extent(
+  const ceph_osd_op& op,
+  uint64_t *offset,
+  uint64_t *length)
+{
+  if (op.op == CEPH_OSD_OP_WRITESAME) {
+    *offset = op.writesame.offset;
+    *length = op.writesame.length;
+  } else if (op.op == CEPH_OSD_OP_WRITEFULL) {
+    *offset = 0;
+    *length = op.extent.length;
+  } else {
+    *offset = op.extent.offset;
+    *length = op.extent.length;
+  }
+}
+
+static inline void hp_notify_osd_object_op(
+  CephContext *cct,
+  const hobject_t& soid,
+  const ceph_osd_op& op)
+{
+  if (!hp_track_osd_op(op.op)) {
+    return;
+  }
+
+  uint64_t offset = 0;
+  uint64_t length = 0;
+  hp_osd_op_extent(op, &offset, &length);
+  if (length == 0) {
+    return;
+  }
+
+  hp_ensure_object_logger(cct);
+  auto start_time = ceph::mono_clock::now();
+  uint64_t index = osd_object_heat_predictor.hp_index.fetch_add(1) + 1;
+  osd_object_heat_predictor.predict(
+    index,
+    hp_osd_op_type(op.op),
+    length,
+    soid.pool,
+    soid.get_hash(),
+    std::hash<object_t>{}(soid.oid),
+    offset,
+    1);
+  auto end_time = ceph::mono_clock::now();
+  if (hp_should_update_object_logger(index)) {
+    hp_update_object_logger(end_time - start_time);
+  }
+}
+
+}
+
+void init_osd_object_hp_status(CephContext *cct)
+{
+  hp_ensure_object_logger(cct);
+}
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, this)
 
@@ -6046,6 +6230,8 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	       << " -> TRUNCATE " << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
       op.op = CEPH_OSD_OP_TRUNCATE;
     }
+
+    hp_notify_osd_object_op(cct, soid, op);
 
     switch (op.op) {
 

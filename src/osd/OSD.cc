@@ -4002,6 +4002,7 @@ out:
 void OSD::final_init()
 {
   AdminSocket *admin_socket = cct->get_admin_socket();
+  init_osd_object_hp_status(cct);
   asok_hook = new OSDSocketHook(this);
   int r = admin_socket->register_command("status", asok_hook,
 					 "high-level status of OSD");

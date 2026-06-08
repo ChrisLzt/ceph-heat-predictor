@@ -17,9 +17,6 @@
 
 #include <atomic>
 
-#include "heat_predictor.h"
-#include "common/perf_counters.h"
-
 #include "include/types.h"
 #include "include/interval_set.h"
 #include "common/Thread.h"
@@ -33,7 +30,6 @@
 class KernelDevice : public BlockDevice {
 protected:
   std::string path;
-  static HeatPredictor hp;
 private:
   std::vector<int> fd_directs, fd_buffereds;
   bool enable_wrt = true;
@@ -118,26 +114,6 @@ private:
 
   ceph::unique_leakable_ptr<buffer::raw> create_custom_aligned(size_t len, IOContext* ioc) const;
 
-  static PerfCounters *logger;
-  static std::atomic<int> logger_ref;
-  static std::mutex logger_mtx;
-
-  enum {
-      hp_first = 591422,
-      hp_count,
-      hp_train_total,
-      hp_hot_percent,
-      hp_actual_hot_percent,
-      hp_accuracy,
-      hp_hot_precision,
-      hp_hot_recall,
-      hp_hot_threshold,
-      hp_train_queue_length,
-      hp_swap_count,
-      hp_predict_latency,
-      hp_last
-  };
-
 public:
   KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, aio_callback_t d_cb, void *d_cbpriv);
   ~KernelDevice();
@@ -176,11 +152,6 @@ public:
   int invalidate_cache(uint64_t off, uint64_t len) override;
   int open(const std::string& path) override;
   void close() override;
-
-  // MLModify
-  void _notify(uint64_t off, uint64_t len, int type);
-  void _notify_read(uint64_t off, uint64_t len) { _notify(off, len, 1); }
-  void _notify_write(uint64_t off, uint64_t len) { _notify(off, len, 0); }
 };
 
 #endif

@@ -39,7 +39,7 @@ collect_configs() {
 }
 
 restart_osd_to_reset_hp_status() {
-  echo "Reset hp_status by restarting ${OSD_SERVICE}: $(date '+%F %T')"
+  echo "Reset heat predictor status by restarting ${OSD_SERVICE}: $(date '+%F %T')"
   sudo systemctl reset-failed "${OSD_SERVICE}" || true
   sudo systemctl stop "${OSD_SERVICE}" || true
   sleep 10
@@ -95,7 +95,7 @@ if [[ "${#CONFIGS[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-echo "Run skew tests with hp_status reset before each test"
+echo "Run skew tests with heat predictor status reset before each test"
 echo "Config dir: ${CONFIG_DIR}"
 echo "Run ID: ${RUN_ID}"
 echo "OSD service: ${OSD_SERVICE}"

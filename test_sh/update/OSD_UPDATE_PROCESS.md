@@ -68,7 +68,7 @@ ceph osd tree
 检查冷热识别 perf counter：
 
 ```bash
-sudo ceph daemon osd.0 perf dump hp_status
+sudo ceph daemon osd.0 perf dump object_hp_status
 ```
 
 如果能看到 `hp_count`、`hp_hot_percent`、`hp_actual_hot_percent`、`hp_hot_precision`、`hp_hot_recall` 等字段，说明新的 OSD 已经启用。
@@ -106,4 +106,4 @@ ninja install
 - 可能覆盖 `/usr/bin`、`/usr/lib`、`/etc` 下的多个系统组件。
 - 对当前冷热识别实验没有必要。
 
-如果只改了 `src/blk/kernel/heat_predictor.h`、`KernelDevice.cc`、`BlockDevice.cc` 或相关头文件，手动替换 `build/bin/ceph-osd` 即可。
+如果只改了 `src/heatpredictor/heat_predictor.h`、`src/heatpredictor/include/`、`src/osd/PrimaryLogPG.cc` 或相关头文件，手动替换 `build/bin/ceph-osd` 即可。

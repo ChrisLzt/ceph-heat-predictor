@@ -21,18 +21,22 @@
 #include <atomic>
 #include "common/debug.h"
 
-#define NUM_FEATURES 4
+#define NUM_FEATURES 5
 static constexpr uint64_t HP_BUCKET_SHIFT = 20;
-static constexpr uint64_t HP_PAGE_SHIFT = 12;
-static constexpr uint64_t HP_PAGE_OFFSET_MASK =
-    (1ULL << (HP_BUCKET_SHIFT - HP_PAGE_SHIFT)) - 1;
 static constexpr double HP_HOT_QUANTILE = 0.85;
 
 struct TraceItem {
     uint64_t index;
     uint64_t operation;
     uint64_t size;
-    uint64_t address;
+    uint64_t key;
+    int64_t pool;
+    uint64_t object_hash;
+    uint64_t object_offset;
+    uint64_t object_bucket;
+    double current_heat;
+    double hot_threshold;
+    uint64_t access_count;
     int pred;
 };
 
@@ -40,6 +44,7 @@ struct QueueValue {
     double heat;
     uint64_t init_access;
     uint64_t last_access;
+    uint64_t access_count;
     TraceItem item;
 };
 
@@ -72,7 +77,7 @@ public:
     std::vector<double> exp_table;
 
     EvaluationQueue(int max_size = 30000, double hot_threshold = 200, bool training = true,
-            double alpha = -0.00008, int heating = 200, uint64_t waiting = 80000) :
+            double alpha = -0.00008, int heating = 200, uint64_t waiting = 20000) :
             max_size(max_size), hot_threshold(hot_threshold),
             training(training), alpha(alpha), heating(heating),
             waiting(waiting) {
@@ -128,21 +133,37 @@ public:
         return std::make_pair(val, is_hot);
     }
 
+    void fill_object_features(TraceItem& item) {
+        this->ts = item.index;
+        item.hot_threshold = hot_threshold.load();
+
+        auto existing_it = item_map.find(item.key);
+        if (existing_it != item_map.end()) {
+            QueueValue& existing_val = existing_it->second;
+            item.current_heat = heat_calculation(
+                existing_val.heat, true, existing_val.last_access, this->ts);
+            item.access_count = existing_val.access_count + 1;
+        } else {
+            item.current_heat = static_cast<double>(this->heating);
+            item.access_count = 1;
+        }
+    }
+
     std::optional<std::pair<QueueValue, bool>> enqueue(TraceItem item) {
-        uint64_t item_key = item.address >> HP_BUCKET_SHIFT;
         this->ts = item.index;
         std::optional<std::pair<QueueValue, bool>> return_val = std::nullopt;
 
-        auto existing_it = item_map.find(item_key);
+        auto existing_it = item_map.find(item.key);
         if (existing_it != item_map.end()) {
             QueueValue& existing_val = existing_it->second;
             double new_heat = heat_calculation(existing_val.heat, true, existing_val.last_access, this->ts);
             existing_val.heat = new_heat;
             existing_val.last_access = this->ts;
+            existing_val.access_count++;
         } else {
-            QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, item};
-            item_map[item_key] = new_val;
-            key_order.push(item_key);
+            QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, 1, item};
+            item_map[item.key] = new_val;
+            key_order.push(item.key);
         }
 
         while (!key_order.empty()) {
@@ -175,12 +196,32 @@ struct TrainingSample {
 
 class HeatPredictor {
 public:
+    static uint64_t mix64(uint64_t x) {
+        x += 0x9e3779b97f4a7c15ULL;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        return x ^ (x >> 31);
+    }
+
+    static uint64_t make_object_key(
+            int64_t pool, uint64_t object_hash, uint64_t object_bucket) {
+        uint64_t key = mix64(static_cast<uint64_t>(pool));
+        key ^= mix64(object_hash);
+        key ^= mix64(object_bucket);
+        return key;
+    }
+
+    static uint64_t make_object_hash(
+            uint64_t ceph_object_hash, uint64_t object_name_hash) {
+        return mix64(ceph_object_hash) ^ mix64(object_name_hash);
+    }
+
     static Classifier* make_model() {
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(),
             new ARFClassifier<NUM_FEATURES, 2,
                 DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(6, 4, 591422, 100, 4, 0.001, 0.05, 0.99, 0.01)
+                DetectorFactory<ADWIN<5>, 1>>(5, 5, 591422, 100, 4, 0.001, 0.05, 0.99, 0.01)
         );
     }
 
@@ -201,6 +242,7 @@ public:
 
     // ── 后台训练线程 ────────────────────────────────────────────
     static constexpr int BATCH_SIZE = 500;
+    static constexpr size_t MAX_TRAIN_QUEUE_LENGTH = 200000;
     std::queue<TrainingSample> train_queue;
     std::mutex train_queue_mutex;
     std::condition_variable train_queue_cv;
@@ -211,13 +253,13 @@ public:
 
     static const std::vector<double>& to_feat(const TraceItem& item) {
         thread_local std::vector<double> feat(NUM_FEATURES);
-        uint64_t bucket = item.address >> HP_BUCKET_SHIFT;
-        uint64_t page_offset = (item.address >> HP_PAGE_SHIFT) & HP_PAGE_OFFSET_MASK;
+        double threshold = item.hot_threshold > 1.0 ? item.hot_threshold : 1.0;
 
-        feat[0] = static_cast<double>(bucket);
-        feat[1] = static_cast<double>(item.operation);
-        feat[2] = std::log2(static_cast<double>(item.size) + 1.0);
-        feat[3] = static_cast<double>(page_offset);
+        feat[0] = static_cast<double>(item.operation);
+        feat[1] = std::log2(static_cast<double>(item.size) + 1.0);
+        feat[2] = std::log2(static_cast<double>(item.object_bucket) + 1.0);
+        feat[3] = std::log2(static_cast<double>(item.access_count) + 1.0);
+        feat[4] = item.access_count > 1 ? item.current_heat / threshold : 0.0;
         return feat;
     }
 
@@ -249,7 +291,7 @@ public:
                 batch.pop();
 
                 sample.label ? actual_hot++ : actual_cold++;
-                double weight = sample.label ? 1.5 : 1.0;
+                double weight = sample.label ? 3.0 : 1.0;
                 shadow_model->learn_one(to_feat(sample.item), sample.label, weight);
                 if (sample.update_accu)
                     accu.update(sample.label, sample.item.pred);
@@ -288,15 +330,39 @@ public:
     HeatPredictor(const HeatPredictor&) = delete;
     HeatPredictor& operator=(const HeatPredictor&) = delete;
 
-    int predict(uint64_t index, int operation, uint64_t size, uint64_t address, int update_accu) {
+    int predict(uint64_t index, int operation, uint64_t size,
+            int64_t pool, uint64_t ceph_object_hash, uint64_t object_name_hash,
+            uint64_t object_offset,
+            int update_accu) {
         ensure_started();
 
-        TraceItem item = {index, static_cast<uint64_t>(operation), size, address, 0};
+        uint64_t object_hash = make_object_hash(ceph_object_hash, object_name_hash);
+        uint64_t object_bucket = object_offset >> HP_BUCKET_SHIFT;
+        uint64_t key = make_object_key(pool, object_hash, object_bucket);
+
+        TraceItem item = {
+            index,
+            static_cast<uint64_t>(operation),
+            size,
+            key,
+            pool,
+            object_hash,
+            object_offset,
+            object_bucket,
+            0.0,
+            0.0,
+            0,
+            0
+        };
 
         int res;
         {
             std::shared_ptr<Classifier> m;
             {
+                {
+                    std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                    eq->fill_object_features(item);
+                }
                 std::lock_guard<std::mutex> lock(swap_mutex);
                 m = active_model;
                 res = m->predict_one(to_feat(item));
@@ -319,6 +385,9 @@ public:
             {
                 std::lock_guard<std::mutex> lock(train_queue_mutex);
                 train_queue.push(sample);
+                while (train_queue.size() > MAX_TRAIN_QUEUE_LENGTH) {
+                    train_queue.pop();
+                }
             }
             if (++pending_notify >= BATCH_SIZE) {
                 pending_notify = 0;

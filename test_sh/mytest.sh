@@ -14,6 +14,7 @@ CEPH_DAEMON="${CEPH_DAEMON:-osd.${OSD_ID}}"
 CEPH_USE_SUDO="${CEPH_USE_SUDO:-1}"
 HP_INTERVAL="${HP_INTERVAL:-5}"
 HP_SAMPLE="${HP_SAMPLE:-1}"
+HP_PERF_SECTION="${HP_PERF_SECTION:-object_hp_status}"
 VD_ARGS="${VD_ARGS:-}"
 ACTIVE_SAMPLER_PID=""
 
@@ -34,11 +35,11 @@ dump_hp_status() {
   {
     echo "===== ${label} $(date '+%F %T') ====="
     if [[ "${CEPH_USE_SUDO}" == "1" ]]; then
-      if ! sudo -n ceph daemon "${CEPH_DAEMON}" perf dump hp_status; then
-        echo "failed to dump hp_status from ${CEPH_DAEMON}; run 'sudo -v' first or set CEPH_USE_SUDO=0"
+      if ! sudo -n ceph daemon "${CEPH_DAEMON}" perf dump "${HP_PERF_SECTION}"; then
+        echo "failed to dump ${HP_PERF_SECTION} from ${CEPH_DAEMON}; run 'sudo -v' first or set CEPH_USE_SUDO=0"
       fi
-    elif ! ceph daemon "${CEPH_DAEMON}" perf dump hp_status; then
-      echo "failed to dump hp_status from ${CEPH_DAEMON}"
+    elif ! ceph daemon "${CEPH_DAEMON}" perf dump "${HP_PERF_SECTION}"; then
+      echo "failed to dump ${HP_PERF_SECTION} from ${CEPH_DAEMON}"
     fi
     echo
   } >>"${log_file}" 2>&1
@@ -106,6 +107,7 @@ echo "Output: ${RUN_OUT}"
 echo "Logs:   ${RUN_LOG}"
 echo "Ceph daemon: ${CEPH_DAEMON}"
 echo "Ceph sudo: ${CEPH_USE_SUDO}"
+echo "hp_status section: ${HP_PERF_SECTION}"
 echo "hp_status interval: ${HP_INTERVAL}s"
 echo "hp_status sampling: ${HP_SAMPLE}"
 echo "Extra vdbench args: ${VD_ARGS:-<none>}"

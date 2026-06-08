@@ -59,11 +59,6 @@ using ceph::make_timespan;
 using ceph::mono_clock;
 using ceph::operator <<;
 
-HeatPredictor KernelDevice::hp;
-PerfCounters* KernelDevice::logger = nullptr;
-std::atomic<int> KernelDevice::logger_ref{0};
-std::mutex KernelDevice::logger_mtx;
-
 KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, aio_callback_t d_cb, void *d_cbpriv)
   : BlockDevice(cct, cb, cbpriv),
     aio(false), dio(false),
@@ -96,35 +91,9 @@ KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv, ai
     io_queue = std::make_unique<aio_queue_t>(iodepth);
   }
 
-  if (logger == nullptr && logger_ref == 0) {
-    std::lock_guard<std::mutex> lock(logger_mtx);
-    if (logger == nullptr && logger_ref == 0) {
-      PerfCountersBuilder b(cct, "hp_status", hp_first, hp_last);
-      b.add_u64(hp_count, "hp_count", "count");
-      b.add_u64(hp_train_total, "hp_train_total", "train total");
-      b.add_u64(hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
-      b.add_u64(hp_actual_hot_percent, "hp_actual_hot_percent", "actual hot percent (x10000)");
-      b.add_u64(hp_accuracy, "hp_accuracy", "accuracy (x10000)");
-      b.add_u64(hp_hot_precision, "hp_hot_precision", "hot precision (x10000)");
-      b.add_u64(hp_hot_recall, "hp_hot_recall", "hot recall (x10000)");
-      b.add_u64(hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
-      b.add_u64(hp_train_queue_length, "hp_train_queue_length", "train queue length");
-      b.add_u64(hp_swap_count, "hp_swap_count", "model swap count");
-      b.add_time_avg(hp_predict_latency, "hp_predict_latency", "predict latency");
-      logger = b.create_perf_counters();
-      cct->get_perfcounters_collection()->add(logger);
-    }
-  }
-  logger_ref++;
 }
 
-KernelDevice::~KernelDevice() {
-  if (--logger_ref == 0 && logger) {
-    if (cct) cct->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = nullptr;
-  }
-}
+KernelDevice::~KernelDevice() = default;
 
 int KernelDevice::_lock()
 {
@@ -904,7 +873,6 @@ void KernelDevice::aio_submit(IOContext *ioc)
 int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered, int write_hint)
 {
   uint64_t len = bl.length();
-  _notify_write(off, len);
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len
 	  << std::dec << " " << buffermode(buffered) << dendl;
   if (cct->_conf->bdev_inject_crash &&
@@ -1001,7 +969,6 @@ int KernelDevice::aio_write(
   int write_hint)
 {
   uint64_t len = bl.length();
-  // _notify_write(off, len); // 这里可能导致重复调用
   dout(20) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	   << " " << buffermode(buffered)
 	   << dendl;
@@ -1024,7 +991,6 @@ int KernelDevice::aio_write(
 
 #ifdef HAVE_LIBAIO
   if (aio && dio && !buffered) {
-    _notify_write(off, len); // 这里调用不会重复
     if (cct->_conf->bdev_inject_crash &&
 	rand() % cct->_conf->bdev_inject_crash == 0) {
       derr << __func__ << " bdev_inject_crash: dropping io 0x" << std::hex
@@ -1279,7 +1245,6 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
 		      IOContext *ioc,
 		      bool buffered)
 {
-  _notify_read(off, len); // 不会重复
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << " " << buffermode(buffered)
 	  << dendl;
@@ -1329,14 +1294,12 @@ int KernelDevice::aio_read(
   bufferlist *pbl,
   IOContext *ioc)
 {
-  // _notify_read(off, len); // 这里调用可能导致 read 函数中重复调用
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << dendl;
 
   int r = 0;
 #ifdef HAVE_LIBAIO
   if (aio && dio) {
-    _notify_read(off, len); // 这里调用不会重复
     ceph_assert(is_valid_io(off, len));
     _aio_log_start(ioc, off, len);
     ioc->pending_aios.push_back(aio_t(ioc, fd_directs[WRITE_LIFE_NOT_SET]));
@@ -1361,7 +1324,6 @@ int KernelDevice::aio_read(
 
 int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 {
-  // _notify_read(off, len); // 已被 read_random 函数的冷热识别调用覆盖
   uint64_t aligned_off = p2align(off, block_size);
   uint64_t aligned_len = p2roundup(off+len, block_size) - aligned_off;
   bufferptr p = ceph::buffer::create_small_page_aligned(aligned_len);
@@ -1400,7 +1362,6 @@ int KernelDevice::direct_read_unaligned(uint64_t off, uint64_t len, char *buf)
 int KernelDevice::read_random(uint64_t off, uint64_t len, char *buf,
                        bool buffered)
 {
-  _notify_read(off, len); // 可覆盖 direct_read_unaligned 函数的冷热识别调用
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
           << "buffered " << buffered
 	  << dendl;
@@ -1484,55 +1445,4 @@ int KernelDevice::invalidate_cache(uint64_t off, uint64_t len)
 	 << " error: " << cpp_strerror(r) << dendl;
   }
   return r;
-}
-
-// MLModify
-#undef dout_context
-#define dout_context g_ceph_context
-#undef dout_prefix
-#define dout_prefix *_dout
-
-uint64_t mul10000(double x) {
-  return static_cast<uint64_t>(x * 10000);
-}
-
-void KernelDevice::_notify(uint64_t off, uint64_t len, int type)
-{
-  auto start_time = ceph::mono_clock::now();
-  uint64_t index = KernelDevice::hp.hp_index.fetch_add(1) + 1;
-  KernelDevice::hp.predict(index, type, len, off, 1);
-  auto end_time = ceph::mono_clock::now();
-
-  if (logger == nullptr) {
-    return;
-  }
-
-  uint64_t cnt = KernelDevice::hp.hp_index.load();
-  uint64_t train_total = KernelDevice::hp.get_total_weight();
-  uint64_t hot_cnt = KernelDevice::hp.hot_cnt;
-  uint64_t cold_cnt = KernelDevice::hp.cold_cnt;
-  double hot_percent = (hot_cnt + cold_cnt > 0)
-      ? static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt) : 0;
-  uint64_t actual_hot = KernelDevice::hp.get_actual_hot();
-  uint64_t actual_cold = KernelDevice::hp.get_actual_cold();
-  double actual_hot_percent = (actual_hot + actual_cold > 0)
-      ? static_cast<double>(actual_hot) / (actual_hot + actual_cold) : 0;
-  double accuracy = KernelDevice::hp.get_accuracy();
-  double hot_precision = KernelDevice::hp.get_hot_precision();
-  double hot_recall = KernelDevice::hp.get_hot_recall();
-  double hot_threshold = KernelDevice::hp.eq->hot_threshold.load();
-  size_t train_queue_len = KernelDevice::hp.get_train_queue_length();
-  uint64_t swap_cnt = KernelDevice::hp.get_swap_count();
-
-  logger->tinc(hp_predict_latency, end_time - start_time);
-  logger->set(hp_count, cnt);
-  logger->set(hp_train_total, train_total);
-  logger->set(hp_hot_percent, mul10000(hot_percent));
-  logger->set(hp_actual_hot_percent, mul10000(actual_hot_percent));
-  logger->set(hp_accuracy, mul10000(accuracy));
-  logger->set(hp_hot_precision, mul10000(hot_precision));
-  logger->set(hp_hot_recall, mul10000(hot_recall));
-  logger->set(hp_hot_threshold, mul10000(hot_threshold));
-  logger->set(hp_train_queue_length, train_queue_len);
-  logger->set(hp_swap_count, swap_cnt);
 }
