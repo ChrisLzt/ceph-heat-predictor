@@ -1,7 +1,7 @@
 data_errors=1
 messagescan=nodisplay
 
-sd=default,threads=32,openflags=o_sync
+sd=default,threads=32,openflags=o_direct
 sd=sd_edge_hot,lun=/mnt/cephfs/vdbench/graph_skew/edge_hot.props,size=10g
 sd=sd_edge_cold,lun=/mnt/cephfs/vdbench/graph_skew/edge_cold.props,size=38g
 sd=sd_vertex_hot,lun=/mnt/cephfs/vdbench/graph_skew/vertex_hot.props,size=1g

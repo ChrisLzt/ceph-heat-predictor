@@ -94,6 +94,7 @@ enum {
   object_hp_count,
   object_hp_train_total,
   object_hp_hot_percent,
+  object_hp_eval_hot_percent,
   object_hp_actual_hot_percent,
   object_hp_accuracy,
   object_hp_hot_precision,
@@ -101,6 +102,8 @@ enum {
   object_hp_hot_threshold,
   object_hp_train_queue_length,
   object_hp_swap_count,
+  object_hp_dequeue_waiting_count,
+  object_hp_dequeue_max_size_count,
   object_hp_predict_latency,
   object_hp_last
 };
@@ -125,6 +128,7 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_count, "hp_count", "count");
   b.add_u64(object_hp_train_total, "hp_train_total", "train total");
   b.add_u64(object_hp_hot_percent, "hp_hot_percent", "hot percent (x10000)");
+  b.add_u64(object_hp_eval_hot_percent, "hp_eval_hot_percent", "evaluated prediction hot percent (x10000)");
   b.add_u64(object_hp_actual_hot_percent, "hp_actual_hot_percent", "actual hot percent (x10000)");
   b.add_u64(object_hp_accuracy, "hp_accuracy", "accuracy (x10000)");
   b.add_u64(object_hp_hot_precision, "hp_hot_precision", "hot precision (x10000)");
@@ -132,6 +136,8 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
   b.add_u64(object_hp_train_queue_length, "hp_train_queue_length", "train queue length");
   b.add_u64(object_hp_swap_count, "hp_swap_count", "model swap count");
+  b.add_u64(object_hp_dequeue_waiting_count, "hp_dequeue_waiting_count", "dequeue count caused by waiting timeout");
+  b.add_u64(object_hp_dequeue_max_size_count, "hp_dequeue_max_size_count", "dequeue count caused by queue max size");
   b.add_time_avg(object_hp_predict_latency, "hp_predict_latency", "predict latency");
   osd_object_hp_logger = b.create_perf_counters();
   cct->get_perfcounters_collection()->add(osd_object_hp_logger);
@@ -159,6 +165,7 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   logger->set(object_hp_count, cnt);
   logger->set(object_hp_train_total, train_total);
   logger->set(object_hp_hot_percent, hp_mul10000(hot_percent));
+  logger->set(object_hp_eval_hot_percent, hp_mul10000(osd_object_heat_predictor.get_hot_prediction_percent()));
   logger->set(object_hp_actual_hot_percent, hp_mul10000(actual_hot_percent));
   logger->set(object_hp_accuracy, hp_mul10000(osd_object_heat_predictor.get_accuracy()));
   logger->set(object_hp_hot_precision, hp_mul10000(osd_object_heat_predictor.get_hot_precision()));
@@ -166,6 +173,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   logger->set(object_hp_hot_threshold, hp_mul10000(osd_object_heat_predictor.get_hot_threshold()));
   logger->set(object_hp_train_queue_length, osd_object_heat_predictor.get_train_queue_length());
   logger->set(object_hp_swap_count, osd_object_heat_predictor.get_swap_count());
+  logger->set(object_hp_dequeue_waiting_count, osd_object_heat_predictor.get_dequeue_waiting_count());
+  logger->set(object_hp_dequeue_max_size_count, osd_object_heat_predictor.get_dequeue_max_size_count());
 }
 
 static inline bool hp_should_update_object_logger(uint64_t index)

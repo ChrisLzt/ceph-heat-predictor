@@ -75,9 +75,11 @@ public:
     int pbds_counter = 0;
 
     std::vector<double> exp_table;
+    std::atomic<uint64_t> dequeue_waiting_count{0};
+    std::atomic<uint64_t> dequeue_max_size_count{0};
 
-    EvaluationQueue(int max_size = 30000, double hot_threshold = 200, bool training = true,
-            double alpha = -0.00008, int heating = 200, uint64_t waiting = 20000) :
+    EvaluationQueue(int max_size = 10000, double hot_threshold = 200, bool training = true,
+            double alpha = -0.0002, int heating = 200, uint64_t waiting = 12000) :
             max_size(max_size), hot_threshold(hot_threshold),
             training(training), alpha(alpha), heating(heating),
             waiting(waiting) {
@@ -160,6 +162,10 @@ public:
             existing_val.heat = new_heat;
             existing_val.last_access = this->ts;
             existing_val.access_count++;
+            item.current_heat = new_heat;
+            item.access_count = existing_val.access_count;
+            item.hot_threshold = hot_threshold.load();
+            existing_val.item = item;
         } else {
             QueueValue new_val = {static_cast<double>(this->heating), this->ts, this->ts, 1, item};
             item_map[item.key] = new_val;
@@ -175,12 +181,14 @@ public:
             }
 
             if (this->ts - first_it->second.init_access >= this->waiting) {
+                dequeue_waiting_count++;
                 return_val = dequeue();
             }
             break;
         }
 
         if (!return_val.has_value() && item_map.size() > static_cast<size_t>(max_size)) {
+            dequeue_max_size_count++;
             return_val = dequeue();
         }
 
@@ -241,7 +249,7 @@ public:
     std::atomic<uint64_t> swap_count{0};
 
     // ── 后台训练线程 ────────────────────────────────────────────
-    static constexpr int BATCH_SIZE = 500;
+    static constexpr int BATCH_SIZE = 400;
     static constexpr size_t MAX_TRAIN_QUEUE_LENGTH = 200000;
     std::queue<TrainingSample> train_queue;
     std::mutex train_queue_mutex;
@@ -291,7 +299,7 @@ public:
                 batch.pop();
 
                 sample.label ? actual_hot++ : actual_cold++;
-                double weight = sample.label ? 3.0 : 1.0;
+                double weight = sample.label ? 2.0 : 1.0;
                 shadow_model->learn_one(to_feat(sample.item), sample.label, weight);
                 if (sample.update_accu)
                     accu.update(sample.label, sample.item.pred);
@@ -401,6 +409,7 @@ public:
     double get_accuracy() { return accu.get_accuracy(); }
     double get_hot_precision() { return accu.get_hot_precision(); }
     double get_hot_recall() { return accu.get_hot_recall(); }
+    double get_hot_prediction_percent() { return accu.get_hot_prediction_percent(); }
     double get_hot_threshold() { return eq->hot_threshold.load(); }
     size_t get_train_queue_length() {
         std::lock_guard<std::mutex> lock(train_queue_mutex);
@@ -409,6 +418,8 @@ public:
     uint64_t get_swap_count() { return swap_count.load(); }
     uint64_t get_actual_hot() { return actual_hot.load(); }
     uint64_t get_actual_cold() { return actual_cold.load(); }
+    uint64_t get_dequeue_waiting_count() { return eq->dequeue_waiting_count.load(); }
+    uint64_t get_dequeue_max_size_count() { return eq->dequeue_max_size_count.load(); }
 };
 
 #endif

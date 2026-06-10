@@ -59,25 +59,13 @@ key = hash(pool, object_hash, object_bucket);
 - `src/heatpredictor/include/StandardScaler.h`
 - `src/heatpredictor/include/utils.h`
 
-当前特征数量：
+当前特征数量以 `src/heatpredictor/heat_predictor.h` 中的 `NUM_FEATURES` 为准。
 
-```cpp
-#define NUM_FEATURES 5
-```
+当前 bucket 粒度以 `HP_BUCKET_SHIFT` 为准。
 
-当前 bucket 粒度：
+当前热标签分位数以 `HP_HOT_QUANTILE` 为准。
 
-```cpp
-static constexpr uint64_t HP_BUCKET_SHIFT = 20; // 1 MiB
-```
-
-当前热标签分位数：
-
-```cpp
-static constexpr double HP_HOT_QUANTILE = 0.85;
-```
-
-当前 5 个 object 层特征：
+当前 object 层特征：
 
 1. `operation`
 2. `log2(size + 1)`
@@ -89,7 +77,7 @@ static constexpr double HP_HOT_QUANTILE = 0.85;
 
 - `offset` 已由 `bucket` 表达，不再作为模型特征。
 - `pool` 和 `object_hash` 只用于 key，不再作为模型特征。
-- 首次访问某个 bucket 时 `current_heat` 固定为 `heating=200`，所以首次访问时热度比值置 0。
+- 首次访问某个 bucket 时 `current_heat` 使用 `heating` 初始值，所以首次访问时热度比值置 0。
 - `log2()` 用于压缩 size、bucket、access_count 的长尾分布；`StandardScaler` 再统一均值和方差。
 
 ## StandardScaler
@@ -116,18 +104,13 @@ HeatPredictor::train_worker()
 
 冷热标签由 `EvaluationQueue` 根据延迟后的访问热度生成。
 
-当前队列参数：
+当前队列参数以 `EvaluationQueue` 构造函数为准，重点关注：
 
-```cpp
-EvaluationQueue(
-    int max_size = 30000,
-    double hot_threshold = 200,
-    bool training = true,
-    double alpha = -0.00008,
-    int heating = 200,
-    uint64_t waiting = 20000
-)
-```
+- `max_size`
+- `hot_threshold`
+- `alpha`
+- `heating`
+- `waiting`
 
 热度更新：
 
@@ -149,7 +132,7 @@ new_heat = exp(delta_ts * alpha) * old_heat + heating
 is_hot = val.heat > get_hot_threshold();
 ```
 
-当前 `HP_HOT_QUANTILE = 0.85`，大致把历史出队热度排名靠前的 15% 作为热数据。
+`HP_HOT_QUANTILE` 控制热标签分位数，数值越高，标为 hot 的样本越少。
 
 ## 模型参数
 
@@ -162,30 +145,19 @@ PipelineClassifier(
 )
 ```
 
-当前 ARF 参数：
+当前 ARF 参数以 `make_model()` 中的 `ARFClassifier` 构造参数为准，重点关注：
 
-```cpp
-ARFClassifier<NUM_FEATURES, 2,
-    DetectorFactory<ADWIN<5>, 10>,
-    DetectorFactory<ADWIN<5>, 1>>(
-        5,       // n_models
-        5,       // max_features
-        591422,  // seed
-        100,     // grace_period
-        4,       // lambda_value
-        0.001,   // delta
-        0.05,    // tau
-        0.99,    // max_share_to_split
-        0.01     // min_branch_fraction
-)
-```
+- `n_models`
+- `max_features`
+- `seed`
+- `grace_period`
+- `lambda_value`
+- `delta`
+- `tau`
+- `max_share_to_split`
+- `min_branch_fraction`
 
-训练权重：
-
-```cpp
-double weight = sample.label ? 2.0 : 1.0;
-shadow_model->learn_one(to_feat(sample.item), sample.label, weight);
-```
+热/冷训练权重以 `train_worker()` 中的 `weight` 计算逻辑为准。
 
 `ARFClassifier::learn_one()` 中外部权重 `w` 会乘到 Poisson 采样得到的 `k` 上：
 
@@ -198,13 +170,11 @@ model->learn_one(x, y, sample_weight);
 
 预测线程使用 active model，训练线程使用 shadow model。
 
-关键参数：
+关键参数以 `HeatPredictor` 中的常量为准：
 
-```cpp
-static constexpr int SWAP_INTERVAL = 2000;
-static constexpr int BATCH_SIZE = 500;
-static constexpr size_t MAX_TRAIN_QUEUE_LENGTH = 200000;
-```
+- `SWAP_INTERVAL`
+- `BATCH_SIZE`
+- `MAX_TRAIN_QUEUE_LENGTH`
 
 流程：
 
@@ -214,7 +184,7 @@ static constexpr size_t MAX_TRAIN_QUEUE_LENGTH = 200000;
 4. 后台线程批量训练 shadow model。
 5. 每训练 `SWAP_INTERVAL` 个样本后交换 active/shadow model。
 
-`BATCH_SIZE` 是唤醒后台训练线程的通知阈值，不代表每 500 个样本一定训练完成。如果样本产生速度高于后台训练速度，训练队列仍可能积压。当前队列超过 `MAX_TRAIN_QUEUE_LENGTH` 后，会从队头丢弃最老训练样本，保留新样本。
+`BATCH_SIZE` 是唤醒后台训练线程的通知阈值，不代表每批样本一定马上训练完成。如果样本产生速度高于后台训练速度，训练队列仍可能积压。当前队列超过 `MAX_TRAIN_QUEUE_LENGTH` 后，会从队头丢弃最老训练样本，保留新样本。
 
 ## 测试入口
 

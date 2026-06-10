@@ -22,7 +22,38 @@ ninja ceph-osd -j$(nproc)
 ls -lh /home/hust/ceph-heat-predictor/build/bin/ceph-osd
 ```
 
-## 2. 备份当前系统 ceph-osd
+## 2. 推荐安装方式
+
+优先使用脚本同时安装 `ceph-osd` 和相关插件：
+
+```bash
+cd /home/hust/ceph-heat-predictor
+./test_sh/update/install_ceph_osd_with_plugins.sh
+```
+
+脚本会：
+
+- 备份当前 `/usr/bin/ceph-osd` 和将要覆盖的插件。
+- 安装 `build/bin/ceph-osd` 到 `/usr/bin/ceph-osd`。
+- 同步安装 `build/lib` 中的 erasure-code、compressor、crypto 插件到 `/usr/lib/ceph/`。
+- 重启 `ceph-osd@0`。
+- 输出 `systemctl status`、`ceph -s` 和 `object_hp_status` 检查结果。
+
+常用环境变量：
+
+```bash
+OSD_ID=0 ./test_sh/update/install_ceph_osd_with_plugins.sh
+BUILD_FIRST=1 ./test_sh/update/install_ceph_osd_with_plugins.sh
+START_OSD=0 ./test_sh/update/install_ceph_osd_with_plugins.sh
+```
+
+不要只替换 `/usr/bin/ceph-osd`。Ceph OSD 启动时会校验插件版本，如果系统里的 `/usr/lib/ceph/erasure-code/`、`/usr/lib/ceph/compressor/` 或 `/usr/lib/ceph/crypto/` 仍是旧插件，可能出现：
+
+```text
+expected plugin ... version <new> but it claims to be <old> instead
+```
+
+## 3. 手工备份当前系统 ceph-osd
 
 确认系统正在使用的路径：
 
@@ -36,7 +67,7 @@ which ceph-osd
 sudo cp /usr/bin/ceph-osd /usr/bin/ceph-osd.bak.$(date +%Y%m%d_%H%M%S)
 ```
 
-## 3. 替换 ceph-osd
+## 4. 手工替换 ceph-osd
 
 安装新编译的 OSD 二进制：
 
@@ -44,7 +75,19 @@ sudo cp /usr/bin/ceph-osd /usr/bin/ceph-osd.bak.$(date +%Y%m%d_%H%M%S)
 sudo install -m 0755 /home/hust/ceph-heat-predictor/build/bin/ceph-osd /usr/bin/ceph-osd
 ```
 
-## 4. 重启 OSD
+如果选择手工替换，还必须同步安装插件：
+
+```bash
+sudo install -d -m 0755 /usr/lib/ceph/erasure-code /usr/lib/ceph/compressor /usr/lib/ceph/crypto
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libec_*.so* /usr/lib/ceph/erasure-code/
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libceph_snappy.so* /usr/lib/ceph/compressor/
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libceph_zlib.so* /usr/lib/ceph/compressor/
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libceph_zstd.so* /usr/lib/ceph/compressor/
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libceph_lz4.so* /usr/lib/ceph/compressor/
+sudo cp -a /home/hust/ceph-heat-predictor/build/lib/libceph_crypto_*.so* /usr/lib/ceph/crypto/
+```
+
+## 5. 重启 OSD
 
 ```bash
 sudo systemctl reset-failed ceph-osd@0
@@ -53,7 +96,7 @@ sudo systemctl restart ceph-osd@0
 
 如果系统之前出现过 `start-limit-hit`，`reset-failed` 是必要的。
 
-## 5. 检查 Ceph 状态
+## 6. 检查 Ceph 状态
 
 ```bash
 ceph -s
@@ -73,7 +116,7 @@ sudo ceph daemon osd.0 perf dump object_hp_status
 
 如果能看到 `hp_count`、`hp_hot_percent`、`hp_actual_hot_percent`、`hp_hot_precision`、`hp_hot_recall` 等字段，说明新的 OSD 已经启用。
 
-## 6. 失败回滚
+## 7. 失败回滚
 
 如果 OSD 启动失败，先看日志：
 
@@ -91,7 +134,7 @@ sudo systemctl restart ceph-osd@0
 ceph -s
 ```
 
-## 7. 不推荐操作
+## 8. 不推荐操作
 
 不要直接执行：
 
