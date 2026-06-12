@@ -1,6 +1,6 @@
 # CODEX Context: Ceph Object Heat Predictor
 
-本文档记录当前冷热识别原型的实现状态、关键参数和测试入口。后续继续开发时，先读本文档恢复上下文。
+本文档记录当前 Ceph 冷热识别原型的实现状态和关键参数。测试流程统一见 `CODEX_TEST.md`。
 
 ## 当前目标
 
@@ -48,7 +48,6 @@ src/heatpredictor/
 
 - 当前目标是统计 vdbench、fio、ior 等测试工具产生的普通对象读写。
 - 不把校验、extent 查询、append、zero、元数据、class、watch、cache/tier 管理类 op 混入模型。
-- ICFS 版有 `SCATTER_READ` / `SCATTER_WRITE`，这是 ICFS 自己的普通数据 I/O 扩展；标准 Ceph 侧没有对应 `CEPH_OSD_OP_SCATTER_*`。
 
 ## Object Key 和 Bucket
 
@@ -213,75 +212,7 @@ model->learn_one(x, y, sample_weight);
 
 ## 测试入口
 
-测试目录：
-
-- `test_sh/config_skew_data/`：构造数据。
-- `test_sh/config_skew_run/`：正式运行测试。
-- `test_sh/config_skew/`：早期未拆分版本，尽量不要继续作为主流程使用。
-
-主要脚本：
-
-- `test_sh/prepare_skew_data.sh`：只构造数据，默认 `HP_SAMPLE=0`。
-- `test_sh/run_skew_tests_reset_hp.sh`：正式测试，每个测试前重启 OSD 清空 predictor 状态。
-- `test_sh/run_skew_full_background.sh`：后台一键运行数据构造和正式测试。
-- `test_sh/mytest.sh`：单轮 vdbench 执行和 `object_hp_status` 采样封装。
-- `test_sh/restart-osd.sh`：简单重启 `osd.0`。
-
-多节点 ICFS/vdbench 测试目录在 `/home/hust/测试脚本/测试脚本/`，已拆分为：
-
-- `config_data/`：构造数据。
-- `config_run/`：正式运行测试。
-- `run_prepare_data_background.sh`：后台一键构造数据。
-
-大规模构造数据时注意：
-
-- 避免用过高文件数制造元数据压力。
-- 多客户端 vdbench 需要保持客户端时间同步，否则可能触发 heartbeat 问题。
-- FSD 共享 anchor 的多客户端 format/cleanup 容易竞争；当前构造流程默认不使用全局 `-c` 清理参数。
-
-运行前检查：
-
-```bash
-ceph -s
-ceph pg stat
-ceph daemon osd.0 perf schema object_hp_status
-ceph daemon osd.0 perf dump object_hp_status
-```
-
-编译并安装 OSD：
-
-```bash
-cd ~/ceph-heat-predictor
-ninja -C build ceph-osd
-sudo install -m 0755 build/bin/ceph-osd /usr/bin/ceph-osd
-sudo systemctl restart ceph-osd@0
-```
-
-只构造数据：
-
-```bash
-./test_sh/prepare_skew_data.sh
-```
-
-运行全部正式测试：
-
-```bash
-./test_sh/run_skew_tests_reset_hp.sh
-```
-
-后台一键运行：
-
-```bash
-nohup ./test_sh/run_skew_full_background.sh > test_sh/logs/background/$(date +%Y%m%d_%H%M%S)_skew_full.nohup.log 2>&1 &
-```
-
-日志位置：
-
-```text
-test_sh/logs/<RUN_ID>/<workload>.vdbench.log
-test_sh/logs/<RUN_ID>/<workload>.hp_status.log
-test_sh/out/<RUN_ID>/<workload>/
-```
+测试流程、后台运行方式、日志目录和大规模数据构造注意事项统一维护在 `CODEX_TEST.md`。
 
 ## object_hp_status 字段
 
@@ -336,5 +267,4 @@ perf counter 刷新频率由 `src/osd/ObjectHeatPredictor.cc` 中的 `object_hp_
 ## 注意事项
 
 - 当前输出 section 是 `object_hp_status`，不是旧的 `hp_status`。
-- `test_sh/out/` 和 `test_sh/logs/` 是运行产物，不应提交到 GitHub。
 - 当前 object 层结果可以绑定到 RADOS object 或 object 内 bucket；如果未来要上升到 CephFS 文件级冷热，还需要额外的文件到 object 映射逻辑。

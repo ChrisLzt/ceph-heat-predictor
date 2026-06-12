@@ -1,8 +1,8 @@
 # ICFS Object Heat Predictor Migration Notes
 
-本文档记录对 `/home/hust/icfs` 的初步调研结果，目标是后续把当前 Ceph OSD object 层冷热识别模块迁移到 ICFS/IDFS 中。
+本文档记录对 `/home/hust/icfs` 的调研结果和当前迁移状态，目标是把 Ceph OSD object 层冷热识别模块移植到 ICFS/IDFS 中。
 
-当前只做调研和迁移定位，不修改 `/home/hust/icfs`。
+当前 ICFS 迁移已经实施，不再只是调研定位。后续继续修改时，以 `/home/hust/icfs/src/oss/ObjectHeatPredictor.*` 和 `/home/hust/icfs/src/heatpredictor/` 为准。
 
 ## 代码来源和整体判断
 
@@ -171,7 +171,7 @@ op.writesame.length
 
 可用 `idfs_oss_op_uses_extent(op.op)` 判断该 op 是否使用 extent。
 
-## 建议记录的操作
+## 当前记录的操作
 
 第一阶段只记录和数据热度最直接相关的读写操作。
 
@@ -180,14 +180,14 @@ read-like：
 - `IDFS_OSS_OP_READ`
 - `IDFS_OSS_OP_SYNC_READ`
 - `IDFS_OSS_OP_SPARSE_READ`
-- 可选：`IDFS_OSS_OP_SCATTER_READ`
+- `IDFS_OSS_OP_SCATTER_READ`
 
 write-like：
 
 - `IDFS_OSS_OP_WRITE`
 - `IDFS_OSS_OP_WRITEFULL`
 - `IDFS_OSS_OP_WRITESAME`
-- 可选：`IDFS_OSS_OP_SCATTER_WRITE`
+- `IDFS_OSS_OP_SCATTER_WRITE`
 
 暂时不建议纳入第一阶段：
 
@@ -200,6 +200,32 @@ write-like：
 
 原因是这些 op 不一定代表用户数据访问热度，混入后容易污染标签。
 
+## 当前 Hook 和适配层
+
+当前 ICFS 侧已经添加轻量适配层：
+
+```text
+src/oss/ObjectHeatPredictor.h
+src/oss/ObjectHeatPredictor.cc
+```
+
+适配层负责：
+
+- 过滤普通数据读写 OSS op。
+- 提取 `offset` 和 `length`。
+- 把 `idfs_hobject_t + idfs_oss_op` 转为 `HeatPredictor::predict()` 输入。
+- 注册并更新 `object_hp_status` perf counter。
+- 统计各类普通读写 op 数量。
+
+当前 hook 点：
+
+- `src/oss/PrimaryLogPG.cc`：`IdfsPrimaryLogPG::do_oss_ops()`
+- `src/oss/MergePG.cc`：`IdfsMergePG::do_oss_ops()`
+- `src/oss/MergePG.cc`：`IdfsMergePG::do_oss_ops_journal_mode()`
+- `src/oss/OSS.cc`：`OSS::final_init()` 初始化 `object_hp_status`
+
+这些 hook 都放在 op 规范化之后、主 `switch (op.op)` 之前，用于覆盖普通 PG、MergePG 和 journal mode 路径。
+
 ## Perf Counter 状态输出
 
 当前 Ceph 版本输出 section 为：
@@ -208,7 +234,7 @@ write-like：
 object_hp_status
 ```
 
-迁移到 ICFS 时可以保留这个 section 名，便于测试脚本复用。
+迁移到 ICFS 时保留这个 section 名，便于测试脚本复用。
 
 但类型需要改成 ICFS 的 perf counter 类型：
 
@@ -217,7 +243,7 @@ IdfsPerfCounters *object_hp_logger = nullptr;
 IdfsPerfCountersBuilder b(cct, "object_hp_status", first, last);
 ```
 
-初始化位置建议放在：
+初始化位置放在：
 
 ```cpp
 void OSS::final_init()
@@ -236,12 +262,16 @@ IdfsPerfCounters *build_oss_logger(IdfsContext *cct)
 - `src/oss/oss_perf_counters.cc`
 - `src/oss/oss_perf_counters.h`
 
-可选做法：
+当前采用单独 `ObjectHeatPredictor.cc` 注册 `object_hp_status` 的方式，避免把实验性冷热识别计数混入已有 OSS logger。
 
-1. 单独在 `PrimaryLogPG.cc` 中创建 `object_hp_status`，和当前 Ceph 版本一致。
-2. 或者把 object heat perf counter 的 enum 和 builder 放入 `oss_perf_counters.*`，风格更贴近 ICFS。
+核心字段与 Ceph 侧保持同名，便于测试脚本复用。ICFS 侧额外字段：
 
-短期迁移推荐第 1 种，改动范围更小。
+| 字段 | 含义 |
+| --- | --- |
+| `hp_op_scatter_read_count` | `IDFS_OSS_OP_SCATTER_READ` 数量 |
+| `hp_op_scatter_write_count` | `IDFS_OSS_OP_SCATTER_WRITE` 数量 |
+
+注意：`object_hp_status` 当前是每个 OSS daemon 的本地状态。多 OSS 汇总需要由 mgr/vas 或外部脚本轮询所有 OSS 后聚合。
 
 ## HeatPredictor 模块迁移
 
@@ -251,13 +281,13 @@ IdfsPerfCounters *build_oss_logger(IdfsContext *cct)
 src/heatpredictor/
 ```
 
-迁移到 ICFS 时建议保持同样路径：
+迁移到 ICFS 时保持同样路径：
 
 ```text
 /home/hust/icfs/src/heatpredictor/
 ```
 
-需要拷贝：
+需要保持同步：
 
 - `heat_predictor.h`
 - `include/ARFClassifier.h`
@@ -275,15 +305,12 @@ src/heatpredictor/
 
 如果 `#include "heatpredictor/heat_predictor.h"` 无法直接找到，再给 `oss` 目标补 include path。
 
-## 适配层建议
+## 适配层边界
 
-不要把大量 ICFS 类型判断塞进 `HeatPredictor` 核心类。建议在 `PrimaryLogPG.cc` / `MergePG.cc` 附近保留一层轻量 wrapper：
+不要把大量 ICFS 类型判断塞进 `HeatPredictor` 核心类。当前 ICFS 类型适配集中在 `src/oss/ObjectHeatPredictor.cc`：
 
 ```cpp
-static inline bool hp_track_oss_op(uint16_t op);
-static inline int hp_oss_op_type(uint16_t op);
-static inline void hp_oss_op_extent(const idfs_oss_op& op, uint64_t *offset, uint64_t *length);
-static inline void hp_notify_oss_object_op(IdfsContext *cct, const idfs_hobject_t& soid, const idfs_oss_op& op);
+void hp_notify_oss_object_op(IdfsContext *cct, const idfs_hobject_t& soid, const idfs_oss_op& op);
 ```
 
 这样 `HeatPredictor` 继续只关心通用字段：
@@ -297,18 +324,19 @@ static inline void hp_notify_oss_object_op(IdfsContext *cct, const idfs_hobject_
 - offset
 - access count seed
 
-## 迁移步骤建议
+## 已完成迁移项
 
-1. 拷贝 `src/heatpredictor/` 到 `/home/hust/icfs/src/heatpredictor/`。
-2. 在 `src/oss/PrimaryLogPG.cc` 中 include `heatpredictor/heat_predictor.h`。
-3. 添加 ICFS 版 wrapper，将 `idfs_hobject_t + idfs_oss_op` 转成 `HeatPredictor::predict()` 输入。
-4. 在 `IdfsPrimaryLogPG::do_oss_ops()` 的规范化之后、主 switch 之前调用 wrapper。
-5. 在 `src/oss/PrimaryLogPG.h` 声明初始化函数，例如 `init_oss_object_hp_status(IdfsContext *cct)`。
-6. 在 `OSS::final_init()` 中调用初始化函数。
-7. 编译 `idfs-oss`。
-8. 用 admin socket 或 perf dump 检查 `object_hp_status` 是否出现。
-9. 如果 MergePG 池有 IO 但指标不增长，再把同一 wrapper 插到 `IdfsMergePG::do_oss_ops()`。
-10. 如果 journal mode 绕过普通路径，再补充 `do_oss_ops_journal_mode()`。
+- 已拷贝并同步 `src/heatpredictor/`。
+- 已添加 `src/oss/ObjectHeatPredictor.h/.cc`。
+- 已在 `IdfsPrimaryLogPG::do_oss_ops()` 调用 `hp_notify_oss_object_op()`。
+- 已在 `IdfsMergePG::do_oss_ops()` 调用 `hp_notify_oss_object_op()`。
+- 已在 `IdfsMergePG::do_oss_ops_journal_mode()` 调用 `hp_notify_oss_object_op()`。
+- 已在 `OSS::final_init()` 调用 `init_oss_object_hp_status(cct)`。
+- 已把 `ObjectHeatPredictor.cc` 纳入 `src/oss/CMakeLists.txt`。
+
+## 测试入口
+
+ICFS 多节点 vdbench 测试脚本、客户端/存储节点信息、后台运行方式和注意事项统一维护在 `CODEX_TEST.md`。
 
 ## 编译和验证
 
@@ -334,13 +362,13 @@ ICFS 对应目标是 `idfs-oss`，服务名、二进制路径、admin socket 路
 - `object_hp_status` section 存在。
 - 正式 vdbench 测试时 `hp_count` 增长。
 - `hp_train_total`、`hp_actual_hot_percent`、`hp_hot_percent`、precision/recall 有变化。
-- 如果 `hp_count` 不增长，优先检查当前池是否走 `IdfsMergePG`。
+- 如果 `hp_count` 不增长，优先检查当前池是否走未覆盖的新 PG 路径，或当前 workload 是否只产生了未纳入统计的管理类 op。
 
 ## 风险点
 
-1. **只 hook PrimaryLogPG 可能漏 IO**
+1. **新 PG 路径可能漏 IO**
 
-   ICFS 的 `IdfsMergePG` 重写了 `do_oss_ops()`。如果测试池是 MergePG/append-write 池，需要同步 hook。
+   当前已覆盖 `IdfsPrimaryLogPG`、`IdfsMergePG` 和 `IdfsMergePG::do_oss_ops_journal_mode()`。如果后续发现新的 PG 类型或旁路路径，需要继续补 hook。
 
 2. **类型名不能照搬 Ceph**
 
@@ -358,3 +386,6 @@ ICFS 对应目标是 `idfs-oss`，服务名、二进制路径、admin socket 路
 
    recovery、scrub、tier/cache 管理 op 可能不代表用户真实冷热访问，第一阶段应跳过。
 
+6. **perf counter 是单 daemon 本地状态**
+
+   多 OSS 汇总需要额外在 mgr/vas 或外部脚本中轮询所有 OSS 后做聚合。
