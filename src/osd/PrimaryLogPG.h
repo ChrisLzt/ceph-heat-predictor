@@ -46,7 +46,6 @@ void intrusive_ptr_add_ref(PrimaryLogPG *pg);
 void intrusive_ptr_release(PrimaryLogPG *pg);
 uint64_t get_with_id(PrimaryLogPG *pg);
 void put_with_id(PrimaryLogPG *pg, uint64_t id);
-void init_osd_object_hp_status(CephContext *cct);
 
 #ifdef PG_DEBUG_REFS
   typedef TrackedIntPtr<PrimaryLogPG> PrimaryLogPGRef;

@@ -12,18 +12,43 @@
 
 当前有效 hook：
 
-- 文件：`src/osd/PrimaryLogPG.cc`
+- hook 文件：`src/osd/PrimaryLogPG.cc`
+- 适配层文件：`src/osd/ObjectHeatPredictor.h`、`src/osd/ObjectHeatPredictor.cc`
 - 函数：`PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)`
 - 调用点：`do_osd_ops()` 的 `for` 循环内，`ZERO -> TRUNCATE` 规范化之后，主 `switch (op.op)` 之前
 - 状态输出：`object_hp_status`
 - 初始化位置：`src/osd/OSD.cc::final_init()` 调用 `init_osd_object_hp_status(cct)`
+
+当前结构：
+
+```text
+src/osd/PrimaryLogPG.cc
+  -> hp_notify_osd_object_op(cct, soid, op)
+
+src/osd/ObjectHeatPredictor.cc
+  -> 过滤 OSD op
+  -> 提取 offset/length
+  -> 维护 object_hp_status perf counter
+  -> 调用 HeatPredictor::predict()
+
+src/heatpredictor/
+  -> 通用冷热识别算法
+```
+
+`PrimaryLogPG.cc` 只保留 hook 调用，不再直接包含冷热识别算法、op 解析、perf counter 注册等实现细节。
 
 记录的 op：
 
 - read-like：`READ`、`SYNC_READ`、`SPARSE_READ`
 - write-like：`WRITE`、`WRITEFULL`、`WRITESAME`
 
-暂时跳过：`ZERO`、`TRUNCATE`、`APPEND`、omap、class、watch、cache/tier 管理类 op。
+暂时跳过：`ZERO`、`TRUNCATE`、`APPEND`、`CMPEXT`、`CHECKSUM`、`MAPEXT`、omap、class、watch、cache/tier 管理类 op。
+
+设计原则：
+
+- 当前目标是统计 vdbench、fio、ior 等测试工具产生的普通对象读写。
+- 不把校验、extent 查询、append、zero、元数据、class、watch、cache/tier 管理类 op 混入模型。
+- ICFS 版有 `SCATTER_READ` / `SCATTER_WRITE`，这是 ICFS 自己的普通数据 I/O 扩展；标准 Ceph 侧没有对应 `CEPH_OSD_OP_SCATTER_*`。
 
 ## Object Key 和 Bucket
 
@@ -202,6 +227,18 @@ model->learn_one(x, y, sample_weight);
 - `test_sh/mytest.sh`：单轮 vdbench 执行和 `object_hp_status` 采样封装。
 - `test_sh/restart-osd.sh`：简单重启 `osd.0`。
 
+多节点 ICFS/vdbench 测试目录在 `/home/hust/测试脚本/测试脚本/`，已拆分为：
+
+- `config_data/`：构造数据。
+- `config_run/`：正式运行测试。
+- `run_prepare_data_background.sh`：后台一键构造数据。
+
+大规模构造数据时注意：
+
+- 避免用过高文件数制造元数据压力。
+- 多客户端 vdbench 需要保持客户端时间同步，否则可能触发 heartbeat 问题。
+- FSD 共享 anchor 的多客户端 format/cleanup 容易竞争；当前构造流程默认不使用全局 `-c` 清理参数。
+
 运行前检查：
 
 ```bash
@@ -262,7 +299,23 @@ test_sh/out/<RUN_ID>/<workload>/
 | `hp_hot_threshold` | 当前热度阈值 | perf 输出中按内部格式放大 |
 | `hp_train_queue_length` | 后台训练队列长度 | 长时间升高说明训练线程跟不上 |
 | `hp_swap_count` | active/shadow 模型切换次数 | 每训练 `SWAP_INTERVAL` 个样本后增加 |
+| `hp_dequeue_waiting_count` | 因等待时间到期出队的样本数 | 用于判断 `waiting` 是否主导标注延迟 |
+| `hp_dequeue_max_size_count` | 因队列达到上限出队的样本数 | 用于判断 `max_size` 是否过小 |
+| `hp_eval_hot_percent` | 参与评估样本中预测为热的比例 | 更适合判断模型实际热预测占比 |
 | `hp_predict_latency` | 预测路径耗时统计 | `avgtime` 或 `sum / avgcount` 为平均耗时 |
+
+普通 OSD op 计数字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `hp_op_read_count` | `CEPH_OSD_OP_READ` 数量 |
+| `hp_op_sync_read_count` | `CEPH_OSD_OP_SYNC_READ` 数量 |
+| `hp_op_sparse_read_count` | `CEPH_OSD_OP_SPARSE_READ` 数量 |
+| `hp_op_write_count` | `CEPH_OSD_OP_WRITE` 数量 |
+| `hp_op_writefull_count` | `CEPH_OSD_OP_WRITEFULL` 数量 |
+| `hp_op_writesame_count` | `CEPH_OSD_OP_WRITESAME` 数量 |
+
+perf counter 刷新频率由 `src/osd/ObjectHeatPredictor.cc` 中的 `object_hp_logger_update_interval` 控制。当前逻辑按固定样本间隔刷新，不再使用启动阶段每次请求都刷新的 warmup 逻辑。
 
 评估时不要只看 `accuracy`。冷样本占多数时，全预测冷也会得到较高 accuracy。重点看：
 

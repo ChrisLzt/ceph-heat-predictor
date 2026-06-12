@@ -11,6 +11,7 @@ endif()
 
 set(osd_srcs
   OSD.cc
+  ObjectHeatPredictor.cc
   Watch.cc
   ClassHandler.cc
   PG.cc

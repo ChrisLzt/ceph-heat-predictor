@@ -64,6 +64,7 @@
 #endif
 
 #include "PrimaryLogPG.h"
+#include "ObjectHeatPredictor.h"
 
 #include "msg/Messenger.h"
 #include "msg/Message.h"
