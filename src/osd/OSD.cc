@@ -2714,6 +2714,8 @@ void OSD::asok_command(
     f->dump_unsigned("newest_map", superblock.newest_map);
     f->dump_unsigned("num_pgs", num_pgs);
     f->close_section();
+  } else if (prefix == "object_hp reset") {
+    hp_reset_osd_object_heat_predictor(cct, f);
   } else if (prefix == "flush_journal") {
     store->flush_journal();
   } else if (prefix == "dump_ops_in_flight" ||
@@ -4007,6 +4009,9 @@ void OSD::final_init()
   asok_hook = new OSDSocketHook(this);
   int r = admin_socket->register_command("status", asok_hook,
 					 "high-level status of OSD");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("object_hp reset", asok_hook,
+				     "reset object heat predictor state");
   ceph_assert(r == 0);
   r = admin_socket->register_command("flush_journal",
                                      asok_hook,

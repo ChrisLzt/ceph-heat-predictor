@@ -235,5 +235,10 @@ public:
     return active_modules->get_module_finisher(name);
   }
 
+  Objecter& get_objecter() {
+    ceph_assert(active_modules);
+    return active_modules->get_objecter();
+  }
+
   // <<< (end of ActivePyModules cheeky call-throughs)
 };

@@ -67,6 +67,14 @@ COMMAND("osd perf", \
         "print dump of OSD perf summary stats", \
         "osd", \
         "r")
+COMMAND("osd hp status", \
+        "print heat predictor status summary for all up OSDs", \
+        "osd", \
+        "r")
+COMMAND("osd hp reset", \
+        "reset heat predictor state on all up OSDs", \
+        "osd", \
+        "rw")
 COMMAND("osd df " \
         "name=output_method,type=CephChoices,strings=plain|tree,req=false " \
         "name=filter_by,type=CephChoices,strings=class|name,req=false " \

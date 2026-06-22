@@ -60,7 +60,7 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(const st
     for (size_t i=0;i<x.size();i++) {
         if (splitters[i] == nullptr) {
             // should copy from saved splitter but we'll just let go
-            splitters[i] = new GaussianSplitter<num_features, num_labels>(i);
+            splitters[i] = new GaussianSplitter<num_features, num_labels>();
         }
         splitters[i]->update(x[i], y, w);
     }
@@ -168,7 +168,7 @@ void RandomLeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(co
         int fi = feature_indices[i];
         if (this->splitters[fi] == nullptr) {
             // should copy from saved splitter but we'll just let go
-            this->splitters[fi] = new GaussianSplitter<num_features, num_labels>(fi);
+            this->splitters[fi] = new GaussianSplitter<num_features, num_labels>();
         }
         this->splitters[fi]->update(x[fi], y, w);
     }

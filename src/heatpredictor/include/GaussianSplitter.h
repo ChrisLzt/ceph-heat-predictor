@@ -65,8 +65,8 @@ private:
         return res;
     }
     std::pair<std::vector<double>, std::vector<double> > _class_dists_from_binary_split(double split_value) {
-        std::vector<double> lhs_dist(num_labels, -1.0);
-        std::vector<double> rhs_dist(num_labels, -1.0);
+        std::vector<double> lhs_dist(num_labels, 0);
+        std::vector<double> rhs_dist(num_labels, 0);
         for (int i=0;i<num_labels;i++) {
             if (split_value < _min_per_class[i]) {
                 rhs_dist[i] = _att_dist_per_class[i].n;
@@ -80,7 +80,7 @@ private:
         return std::make_pair(lhs_dist, rhs_dist);
     }
 public:
-    GaussianSplitter(int n_split=10) : n_split(n_split) {}
+    GaussianSplitter(int n_split=5) : n_split(n_split) {}
     void update(double att_val, int target_val, double w=1.0) {
         if (att_val < _min_per_class[target_val]) _min_per_class[target_val] = att_val;
         if (att_val > _max_per_class[target_val]) _max_per_class[target_val] = att_val;

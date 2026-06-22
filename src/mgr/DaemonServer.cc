@@ -63,6 +63,80 @@ namespace {
       && std::equal(lhs.begin(), lhs.end(), rhs.begin(),
                     [] (auto a, auto b) { return a.first == b.first && a.second == b.second; });
   }
+
+  const std::vector<std::string> object_hp_counter_fields = {
+    "hp_count",
+    "hp_labeled_total",
+    "hp_true_positive_count",
+    "hp_false_positive_count",
+    "hp_true_negative_count",
+    "hp_false_negative_count",
+    "hp_pred_hot_percent",
+    "hp_eval_pred_hot_percent",
+    "hp_eval_actual_hot_percent",
+    "hp_hot_accuracy",
+    "hp_hot_precision",
+    "hp_hot_recall",
+    "hp_hot_threshold",
+    "hp_train_queue_length",
+    "hp_swap_count",
+    "hp_dequeue_waiting_count",
+    "hp_dequeue_max_size_count",
+    "hp_op_read_count",
+    "hp_op_sync_read_count",
+    "hp_op_sparse_read_count",
+    "hp_op_write_count",
+    "hp_op_writefull_count",
+    "hp_op_writesame_count",
+  };
+
+  const std::set<std::string> object_hp_sum_fields = {
+    "hp_count",
+    "hp_labeled_total",
+    "hp_true_positive_count",
+    "hp_false_positive_count",
+    "hp_true_negative_count",
+    "hp_false_negative_count",
+    "hp_train_queue_length",
+    "hp_swap_count",
+    "hp_dequeue_waiting_count",
+    "hp_dequeue_max_size_count",
+    "hp_op_read_count",
+    "hp_op_sync_read_count",
+    "hp_op_sparse_read_count",
+    "hp_op_write_count",
+    "hp_op_writefull_count",
+    "hp_op_writesame_count",
+  };
+
+  uint64_t hp_ratio10000(uint64_t numerator, uint64_t denominator)
+  {
+    if (denominator == 0 || numerator == 0) {
+      return 0;
+    }
+    return static_cast<uint64_t>(
+      (static_cast<long double>(numerator) * 10000) / denominator);
+  }
+
+  bool get_object_hp_counter(
+    const DaemonStatePtr& state,
+    const std::string& field,
+    uint64_t *value)
+  {
+    const std::string path = "object_hp_status." + field;
+    auto i = state->perf_counters.instances.find(path);
+    if (i == state->perf_counters.instances.end()) {
+      return false;
+    }
+    auto t = state->perf_counters.types.find(path);
+    if (t == state->perf_counters.types.end() ||
+        (t->second.type & PERFCOUNTER_LONGRUNAVG) ||
+        i->second.get_data().empty()) {
+      return false;
+    }
+    *value = i->second.get_latest_data().v;
+    return true;
+  }
 }
 
 DaemonServer::DaemonServer(MonClient *monc_,
@@ -1551,6 +1625,201 @@ bool DaemonServer::_handle_command(
 			      &on_finish->from_mon, &on_finish->outs, on_finish);
       return true;
     }
+  } else if (prefix == "osd hp status") {
+    if (!f) {
+      f.reset(Formatter::create("json-pretty"));
+    }
+    std::set<int32_t> up_osds;
+    cluster_state.with_osdmap([&](const OSDMap& osdmap) {
+      osdmap.get_up_osds(up_osds);
+    });
+
+    std::map<std::string, uint64_t> summary;
+    std::map<std::string, long double> weighted_sum;
+    std::map<std::string, uint64_t> weighted_count;
+    std::vector<int32_t> missing_osds;
+
+    for (auto osd : up_osds) {
+      DaemonStatePtr state = daemon_state.get(DaemonKey{"osd", std::to_string(osd)});
+      if (!state) {
+        missing_osds.push_back(osd);
+        continue;
+      }
+
+      std::map<std::string, uint64_t> values;
+      {
+        std::lock_guard l(state->lock);
+        uint64_t hp_count = 0;
+        uint64_t labeled_total = 0;
+        bool has_hp_count = get_object_hp_counter(state, "hp_count", &hp_count);
+        bool has_labeled_total =
+          get_object_hp_counter(state, "hp_labeled_total", &labeled_total);
+        if (!has_hp_count && !has_labeled_total) {
+          missing_osds.push_back(osd);
+          continue;
+        }
+        for (const auto& field : object_hp_counter_fields) {
+          uint64_t value = 0;
+          if (get_object_hp_counter(state, field, &value)) {
+            values[field] = value;
+          }
+        }
+      }
+
+      for (const auto& field : object_hp_counter_fields) {
+        auto value = values.find(field);
+        if (value != values.end()) {
+          if (object_hp_sum_fields.count(field)) {
+            summary[field] += value->second;
+          }
+        }
+      }
+
+      uint64_t hp_count = values["hp_count"];
+      auto pred_hot = values.find("hp_pred_hot_percent");
+      if (pred_hot != values.end() && hp_count > 0) {
+        weighted_sum["hp_pred_hot_percent"] +=
+          static_cast<long double>(pred_hot->second) * hp_count;
+        weighted_count["hp_pred_hot_percent"] += hp_count;
+      }
+    }
+
+    f->open_object_section("osd_hp_status");
+    f->open_object_section("summary");
+
+    f->open_object_section("osds");
+    f->dump_unsigned("up_osds", up_osds.size());
+    f->dump_unsigned("reporting_osds", up_osds.size() - missing_osds.size());
+    f->close_section();
+
+    f->open_object_section("samples");
+    f->dump_unsigned("hp_count", summary["hp_count"]);
+    f->dump_unsigned("hp_labeled_total", summary["hp_labeled_total"]);
+    f->close_section();
+
+    f->open_object_section("confusion_matrix");
+    f->dump_unsigned("hp_true_positive_count", summary["hp_true_positive_count"]);
+    f->dump_unsigned("hp_false_positive_count", summary["hp_false_positive_count"]);
+    f->dump_unsigned("hp_true_negative_count", summary["hp_true_negative_count"]);
+    f->dump_unsigned("hp_false_negative_count", summary["hp_false_negative_count"]);
+    f->close_section();
+
+    f->open_object_section("prediction");
+    {
+      uint64_t weight = weighted_count["hp_pred_hot_percent"];
+      f->dump_unsigned("hp_pred_hot_percent",
+                       weight > 0 ? static_cast<uint64_t>(
+                         weighted_sum["hp_pred_hot_percent"] / weight) : 0);
+    }
+    const uint64_t tp = summary["hp_true_positive_count"];
+    const uint64_t fp = summary["hp_false_positive_count"];
+    const uint64_t tn = summary["hp_true_negative_count"];
+    const uint64_t fn = summary["hp_false_negative_count"];
+    const uint64_t labeled_total = tp + fp + tn + fn;
+    f->dump_unsigned("hp_eval_pred_hot_percent", hp_ratio10000(tp + fp, labeled_total));
+    f->dump_unsigned("hp_eval_actual_hot_percent", hp_ratio10000(tp + fn, labeled_total));
+    f->dump_unsigned("hp_hot_accuracy", hp_ratio10000(tp + tn, labeled_total));
+    f->dump_unsigned("hp_hot_precision", hp_ratio10000(tp, tp + fp));
+    f->dump_unsigned("hp_hot_recall", hp_ratio10000(tp, tp + fn));
+    f->close_section();
+
+    f->open_object_section("training");
+    f->dump_unsigned("hp_train_queue_length", summary["hp_train_queue_length"]);
+    f->dump_unsigned("hp_swap_count", summary["hp_swap_count"]);
+    f->close_section();
+
+    f->open_object_section("label_queue");
+    f->dump_unsigned("hp_dequeue_waiting_count", summary["hp_dequeue_waiting_count"]);
+    f->dump_unsigned("hp_dequeue_max_size_count", summary["hp_dequeue_max_size_count"]);
+    f->close_section();
+
+    f->open_object_section("read_ops");
+    f->dump_unsigned("hp_op_read_count", summary["hp_op_read_count"]);
+    f->dump_unsigned("hp_op_sync_read_count", summary["hp_op_sync_read_count"]);
+    f->dump_unsigned("hp_op_sparse_read_count", summary["hp_op_sparse_read_count"]);
+    f->close_section();
+
+    f->open_object_section("write_ops");
+    f->dump_unsigned("hp_op_write_count", summary["hp_op_write_count"]);
+    f->dump_unsigned("hp_op_writefull_count", summary["hp_op_writefull_count"]);
+    f->dump_unsigned("hp_op_writesame_count", summary["hp_op_writesame_count"]);
+    f->close_section();
+
+    f->close_section();
+
+    f->open_array_section("missing_osds");
+    for (auto osd : missing_osds) {
+      f->dump_int("osd", osd);
+    }
+    f->close_section();
+    f->close_section();
+
+    f->flush(cmdctx->odata);
+    cmdctx->reply(0, ss);
+    return true;
+  } else if (prefix == "osd hp reset") {
+    if (!f) {
+      f.reset(Formatter::create("json-pretty"));
+    }
+    std::set<int32_t> up_osds;
+    cluster_state.with_osdmap([&](const OSDMap& osdmap) {
+      osdmap.get_up_osds(up_osds);
+    });
+
+    std::vector<int32_t> sent_osds;
+    std::vector<int32_t> missing_osds;
+    const std::string reset_cmd = "{\"prefix\":\"object_hp reset\"}";
+    for (auto osd : up_osds) {
+      auto p = osd_cons.find(osd);
+      if (p == osd_cons.end() || p->second.empty()) {
+        missing_osds.push_back(osd);
+        continue;
+      }
+      sent_osds.push_back(osd);
+      ceph_tid_t tid;
+      bufferlist inbl;
+      py_modules.get_objecter().osd_command(
+        osd,
+        {reset_cmd},
+        inbl,
+        &tid,
+        [osd](boost::system::error_code ec, std::string outs, bufferlist outbl) {
+          if (ec) {
+            dout(1) << "object_hp reset failed on osd." << osd
+                    << ": " << ec.message() << " " << outs << dendl;
+          } else {
+            dout(10) << "object_hp reset finished on osd." << osd
+                     << ": " << outs << dendl;
+          }
+        });
+    }
+
+    f->open_object_section("osd_hp_reset");
+    f->dump_unsigned("requested", up_osds.size());
+    f->dump_unsigned("sent", sent_osds.size());
+    f->dump_unsigned("not_connected", missing_osds.size());
+    f->open_array_section("sent_osds");
+    for (auto osd : sent_osds) {
+      f->dump_int("osd", osd);
+    }
+    f->close_section();
+    f->open_array_section("not_connected_osds");
+    for (auto osd : missing_osds) {
+      f->dump_int("osd", osd);
+    }
+    f->close_section();
+    f->close_section();
+    f->flush(cmdctx->odata);
+
+    if (!missing_osds.empty()) {
+      ss << "sent object_hp reset to " << sent_osds.size()
+         << " osd(s); " << missing_osds.size() << " osd(s) not connected";
+      r = sent_osds.empty() ? -EAGAIN : 0;
+    } else {
+      ss << "sent object_hp reset to " << sent_osds.size() << " osd(s)";
+    }
+    cmdctx->reply(r, ss);
+    return true;
   } else if (prefix == "osd df") {
     string method, filter;
     cmd_getval(cmdctx->cmdmap, "output_method", method);

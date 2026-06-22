@@ -3,10 +3,15 @@
 
 #include "include/common_fwd.h"
 
+namespace ceph {
+class Formatter;
+}
+
 struct ceph_osd_op;
 struct hobject_t;
 
 void init_osd_object_hp_status(CephContext *cct);
+void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f);
 void hp_notify_osd_object_op(CephContext *cct,
                              const hobject_t& soid,
                              const ceph_osd_op& op);

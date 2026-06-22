@@ -8,6 +8,7 @@
 #include <memory>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <thread>
 #include <chrono>
@@ -22,8 +23,8 @@
 #include "common/debug.h"
 
 #define NUM_FEATURES 5
-static constexpr uint64_t HP_BUCKET_SHIFT = 20;
-static constexpr double HP_HOT_QUANTILE = 0.85;
+static constexpr uint64_t HP_BUCKET_SHIFT = 12;
+static constexpr double HP_HOT_QUANTILE = 0.80;
 
 struct TraceItem {
     uint64_t index;
@@ -233,9 +234,18 @@ public:
         );
     }
 
+    // reset_mutex gates full-state reset against foreground prediction and
+    // background training without serializing normal predict/train concurrency.
+    mutable std::shared_mutex reset_mutex;
+
     // ── 双缓冲模型 ──────────────────────────────────────────────
-    // active_model : 前台预测，predict() 在 swap_mutex 下拷贝 shared_ptr 后无锁读取
-    // shadow_model : 后台训练线程独占，每 SWAP_INTERVAL 次训练后与 active_model 直接 swap
+    // active_model : 前台预测模型。predict() 全程持有 swap_mutex 调用
+    //                predict_one()，避免 swap 后旧 active 变成 shadow 并被
+    //                后台训练线程并发写入。
+    // shadow_model : 后台训练模型。每训练 SWAP_INTERVAL 个样本后，在
+    //                swap_mutex 下与 active_model 直接 swap。
+    // 如果未来要缩短锁范围，需要改成 shadow 连续训练、active 使用只读
+    // 快照发布，不能只拷贝 shared_ptr 后无锁读取。
     std::shared_ptr<Classifier> active_model;
     std::shared_ptr<Classifier> shadow_model;
     mutable std::mutex swap_mutex;
@@ -290,6 +300,12 @@ public:
 
             if (!train_running && train_queue.empty()) break;
 
+            lock.unlock();
+            std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+            lock.lock();
+            if (!train_running && train_queue.empty()) break;
+            if (train_queue.empty()) continue;
+
             std::queue<TrainingSample> batch;
             std::swap(batch, train_queue);
             lock.unlock();
@@ -299,7 +315,7 @@ public:
                 batch.pop();
 
                 sample.label ? actual_hot++ : actual_cold++;
-                double weight = sample.label ? 2.0 : 1.0;
+                double weight = sample.label ? 1.2 : 1.0;
                 shadow_model->learn_one(to_feat(sample.item), sample.label, weight);
                 if (sample.update_accu)
                     accu.update(sample.label, sample.item.pred);
@@ -338,11 +354,49 @@ public:
     HeatPredictor(const HeatPredictor&) = delete;
     HeatPredictor& operator=(const HeatPredictor&) = delete;
 
-    int predict(uint64_t index, int operation, uint64_t size,
+    void reset() {
+        std::unique_lock<std::shared_mutex> reset_lock(reset_mutex);
+
+        {
+            std::lock_guard<std::mutex> lock(train_queue_mutex);
+            std::queue<TrainingSample> empty;
+            std::swap(train_queue, empty);
+        }
+        pending_notify.store(0);
+
+        {
+            std::lock_guard<std::mutex> lock(swap_mutex);
+            active_model.reset(make_model());
+            shadow_model.reset(make_model());
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(eq_mutex);
+            eq = std::make_unique<EvaluationQueue>();
+        }
+
+        accu.clear();
+        shadow_train_count = 0;
+        swap_count.store(0);
+        hp_index.store(0);
+        hot_cnt.store(0);
+        cold_cnt.store(0);
+        actual_hot.store(0);
+        actual_cold.store(0);
+    }
+
+    int predict(int operation, uint64_t size,
             int64_t pool, uint64_t ceph_object_hash, uint64_t object_name_hash,
             uint64_t object_offset,
+            uint64_t *index_out,
             int update_accu) {
         ensure_started();
+
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        uint64_t index = hp_index.fetch_add(1) + 1;
+        if (index_out != nullptr) {
+            *index_out = index;
+        }
 
         uint64_t object_hash = make_object_hash(ceph_object_hash, object_name_hash);
         uint64_t object_bucket = object_offset >> HP_BUCKET_SHIFT;
@@ -410,16 +464,30 @@ public:
     double get_hot_precision() { return accu.get_hot_precision(); }
     double get_hot_recall() { return accu.get_hot_recall(); }
     double get_hot_prediction_percent() { return accu.get_hot_prediction_percent(); }
-    double get_hot_threshold() { return eq->hot_threshold.load(); }
+    uint64_t get_true_positives() { return accu.true_positives(); }
+    uint64_t get_false_positives() { return accu.false_positives(); }
+    uint64_t get_true_negatives() { return accu.true_negatives(); }
+    uint64_t get_false_negatives() { return accu.false_negatives(); }
+    double get_hot_threshold() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        return eq->hot_threshold.load();
+    }
     size_t get_train_queue_length() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> lock(train_queue_mutex);
         return train_queue.size();
     }
     uint64_t get_swap_count() { return swap_count.load(); }
     uint64_t get_actual_hot() { return actual_hot.load(); }
     uint64_t get_actual_cold() { return actual_cold.load(); }
-    uint64_t get_dequeue_waiting_count() { return eq->dequeue_waiting_count.load(); }
-    uint64_t get_dequeue_max_size_count() { return eq->dequeue_max_size_count.load(); }
+    uint64_t get_dequeue_waiting_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        return eq->dequeue_waiting_count.load();
+    }
+    uint64_t get_dequeue_max_size_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        return eq->dequeue_max_size_count.load();
+    }
 };
 
 #endif
