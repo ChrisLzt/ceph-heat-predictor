@@ -26,8 +26,11 @@ static constexpr uint64_t object_hp_logger_update_interval = 1000;
 
 enum {
   object_hp_first = 592000,
-  object_hp_count,
-  object_hp_labeled_total,
+  object_hp_io_count,
+  object_hp_labeled_io_total,
+  object_hp_pending_io_count,
+  object_hp_heat_state_count,
+  object_hp_lru_count,
   object_hp_true_positive_count,
   object_hp_false_positive_count,
   object_hp_true_negative_count,
@@ -40,9 +43,8 @@ enum {
   object_hp_hot_recall,
   object_hp_hot_threshold,
   object_hp_train_queue_length,
+  object_hp_train_drop_count,
   object_hp_swap_count,
-  object_hp_dequeue_waiting_count,
-  object_hp_dequeue_max_size_count,
   object_hp_op_read_count,
   object_hp_op_sync_read_count,
   object_hp_op_sparse_read_count,
@@ -104,8 +106,11 @@ static void hp_ensure_object_logger(CephContext *cct)
 
   PerfCountersBuilder b(cct, "object_hp_status", object_hp_first, object_hp_last);
   b.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
-  b.add_u64(object_hp_count, "hp_count", "count");
-  b.add_u64(object_hp_labeled_total, "hp_labeled_total", "labeled sample total");
+  b.add_u64(object_hp_io_count, "hp_io_count", "predicted I/O total");
+  b.add_u64(object_hp_labeled_io_total, "hp_labeled_io_total", "evaluated I/O total");
+  b.add_u64(object_hp_pending_io_count, "hp_pending_io_count", "pending evaluation I/O count");
+  b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked bucket heat state count");
+  b.add_u64(object_hp_lru_count, "hp_lru_count", "bucket heat states in LRU");
   b.add_u64(object_hp_true_positive_count, "hp_true_positive_count", "true positive count");
   b.add_u64(object_hp_false_positive_count, "hp_false_positive_count", "false positive count");
   b.add_u64(object_hp_true_negative_count, "hp_true_negative_count", "true negative count");
@@ -118,9 +123,8 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_hot_recall, "hp_hot_recall", "hot recall (x10000)");
   b.add_u64(object_hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
   b.add_u64(object_hp_train_queue_length, "hp_train_queue_length", "train queue length");
+  b.add_u64(object_hp_train_drop_count, "hp_train_drop_count", "dropped training sample count");
   b.add_u64(object_hp_swap_count, "hp_swap_count", "model swap count");
-  b.add_u64(object_hp_dequeue_waiting_count, "hp_dequeue_waiting_count", "dequeue count caused by waiting timeout");
-  b.add_u64(object_hp_dequeue_max_size_count, "hp_dequeue_max_size_count", "dequeue count caused by queue max size");
   b.add_u64(object_hp_op_read_count, "hp_op_read_count", "read op count");
   b.add_u64(object_hp_op_sync_read_count, "hp_op_sync_read_count", "sync read op count");
   b.add_u64(object_hp_op_sparse_read_count, "hp_op_sparse_read_count", "sparse read op count");
@@ -139,30 +143,34 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
     return;
   }
 
-  uint64_t cnt = osd_object_heat_predictor.hp_index.load();
-  uint64_t train_total = osd_object_heat_predictor.get_total_weight();
-  uint64_t true_positive = osd_object_heat_predictor.get_true_positives();
-  uint64_t false_positive = osd_object_heat_predictor.get_false_positives();
-  uint64_t true_negative = osd_object_heat_predictor.get_true_negatives();
-  uint64_t false_negative = osd_object_heat_predictor.get_false_negatives();
-  uint64_t hot_cnt = osd_object_heat_predictor.hot_cnt.load();
-  uint64_t cold_cnt = osd_object_heat_predictor.cold_cnt.load();
+  auto stats = osd_object_heat_predictor.get_evaluation_stats();
+  uint64_t io_count = stats.io_count;
+  uint64_t labeled_io_total = stats.labeled_io_total;
+  uint64_t true_positive = stats.true_positive;
+  uint64_t false_positive = stats.false_positive;
+  uint64_t true_negative = stats.true_negative;
+  uint64_t false_negative = stats.false_negative;
+  uint64_t hot_cnt = stats.predicted_hot;
+  uint64_t cold_cnt = stats.predicted_cold;
   double hot_percent = (hot_cnt + cold_cnt > 0)
     ? static_cast<double>(hot_cnt) / (hot_cnt + cold_cnt) : 0;
   uint64_t pred_hot_percent = hp_mul10000(hot_percent);
   uint64_t eval_pred_hot_percent =
-    hp_ratio10000(true_positive + false_positive, train_total);
+    hp_ratio10000(true_positive + false_positive, labeled_io_total);
   uint64_t eval_actual_hot_percent =
-    hp_ratio10000(true_positive + false_negative, train_total);
+    hp_ratio10000(true_positive + false_negative, labeled_io_total);
   uint64_t hot_accuracy =
-    hp_ratio10000(true_positive + true_negative, train_total);
+    hp_ratio10000(true_positive + true_negative, labeled_io_total);
   uint64_t hot_precision =
     hp_ratio10000(true_positive, true_positive + false_positive);
   uint64_t hot_recall =
     hp_ratio10000(true_positive, true_positive + false_negative);
 
-  logger->set(object_hp_count, cnt);
-  logger->set(object_hp_labeled_total, train_total);
+  logger->set(object_hp_io_count, io_count);
+  logger->set(object_hp_labeled_io_total, labeled_io_total);
+  logger->set(object_hp_pending_io_count, stats.pending_io_count);
+  logger->set(object_hp_heat_state_count, stats.heat_state_count);
+  logger->set(object_hp_lru_count, stats.lru_count);
   logger->set(object_hp_true_positive_count, true_positive);
   logger->set(object_hp_false_positive_count, false_positive);
   logger->set(object_hp_true_negative_count, true_negative);
@@ -173,11 +181,10 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   logger->set(object_hp_hot_accuracy, hot_accuracy);
   logger->set(object_hp_hot_precision, hot_precision);
   logger->set(object_hp_hot_recall, hot_recall);
-  logger->set(object_hp_hot_threshold, hp_mul10000(osd_object_heat_predictor.get_hot_threshold()));
+  logger->set(object_hp_hot_threshold, hp_mul10000(stats.hot_threshold));
   logger->set(object_hp_train_queue_length, osd_object_heat_predictor.get_train_queue_length());
+  logger->set(object_hp_train_drop_count, osd_object_heat_predictor.get_train_drop_count());
   logger->set(object_hp_swap_count, osd_object_heat_predictor.get_swap_count());
-  logger->set(object_hp_dequeue_waiting_count, osd_object_heat_predictor.get_dequeue_waiting_count());
-  logger->set(object_hp_dequeue_max_size_count, osd_object_heat_predictor.get_dequeue_max_size_count());
   logger->set(object_hp_op_read_count, osd_object_hp_op_counters.read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sync_read_count, osd_object_hp_op_counters.sync_read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sparse_read_count, osd_object_hp_op_counters.sparse_read.load(std::memory_order_relaxed));
@@ -195,8 +202,11 @@ static void hp_zero_object_logger()
   }
 
   logger->reset();
-  logger->set(object_hp_count, 0);
-  logger->set(object_hp_labeled_total, 0);
+  logger->set(object_hp_io_count, 0);
+  logger->set(object_hp_labeled_io_total, 0);
+  logger->set(object_hp_pending_io_count, 0);
+  logger->set(object_hp_heat_state_count, 0);
+  logger->set(object_hp_lru_count, 0);
   logger->set(object_hp_true_positive_count, 0);
   logger->set(object_hp_false_positive_count, 0);
   logger->set(object_hp_true_negative_count, 0);
@@ -209,9 +219,8 @@ static void hp_zero_object_logger()
   logger->set(object_hp_hot_recall, 0);
   logger->set(object_hp_hot_threshold, 0);
   logger->set(object_hp_train_queue_length, 0);
+  logger->set(object_hp_train_drop_count, 0);
   logger->set(object_hp_swap_count, 0);
-  logger->set(object_hp_dequeue_waiting_count, 0);
-  logger->set(object_hp_dequeue_max_size_count, 0);
   logger->set(object_hp_op_read_count, 0);
   logger->set(object_hp_op_sync_read_count, 0);
   logger->set(object_hp_op_sparse_read_count, 0);
@@ -311,16 +320,21 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
   std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
 
   hp_ensure_object_logger(cct);
-  osd_object_heat_predictor.reset();
+  uint64_t discarded_pending_io = osd_object_heat_predictor.reset();
   hp_reset_osd_op_counters();
   hp_zero_object_logger();
 
   if (f != nullptr) {
     f->open_object_section("object_hp_reset");
     f->dump_bool("ok", true);
-    f->dump_unsigned("hp_count", osd_object_heat_predictor.hp_index.load());
-    f->dump_unsigned("hp_labeled_total", osd_object_heat_predictor.get_total_weight());
+    f->dump_unsigned("discarded_pending_io", discarded_pending_io);
+    f->dump_unsigned("hp_io_count", osd_object_heat_predictor.hp_index.load());
+    f->dump_unsigned("hp_labeled_io_total", osd_object_heat_predictor.get_total_weight());
+    f->dump_unsigned("hp_pending_io_count", osd_object_heat_predictor.get_pending_io_count());
+    f->dump_unsigned("hp_heat_state_count", osd_object_heat_predictor.get_heat_state_count());
+    f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
     f->dump_unsigned("hp_train_queue_length", osd_object_heat_predictor.get_train_queue_length());
+    f->dump_unsigned("hp_train_drop_count", osd_object_heat_predictor.get_train_drop_count());
     f->dump_unsigned("hp_swap_count", osd_object_heat_predictor.get_swap_count());
     f->close_section();
   }
@@ -353,8 +367,7 @@ void hp_notify_osd_object_op(CephContext *cct,
     soid.get_hash(),
     std::hash<object_t>{}(soid.oid),
     offset,
-    &index,
-    1);
+    &index);
   auto end_time = ceph::mono_clock::now();
   if (hp_should_update_object_logger(index)) {
     hp_update_object_logger(end_time - start_time);

@@ -65,8 +65,11 @@ namespace {
   }
 
   const std::vector<std::string> object_hp_counter_fields = {
-    "hp_count",
-    "hp_labeled_total",
+    "hp_io_count",
+    "hp_labeled_io_total",
+    "hp_pending_io_count",
+    "hp_heat_state_count",
+    "hp_lru_count",
     "hp_true_positive_count",
     "hp_false_positive_count",
     "hp_true_negative_count",
@@ -79,9 +82,8 @@ namespace {
     "hp_hot_recall",
     "hp_hot_threshold",
     "hp_train_queue_length",
+    "hp_train_drop_count",
     "hp_swap_count",
-    "hp_dequeue_waiting_count",
-    "hp_dequeue_max_size_count",
     "hp_op_read_count",
     "hp_op_sync_read_count",
     "hp_op_sparse_read_count",
@@ -91,16 +93,18 @@ namespace {
   };
 
   const std::set<std::string> object_hp_sum_fields = {
-    "hp_count",
-    "hp_labeled_total",
+    "hp_io_count",
+    "hp_labeled_io_total",
+    "hp_pending_io_count",
+    "hp_heat_state_count",
+    "hp_lru_count",
     "hp_true_positive_count",
     "hp_false_positive_count",
     "hp_true_negative_count",
     "hp_false_negative_count",
     "hp_train_queue_length",
+    "hp_train_drop_count",
     "hp_swap_count",
-    "hp_dequeue_waiting_count",
-    "hp_dequeue_max_size_count",
     "hp_op_read_count",
     "hp_op_sync_read_count",
     "hp_op_sparse_read_count",
@@ -135,6 +139,29 @@ namespace {
       return false;
     }
     *value = i->second.get_latest_data().v;
+    return true;
+  }
+
+  bool get_object_hp_average(
+    const DaemonStatePtr& state,
+    const std::string& field,
+    uint64_t *sum,
+    uint64_t *count)
+  {
+    const std::string path = "object_hp_status." + field;
+    auto i = state->perf_counters.instances.find(path);
+    if (i == state->perf_counters.instances.end()) {
+      return false;
+    }
+    auto t = state->perf_counters.types.find(path);
+    if (t == state->perf_counters.types.end() ||
+        !(t->second.type & PERFCOUNTER_LONGRUNAVG) ||
+        i->second.get_data_avg().empty()) {
+      return false;
+    }
+    const auto& latest = i->second.get_latest_data_avg();
+    *sum = latest.s;
+    *count = latest.c;
     return true;
   }
 }
@@ -1638,6 +1665,8 @@ bool DaemonServer::_handle_command(
     std::map<std::string, long double> weighted_sum;
     std::map<std::string, uint64_t> weighted_count;
     std::vector<int32_t> missing_osds;
+    uint64_t predict_latency_sum_ns = 0;
+    uint64_t predict_latency_count = 0;
 
     for (auto osd : up_osds) {
       DaemonStatePtr state = daemon_state.get(DaemonKey{"osd", std::to_string(osd)});
@@ -1649,12 +1678,14 @@ bool DaemonServer::_handle_command(
       std::map<std::string, uint64_t> values;
       {
         std::lock_guard l(state->lock);
-        uint64_t hp_count = 0;
-        uint64_t labeled_total = 0;
-        bool has_hp_count = get_object_hp_counter(state, "hp_count", &hp_count);
-        bool has_labeled_total =
-          get_object_hp_counter(state, "hp_labeled_total", &labeled_total);
-        if (!has_hp_count && !has_labeled_total) {
+        uint64_t hp_io_count = 0;
+        uint64_t labeled_io_total = 0;
+        bool has_hp_io_count =
+          get_object_hp_counter(state, "hp_io_count", &hp_io_count);
+        bool has_labeled_io_total =
+          get_object_hp_counter(
+            state, "hp_labeled_io_total", &labeled_io_total);
+        if (!has_hp_io_count && !has_labeled_io_total) {
           missing_osds.push_back(osd);
           continue;
         }
@@ -1663,6 +1694,14 @@ bool DaemonServer::_handle_command(
           if (get_object_hp_counter(state, field, &value)) {
             values[field] = value;
           }
+        }
+        uint64_t latency_sum_ns = 0;
+        uint64_t latency_count = 0;
+        if (get_object_hp_average(
+              state, "hp_predict_latency",
+              &latency_sum_ns, &latency_count)) {
+          predict_latency_sum_ns += latency_sum_ns;
+          predict_latency_count += latency_count;
         }
       }
 
@@ -1675,12 +1714,12 @@ bool DaemonServer::_handle_command(
         }
       }
 
-      uint64_t hp_count = values["hp_count"];
+      uint64_t hp_io_count = values["hp_io_count"];
       auto pred_hot = values.find("hp_pred_hot_percent");
-      if (pred_hot != values.end() && hp_count > 0) {
+      if (pred_hot != values.end() && hp_io_count > 0) {
         weighted_sum["hp_pred_hot_percent"] +=
-          static_cast<long double>(pred_hot->second) * hp_count;
-        weighted_count["hp_pred_hot_percent"] += hp_count;
+          static_cast<long double>(pred_hot->second) * hp_io_count;
+        weighted_count["hp_pred_hot_percent"] += hp_io_count;
       }
     }
 
@@ -1693,8 +1732,14 @@ bool DaemonServer::_handle_command(
     f->close_section();
 
     f->open_object_section("samples");
-    f->dump_unsigned("hp_count", summary["hp_count"]);
-    f->dump_unsigned("hp_labeled_total", summary["hp_labeled_total"]);
+    f->dump_unsigned("hp_io_count", summary["hp_io_count"]);
+    f->dump_unsigned("hp_labeled_io_total", summary["hp_labeled_io_total"]);
+    f->dump_unsigned("hp_pending_io_count", summary["hp_pending_io_count"]);
+    f->close_section();
+
+    f->open_object_section("heat_state");
+    f->dump_unsigned("hp_heat_state_count", summary["hp_heat_state_count"]);
+    f->dump_unsigned("hp_lru_count", summary["hp_lru_count"]);
     f->close_section();
 
     f->open_object_section("confusion_matrix");
@@ -1725,12 +1770,20 @@ bool DaemonServer::_handle_command(
 
     f->open_object_section("training");
     f->dump_unsigned("hp_train_queue_length", summary["hp_train_queue_length"]);
+    f->dump_unsigned("hp_train_drop_count", summary["hp_train_drop_count"]);
     f->dump_unsigned("hp_swap_count", summary["hp_swap_count"]);
     f->close_section();
 
-    f->open_object_section("label_queue");
-    f->dump_unsigned("hp_dequeue_waiting_count", summary["hp_dequeue_waiting_count"]);
-    f->dump_unsigned("hp_dequeue_max_size_count", summary["hp_dequeue_max_size_count"]);
+    f->open_object_section("latency");
+    f->open_object_section("hp_predict_latency");
+    f->dump_unsigned("avgcount", predict_latency_count);
+    f->dump_unsigned("sum_ns", predict_latency_sum_ns);
+    f->dump_unsigned(
+      "avgtime_ns",
+      predict_latency_count > 0
+        ? predict_latency_sum_ns / predict_latency_count
+        : 0);
+    f->close_section();
     f->close_section();
 
     f->open_object_section("read_ops");

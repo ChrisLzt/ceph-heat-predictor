@@ -1,4 +1,5 @@
 *~
+*.buildinfo
 *.co
 *.diff
 *.deb

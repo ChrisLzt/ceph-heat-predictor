@@ -1,6 +1,6 @@
 # CODEX Test Context
 
-本文档维护冷热识别测试流程。Ceph 实现细节见 `CODEX_CEPH.md`，ICFS 迁移细节见 `CODEX_ICFS.md`，单节点部署命令见 `Ceph操作手册.md`。
+本文档维护冷热识别测试流程。Ceph 实现细节见 `CODEX_CEPH.md`，ICFS 迁移细节见 `CODEX_ICFS.md`，单节点部署命令见 `CEPH_OPERATIONS_MANUAL.md`。
 
 ## Ceph 单节点测试
 
@@ -136,32 +136,39 @@ ceph osd hp reset
 - `hp_hot_precision`
 - `hp_hot_recall`
 - `hp_eval_actual_hot_percent`
-- `hp_dequeue_max_size_count`
+- `hp_pending_io_count`
+- `hp_train_drop_count`
 
 不要只看 `hp_hot_accuracy`。冷样本占多数时，全预测冷也可能得到较高 accuracy。
 
 ## 队列覆盖检查
 
-当前 Ceph 默认：
+当前 Ceph 默认如下。具体参数以 `src/heatpredictor/heat_predictor.h` 为准：
 
 ```text
-HP_BUCKET_SHIFT = 12      # 4KB
-EvaluationQueue max_size = 5000
+HP_BUCKET_SHIFT = 16      # 64KB
+HP_EVALUATION_WINDOW = 20000
+HP_THRESHOLD_HISTORY_CAPACITY = 400000
+HP_LRU_CAPACITY = 20000
 ```
 
 150GiB 数据集约有：
 
 ```text
-150 GiB / 4 KiB = 39,321,600 buckets
+150 GiB / 64 KiB = 2,457,600 buckets
 ```
 
-单 OSD 约 75GiB，即约 19,660,800 buckets。5000 队列无法覆盖整个数据集，这是预期结果。
+三个 OSD 均摊后单 OSD 约 50GiB，即约 819200 buckets。待评估队列只保存最近 20000
+条 I/O，共享热度表额外保留最多 20000 个无 pending bucket，不需要覆盖
+整个数据集。
 
 运行时判断：
 
-- `hp_dequeue_max_size_count` 增长：队列因容量上限出队，活跃 key 超过队列。
-- 只有 `hp_dequeue_waiting_count` 增长：可能活跃工作集较小，队列未被打满。
-- `hp_labeled_total` 增长：延迟标注正常发生。
+- 稳定运行时：`hp_io_count = hp_labeled_io_total + hp_pending_io_count`。
+- `hp_labeled_io_total` 增长：I/O 级延迟标注正常发生。
+- 单 OSD 的 `hp_pending_io_count` 稳定在 20000：评估窗口已填满。
+- `hp_lru_count` 不超过 20000：容量式 LRU 正常工作。
+- `hp_train_drop_count` 增长：后台训练消费速度不足。
 
 ## ICFS 多节点测试
 
