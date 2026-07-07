@@ -33,6 +33,7 @@ public:
     virtual BranchOrLeaf* next(const std::vector<double>& x) { throw std::runtime_error("Next Not Implied!"); }
     virtual BranchOrLeaf* traverse(const std::vector<double>& x, bool until_leaf=true) = 0;
     virtual std::vector<LeafNaiveBayesAdaptive<num_features, num_labels>*> iter_leaves() = 0;
+    virtual BranchOrLeaf* clone_for_prediction() const = 0;
     virtual void prediction(std::vector<double>& proba, const std::vector<double>& x) { throw std::runtime_error("Prediction Not Implied!"); }
     virtual void learn_one(const std::vector<double>& x, int y, double w=1.0) { throw std::runtime_error("Learning Not Implied!"); }
     virtual double total_weight() = 0;
@@ -61,6 +62,7 @@ public:
         return (children[0]->total_weight() < children[1]->total_weight()) ? children[1] : children[0];
     }
     BranchOrLeaf<num_features, num_labels>* next(const std::vector<double>& x) override { return children[branch_no(x)]; }
+    BranchOrLeaf<num_features, num_labels>* clone_for_prediction() const override;
     // currently no need for until_leaf
     BranchOrLeaf<num_features, num_labels>* traverse(const std::vector<double>& x, const bool until_leaf=true) override {
         BranchOrLeaf<num_features, num_labels>* cur = this;
@@ -115,6 +117,7 @@ protected:
     std::vector<GaussianSplitter<num_features, num_labels>*> splitters = std::vector<GaussianSplitter<num_features, num_labels>*>(num_features, nullptr);
     double _mc_correct_weight = 0.0;
     double _nb_correct_weight = 0.0;
+    void copy_leaf_state_to(LeafNaiveBayesAdaptive *copy) const;
 public:
     double last_split_attempt_at = 0.0;
     int depth;
@@ -148,7 +151,8 @@ public:
         return true;
     }
     void deactivate();
-    virtual void update_splitters(const std::vector<double>& x, int y, double w); 
+    BranchOrLeaf<num_features, num_labels>* clone_for_prediction() const override;
+    virtual void update_splitters(const std::vector<double>& x, int y, double w);
     void prediction(std::vector<double>& proba, const std::vector<double>& x) override;
     void learn_one(const std::vector<double>& x, int y, double w=1.0) override; 
 };
@@ -170,9 +174,10 @@ protected:
         feature_indices.assign(features.begin(), features.end());
     }
 public:
-    RandomLeafNaiveBayesAdaptive(int depth, int max_features) 
+    RandomLeafNaiveBayesAdaptive(int depth, int max_features)
         : LeafNaiveBayesAdaptive<num_features, num_labels>(depth), max_features(max_features) {}
-    virtual void update_splitters(const std::vector<double>& x, int y, double w); 
+    BranchOrLeaf<num_features, num_labels>* clone_for_prediction() const override;
+    virtual void update_splitters(const std::vector<double>& x, int y, double w);
 };
 
 class InfoGainSplitCriterion {

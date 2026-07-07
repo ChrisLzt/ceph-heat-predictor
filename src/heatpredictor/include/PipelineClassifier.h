@@ -1,10 +1,9 @@
 # ifndef PIPELINE_CLASSIFIER_H
 # define PIPELINE_CLASSIFIER_H
 
-# include <stdexcept>
-
 # include "Classifier.h"
 # include "Transformer.h"
+# include <memory>
 
 class PipelineClassifier : public Classifier {
 private:
@@ -27,7 +26,18 @@ public:
         return classifier->predict_one(transformer->transform_one(x));
     }
     std::vector<double> predict_proba_one(const std::vector<double>& x) override {
-        throw std::runtime_error("Prediction Proba Not Implied!");
+        return classifier->predict_proba_one(transformer->transform_one(x));
+    }
+    std::unique_ptr<Classifier> clone_for_prediction() const override {
+        std::unique_ptr<Transformer> transformer_copy = transformer->clone();
+        std::unique_ptr<Classifier> classifier_copy =
+            classifier->clone_for_prediction();
+        auto copy = std::unique_ptr<PipelineClassifier>(
+            new PipelineClassifier(
+                transformer_copy.get(), classifier_copy.get()));
+        transformer_copy.release();
+        classifier_copy.release();
+        return copy;
     }
 };
 

@@ -5,10 +5,10 @@
 - hostname：`s52`
 - MON IP：`192.168.1.52`
 - 数据盘：WD Green SN350 `/dev/nvme1n1`，序列号 `223447804020`
-- OSD：三个 200GiB 分区，对应 `osd.0/1/2`
+- OSD：两个 400GiB 分区，对应 `osd.0/1`
 - 副本：`size=1`、`min_size=1`
 
-三个 OSD 位于同一块物理 SSD，仅用于测试。不要操作系统盘 `/dev/nvme0n1`。
+两个 OSD 位于同一块物理 SSD，仅用于测试。不要操作系统盘 `/dev/nvme0n1`。
 
 ## 1. 环境变量
 
@@ -35,19 +35,14 @@ export EXTRA_CMAKE_ARGS="-DWITH_RADOSGW=OFF -DWITH_TESTS=OFF -DWITH_MGR_DASHBOAR
 mkdir -p "$CEPH_REPO/src/pybind/mgr/dashboard/frontend/dist"
 ```
 
-每次更新统一全量构建安装：
+每次代码更新后，Codex 可以直接执行全量构建、安装、ldconfig 和重启：
 
 ```bash
 cd "$CEPH_REPO/build"
-sudo ninja -j64
+sudo env CCACHE_TEMPDIR=/tmp ninja -j64
 sudo ninja install
 sudo ldconfig
-```
-
-重启服务：
-
-```bash
-sudo systemctl restart ceph-osd@0 ceph-osd@1 ceph-osd@2
+sudo systemctl restart ceph-osd@0 ceph-osd@1
 sudo systemctl restart ceph-mgr@${HOST}
 sudo ceph -s
 ```
@@ -121,7 +116,7 @@ sudo systemctl start ceph-mgr@${HOST}
 sudo ceph -s
 ```
 
-## 4. 创建三个 OSD
+## 4. 创建两个 OSD
 
 确认数据盘身份：
 
@@ -135,16 +130,15 @@ test "$(cat /sys/block/$(basename "$OSD_DISK")/device/serial)" = "$OSD_DISK_SERI
 ```bash
 sudo ceph-volume lvm zap "$OSD_DISK" --destroy
 sudo wipefs -a "$OSD_DISK"
-sudo parted -s "$OSD_DISK" mklabel gpt
-sudo parted -s "$OSD_DISK" mkpart ceph-osd-0 1MiB 200GiB
-sudo parted -s "$OSD_DISK" mkpart ceph-osd-1 200GiB 400GiB
-sudo parted -s "$OSD_DISK" mkpart ceph-osd-2 400GiB 600GiB
+sudo sgdisk -o \
+  -n 1:1MiB:+400GiB -t 1:8e00 -c 1:ceph-osd-0 \
+  -n 2:0:+400GiB -t 2:8e00 -c 2:ceph-osd-1 \
+  "$OSD_DISK"
 sudo partprobe "$OSD_DISK"
 sudo udevadm settle
 
 sudo ceph-volume lvm create --data "${OSD_DISK}p1"
 sudo ceph-volume lvm create --data "${OSD_DISK}p2"
-sudo ceph-volume lvm create --data "${OSD_DISK}p3"
 sudo ceph osd tree
 ```
 
@@ -159,12 +153,27 @@ sudo chown -R ceph:ceph /var/lib/ceph/mds/ceph-${HOST}
 sudo systemctl start ceph-mds@${HOST}
 
 sudo ceph osd pool create cephfs_meta 16 16
-sudo ceph osd pool create cephfs_data 64 64
+sudo ceph osd pool create cephfs_data 128 128
 sudo ceph osd pool set cephfs_meta size 1 --yes-i-really-mean-it
 sudo ceph osd pool set cephfs_meta min_size 1
+sudo ceph osd pool set cephfs_meta pg_autoscale_mode off
 sudo ceph osd pool set cephfs_data size 1 --yes-i-really-mean-it
 sudo ceph osd pool set cephfs_data min_size 1
+sudo ceph osd pool set cephfs_data pg_autoscale_mode off
 sudo ceph fs new myfs cephfs_meta cephfs_data
+```
+
+已有 CephFS 时只调整 PG 和关闭 autoscale：
+
+```bash
+sudo ceph osd pool set cephfs_data pg_num 128
+sudo ceph osd pool set cephfs_data pgp_num 128
+sudo ceph osd pool set cephfs_meta pg_num 16
+sudo ceph osd pool set cephfs_meta pgp_num 16
+sudo ceph osd pool set cephfs_data pg_autoscale_mode off
+sudo ceph osd pool set cephfs_meta pg_autoscale_mode off
+sudo ceph -s
+sudo ceph osd pool ls detail
 ```
 
 挂载：
@@ -176,6 +185,7 @@ sudo chmod 600 /etc/ceph/admin.secret
 sudo install -d -m 0755 /mnt/cephfs
 sudo mount -t ceph ${MON_IP}:6789:/ /mnt/cephfs \
   -o rw,name=admin,secretfile=/etc/ceph/admin.secret
+sudo chown lzt:lzt /mnt/cephfs
 sudo install -d -o "$USER" -g "$USER" -m 0755 /mnt/cephfs/vdbench
 ```
 
@@ -189,10 +199,10 @@ sudo install -d -o "$USER" -g "$USER" -m 0755 /mnt/cephfs/vdbench
 ```bash
 sudo ceph daemon osd.0 perf dump object_hp_status
 sudo ceph daemon osd.1 perf dump object_hp_status
-sudo ceph daemon osd.2 perf dump object_hp_status
 sudo ceph osd hp status -f json-pretty
 sudo ceph osd hp reset
 ```
 
-汇总包括 `samples`、`heat_state`、`confusion_matrix`、`prediction`、`training`、
-`latency`、`read_ops` 和 `write_ops`，重点看 precision、recall 及 TP/FP/TN/FN。
+汇总包括 `samples`、`heat_state`、`confusion_matrix`、`bucket_access`、
+`prediction`、`training`、`latency`、`read_ops` 和 `write_ops`。`bucket_access`
+是历史命名，当前按 object 级统计；重点看 precision、recall 及 TP/FP/TN/FN。

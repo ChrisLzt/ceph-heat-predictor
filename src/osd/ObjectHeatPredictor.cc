@@ -35,6 +35,34 @@ enum {
   object_hp_false_positive_count,
   object_hp_true_negative_count,
   object_hp_false_negative_count,
+  object_hp_actual_hot_object_avg_future_access_count,
+  object_hp_actual_cold_object_avg_future_access_count,
+  object_hp_actual_hot_object_avg_heat,
+  object_hp_actual_cold_object_avg_heat,
+  object_hp_actual_hot_future_access_max,
+  object_hp_actual_hot_future_access_p50,
+  object_hp_actual_hot_future_access_p90,
+  object_hp_actual_hot_future_access_p95,
+  object_hp_actual_hot_future_access_p99,
+  object_hp_actual_cold_future_access_max,
+  object_hp_actual_cold_future_access_p50,
+  object_hp_actual_cold_future_access_p90,
+  object_hp_actual_cold_future_access_p95,
+  object_hp_actual_cold_future_access_p99,
+  object_hp_actual_hot_future_heat_max,
+  object_hp_actual_hot_future_heat_p50,
+  object_hp_actual_hot_future_heat_p90,
+  object_hp_actual_hot_future_heat_p95,
+  object_hp_actual_hot_future_heat_p99,
+  object_hp_actual_cold_future_heat_max,
+  object_hp_actual_cold_future_heat_p50,
+  object_hp_actual_cold_future_heat_p90,
+  object_hp_actual_cold_future_heat_p95,
+  object_hp_actual_cold_future_heat_p99,
+  object_hp_future_access_hot_cold_ratio,
+  object_hp_future_heat_hot_cold_ratio,
+  object_hp_actual_hot_avg_pred_hot_percent,
+  object_hp_actual_cold_avg_pred_hot_percent,
   object_hp_pred_hot_percent,
   object_hp_eval_pred_hot_percent,
   object_hp_eval_actual_hot_percent,
@@ -44,7 +72,7 @@ enum {
   object_hp_hot_threshold,
   object_hp_train_queue_length,
   object_hp_train_drop_count,
-  object_hp_swap_count,
+  object_hp_snapshot_publish_count,
   object_hp_op_read_count,
   object_hp_op_sync_read_count,
   object_hp_op_sparse_read_count,
@@ -93,6 +121,40 @@ static inline uint64_t hp_ratio10000(uint64_t numerator, uint64_t denominator)
     (static_cast<long double>(numerator) * 10000) / denominator);
 }
 
+static inline uint64_t hp_avg10000(double sum, uint64_t count)
+{
+  if (count == 0 || sum <= 0) {
+    return 0;
+  }
+  return static_cast<uint64_t>(
+    (static_cast<long double>(sum) * 10000) / count);
+}
+
+static inline uint64_t hp_double_ratio10000(double numerator, double denominator)
+{
+  if (denominator <= 0 || numerator <= 0) {
+    return 0;
+  }
+  return static_cast<uint64_t>(
+    (static_cast<long double>(numerator) * 10000) / denominator);
+}
+
+static void hp_set_distribution_summary(
+  PerfCounters *logger,
+  int max_id,
+  int p50_id,
+  int p90_id,
+  int p95_id,
+  int p99_id,
+  const HpDistributionSummary& summary)
+{
+  logger->set(max_id, hp_mul10000(summary.max));
+  logger->set(p50_id, hp_mul10000(summary.p50));
+  logger->set(p90_id, hp_mul10000(summary.p90));
+  logger->set(p95_id, hp_mul10000(summary.p95));
+  logger->set(p99_id, hp_mul10000(summary.p99));
+}
+
 static void hp_ensure_object_logger(CephContext *cct)
 {
   if (osd_object_hp_logger != nullptr || cct == nullptr) {
@@ -109,12 +171,96 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_io_count, "hp_io_count", "predicted I/O total");
   b.add_u64(object_hp_labeled_io_total, "hp_labeled_io_total", "evaluated I/O total");
   b.add_u64(object_hp_pending_io_count, "hp_pending_io_count", "pending evaluation I/O count");
-  b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked bucket heat state count");
-  b.add_u64(object_hp_lru_count, "hp_lru_count", "bucket heat states in LRU");
+  b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked object heat state count");
+  b.add_u64(object_hp_lru_count, "hp_lru_count", "object heat states in LRU");
   b.add_u64(object_hp_true_positive_count, "hp_true_positive_count", "true positive count");
   b.add_u64(object_hp_false_positive_count, "hp_false_positive_count", "false positive count");
   b.add_u64(object_hp_true_negative_count, "hp_true_negative_count", "true negative count");
   b.add_u64(object_hp_false_negative_count, "hp_false_negative_count", "false negative count");
+  b.add_u64(object_hp_actual_hot_object_avg_future_access_count,
+            "hp_actual_hot_object_avg_future_access_count",
+            "average future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_cold_object_avg_future_access_count,
+            "hp_actual_cold_object_avg_future_access_count",
+            "average future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_hot_object_avg_heat,
+            "hp_actual_hot_object_avg_heat",
+            "average future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_cold_object_avg_heat,
+            "hp_actual_cold_object_avg_heat",
+            "average future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_access_max,
+            "hp_actual_hot_future_access_max",
+            "max future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_access_p50,
+            "hp_actual_hot_future_access_p50",
+            "p50 future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_access_p90,
+            "hp_actual_hot_future_access_p90",
+            "p90 future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_access_p95,
+            "hp_actual_hot_future_access_p95",
+            "p95 future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_access_p99,
+            "hp_actual_hot_future_access_p99",
+            "p99 future access count of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_access_max,
+            "hp_actual_cold_future_access_max",
+            "max future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_access_p50,
+            "hp_actual_cold_future_access_p50",
+            "p50 future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_access_p90,
+            "hp_actual_cold_future_access_p90",
+            "p90 future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_access_p95,
+            "hp_actual_cold_future_access_p95",
+            "p95 future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_access_p99,
+            "hp_actual_cold_future_access_p99",
+            "p99 future access count of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_heat_max,
+            "hp_actual_hot_future_heat_max",
+            "max future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_heat_p50,
+            "hp_actual_hot_future_heat_p50",
+            "p50 future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_heat_p90,
+            "hp_actual_hot_future_heat_p90",
+            "p90 future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_heat_p95,
+            "hp_actual_hot_future_heat_p95",
+            "p95 future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_hot_future_heat_p99,
+            "hp_actual_hot_future_heat_p99",
+            "p99 future heat of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_heat_max,
+            "hp_actual_cold_future_heat_max",
+            "max future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_heat_p50,
+            "hp_actual_cold_future_heat_p50",
+            "p50 future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_heat_p90,
+            "hp_actual_cold_future_heat_p90",
+            "p90 future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_heat_p95,
+            "hp_actual_cold_future_heat_p95",
+            "p95 future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_actual_cold_future_heat_p99,
+            "hp_actual_cold_future_heat_p99",
+            "p99 future heat of actual cold objects (x10000)");
+  b.add_u64(object_hp_future_access_hot_cold_ratio,
+            "hp_future_access_hot_cold_ratio",
+            "actual hot/cold average future access ratio (x10000)");
+  b.add_u64(object_hp_future_heat_hot_cold_ratio,
+            "hp_future_heat_hot_cold_ratio",
+            "actual hot/cold average future heat ratio (x10000)");
+  b.add_u64(object_hp_actual_hot_avg_pred_hot_percent,
+            "hp_actual_hot_avg_pred_hot_percent",
+            "average predicted hot probability of actual hot objects (x10000)");
+  b.add_u64(object_hp_actual_cold_avg_pred_hot_percent,
+            "hp_actual_cold_avg_pred_hot_percent",
+            "average predicted hot probability of actual cold objects (x10000)");
   b.add_u64(object_hp_pred_hot_percent, "hp_pred_hot_percent", "prediction hot percent (x10000)");
   b.add_u64(object_hp_eval_pred_hot_percent, "hp_eval_pred_hot_percent", "evaluated prediction hot percent (x10000)");
   b.add_u64(object_hp_eval_actual_hot_percent, "hp_eval_actual_hot_percent", "evaluated actual hot percent (x10000)");
@@ -124,7 +270,7 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_hot_threshold, "hp_hot_threshold", "threshold (x10000)");
   b.add_u64(object_hp_train_queue_length, "hp_train_queue_length", "train queue length");
   b.add_u64(object_hp_train_drop_count, "hp_train_drop_count", "dropped training sample count");
-  b.add_u64(object_hp_swap_count, "hp_swap_count", "model swap count");
+  b.add_u64(object_hp_snapshot_publish_count, "hp_snapshot_publish_count", "prediction snapshot publish count");
   b.add_u64(object_hp_op_read_count, "hp_op_read_count", "read op count");
   b.add_u64(object_hp_op_sync_read_count, "hp_op_sync_read_count", "sync read op count");
   b.add_u64(object_hp_op_sparse_read_count, "hp_op_sparse_read_count", "sparse read op count");
@@ -150,6 +296,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   uint64_t false_positive = stats.false_positive;
   uint64_t true_negative = stats.true_negative;
   uint64_t false_negative = stats.false_negative;
+  uint64_t actual_hot_count = true_positive + false_negative;
+  uint64_t actual_cold_count = true_negative + false_positive;
   uint64_t hot_cnt = stats.predicted_hot;
   uint64_t cold_cnt = stats.predicted_cold;
   double hot_percent = (hot_cnt + cold_cnt > 0)
@@ -158,7 +306,41 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   uint64_t eval_pred_hot_percent =
     hp_ratio10000(true_positive + false_positive, labeled_io_total);
   uint64_t eval_actual_hot_percent =
-    hp_ratio10000(true_positive + false_negative, labeled_io_total);
+    hp_ratio10000(actual_hot_count, labeled_io_total);
+  uint64_t actual_hot_object_avg_future_access_count =
+    hp_ratio10000(stats.actual_hot_object_access_count_sum, actual_hot_count);
+  uint64_t actual_cold_object_avg_future_access_count =
+    hp_ratio10000(stats.actual_cold_object_access_count_sum, actual_cold_count);
+  uint64_t actual_hot_object_avg_heat =
+    hp_avg10000(stats.actual_hot_object_heat_sum, actual_hot_count);
+  uint64_t actual_cold_object_avg_heat =
+    hp_avg10000(stats.actual_cold_object_heat_sum, actual_cold_count);
+  double actual_hot_object_avg_future_access_value = actual_hot_count > 0
+    ? static_cast<double>(stats.actual_hot_object_access_count_sum) /
+      actual_hot_count
+    : 0.0;
+  double actual_cold_object_avg_future_access_value = actual_cold_count > 0
+    ? static_cast<double>(stats.actual_cold_object_access_count_sum) /
+      actual_cold_count
+    : 0.0;
+  double actual_hot_object_avg_heat_value = actual_hot_count > 0
+    ? stats.actual_hot_object_heat_sum / actual_hot_count
+    : 0.0;
+  double actual_cold_object_avg_heat_value = actual_cold_count > 0
+    ? stats.actual_cold_object_heat_sum / actual_cold_count
+    : 0.0;
+  uint64_t future_access_hot_cold_ratio =
+    hp_double_ratio10000(
+      actual_hot_object_avg_future_access_value,
+      actual_cold_object_avg_future_access_value);
+  uint64_t future_heat_hot_cold_ratio =
+    hp_double_ratio10000(
+      actual_hot_object_avg_heat_value,
+      actual_cold_object_avg_heat_value);
+  uint64_t actual_hot_avg_pred_hot_percent =
+    hp_avg10000(stats.actual_hot_pred_hot_proba_sum, actual_hot_count);
+  uint64_t actual_cold_avg_pred_hot_percent =
+    hp_avg10000(stats.actual_cold_pred_hot_proba_sum, actual_cold_count);
   uint64_t hot_accuracy =
     hp_ratio10000(true_positive + true_negative, labeled_io_total);
   uint64_t hot_precision =
@@ -175,6 +357,54 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   logger->set(object_hp_false_positive_count, false_positive);
   logger->set(object_hp_true_negative_count, true_negative);
   logger->set(object_hp_false_negative_count, false_negative);
+  logger->set(object_hp_actual_hot_object_avg_future_access_count,
+              actual_hot_object_avg_future_access_count);
+  logger->set(object_hp_actual_cold_object_avg_future_access_count,
+              actual_cold_object_avg_future_access_count);
+  logger->set(object_hp_actual_hot_object_avg_heat,
+              actual_hot_object_avg_heat);
+  logger->set(object_hp_actual_cold_object_avg_heat,
+              actual_cold_object_avg_heat);
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_hot_future_access_max,
+    object_hp_actual_hot_future_access_p50,
+    object_hp_actual_hot_future_access_p90,
+    object_hp_actual_hot_future_access_p95,
+    object_hp_actual_hot_future_access_p99,
+    stats.actual_hot_future_access);
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_cold_future_access_max,
+    object_hp_actual_cold_future_access_p50,
+    object_hp_actual_cold_future_access_p90,
+    object_hp_actual_cold_future_access_p95,
+    object_hp_actual_cold_future_access_p99,
+    stats.actual_cold_future_access);
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_hot_future_heat_max,
+    object_hp_actual_hot_future_heat_p50,
+    object_hp_actual_hot_future_heat_p90,
+    object_hp_actual_hot_future_heat_p95,
+    object_hp_actual_hot_future_heat_p99,
+    stats.actual_hot_future_heat);
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_cold_future_heat_max,
+    object_hp_actual_cold_future_heat_p50,
+    object_hp_actual_cold_future_heat_p90,
+    object_hp_actual_cold_future_heat_p95,
+    object_hp_actual_cold_future_heat_p99,
+    stats.actual_cold_future_heat);
+  logger->set(object_hp_future_access_hot_cold_ratio,
+              future_access_hot_cold_ratio);
+  logger->set(object_hp_future_heat_hot_cold_ratio,
+              future_heat_hot_cold_ratio);
+  logger->set(object_hp_actual_hot_avg_pred_hot_percent,
+              actual_hot_avg_pred_hot_percent);
+  logger->set(object_hp_actual_cold_avg_pred_hot_percent,
+              actual_cold_avg_pred_hot_percent);
   logger->set(object_hp_pred_hot_percent, pred_hot_percent);
   logger->set(object_hp_eval_pred_hot_percent, eval_pred_hot_percent);
   logger->set(object_hp_eval_actual_hot_percent, eval_actual_hot_percent);
@@ -184,7 +414,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   logger->set(object_hp_hot_threshold, hp_mul10000(stats.hot_threshold));
   logger->set(object_hp_train_queue_length, osd_object_heat_predictor.get_train_queue_length());
   logger->set(object_hp_train_drop_count, osd_object_heat_predictor.get_train_drop_count());
-  logger->set(object_hp_swap_count, osd_object_heat_predictor.get_swap_count());
+  logger->set(object_hp_snapshot_publish_count,
+              osd_object_heat_predictor.get_snapshot_publish_count());
   logger->set(object_hp_op_read_count, osd_object_hp_op_counters.read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sync_read_count, osd_object_hp_op_counters.sync_read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sparse_read_count, osd_object_hp_op_counters.sparse_read.load(std::memory_order_relaxed));
@@ -211,6 +442,46 @@ static void hp_zero_object_logger()
   logger->set(object_hp_false_positive_count, 0);
   logger->set(object_hp_true_negative_count, 0);
   logger->set(object_hp_false_negative_count, 0);
+  logger->set(object_hp_actual_hot_object_avg_future_access_count, 0);
+  logger->set(object_hp_actual_cold_object_avg_future_access_count, 0);
+  logger->set(object_hp_actual_hot_object_avg_heat, 0);
+  logger->set(object_hp_actual_cold_object_avg_heat, 0);
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_hot_future_access_max,
+    object_hp_actual_hot_future_access_p50,
+    object_hp_actual_hot_future_access_p90,
+    object_hp_actual_hot_future_access_p95,
+    object_hp_actual_hot_future_access_p99,
+    {});
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_cold_future_access_max,
+    object_hp_actual_cold_future_access_p50,
+    object_hp_actual_cold_future_access_p90,
+    object_hp_actual_cold_future_access_p95,
+    object_hp_actual_cold_future_access_p99,
+    {});
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_hot_future_heat_max,
+    object_hp_actual_hot_future_heat_p50,
+    object_hp_actual_hot_future_heat_p90,
+    object_hp_actual_hot_future_heat_p95,
+    object_hp_actual_hot_future_heat_p99,
+    {});
+  hp_set_distribution_summary(
+    logger,
+    object_hp_actual_cold_future_heat_max,
+    object_hp_actual_cold_future_heat_p50,
+    object_hp_actual_cold_future_heat_p90,
+    object_hp_actual_cold_future_heat_p95,
+    object_hp_actual_cold_future_heat_p99,
+    {});
+  logger->set(object_hp_future_access_hot_cold_ratio, 0);
+  logger->set(object_hp_future_heat_hot_cold_ratio, 0);
+  logger->set(object_hp_actual_hot_avg_pred_hot_percent, 0);
+  logger->set(object_hp_actual_cold_avg_pred_hot_percent, 0);
   logger->set(object_hp_pred_hot_percent, 0);
   logger->set(object_hp_eval_pred_hot_percent, 0);
   logger->set(object_hp_eval_actual_hot_percent, 0);
@@ -220,7 +491,7 @@ static void hp_zero_object_logger()
   logger->set(object_hp_hot_threshold, 0);
   logger->set(object_hp_train_queue_length, 0);
   logger->set(object_hp_train_drop_count, 0);
-  logger->set(object_hp_swap_count, 0);
+  logger->set(object_hp_snapshot_publish_count, 0);
   logger->set(object_hp_op_read_count, 0);
   logger->set(object_hp_op_sync_read_count, 0);
   logger->set(object_hp_op_sparse_read_count, 0);
@@ -291,21 +562,12 @@ static inline void hp_count_osd_op(uint16_t op)
   }
 }
 
-static inline void hp_osd_op_extent(
-  const ceph_osd_op& op,
-  uint64_t *offset,
-  uint64_t *length)
+static inline uint64_t hp_osd_op_length(const ceph_osd_op& op)
 {
   if (op.op == CEPH_OSD_OP_WRITESAME) {
-    *offset = op.writesame.offset;
-    *length = op.writesame.length;
-  } else if (op.op == CEPH_OSD_OP_WRITEFULL) {
-    *offset = 0;
-    *length = op.extent.length;
-  } else {
-    *offset = op.extent.offset;
-    *length = op.extent.length;
+    return op.writesame.length;
   }
+  return op.extent.length;
 }
 
 } // namespace
@@ -335,7 +597,8 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
     f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
     f->dump_unsigned("hp_train_queue_length", osd_object_heat_predictor.get_train_queue_length());
     f->dump_unsigned("hp_train_drop_count", osd_object_heat_predictor.get_train_drop_count());
-    f->dump_unsigned("hp_swap_count", osd_object_heat_predictor.get_swap_count());
+    f->dump_unsigned("hp_snapshot_publish_count",
+                     osd_object_heat_predictor.get_snapshot_publish_count());
     f->close_section();
   }
 }
@@ -348,9 +611,7 @@ void hp_notify_osd_object_op(CephContext *cct,
     return;
   }
 
-  uint64_t offset = 0;
-  uint64_t length = 0;
-  hp_osd_op_extent(op, &offset, &length);
+  uint64_t length = hp_osd_op_length(op);
   if (length == 0) {
     return;
   }
@@ -366,7 +627,6 @@ void hp_notify_osd_object_op(CephContext *cct,
     soid.pool,
     soid.get_hash(),
     std::hash<object_t>{}(soid.oid),
-    offset,
     &index);
   auto end_time = ceph::mono_clock::now();
   if (hp_should_update_object_logger(index)) {

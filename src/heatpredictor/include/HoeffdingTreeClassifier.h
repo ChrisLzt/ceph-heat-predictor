@@ -1,6 +1,7 @@
 # ifndef HOEFFDING_TREE_CLASSIFIER_H
 # define HOEFFDING_TREE_CLASSIFIER_H
 
+# include <memory>
 # include <unordered_set>
 # include "Classifier.h"
 # include "TreeBase.h"
@@ -15,6 +16,28 @@ protected:
     double tau;
     double max_share_to_split;
     double min_branch_fraction;
+    void copy_prediction_state_to(HoeffdingTreeClassifier *copy) const {
+        copy->classes = classes;
+        copy->max_depth = this->max_depth;
+        copy->binary_split = this->binary_split;
+        copy->max_size = this->max_size;
+        copy->memory_estimate_period = this->memory_estimate_period;
+        copy->stop_mem_management = this->stop_mem_management;
+        copy->_n_active_leaves = this->_n_active_leaves;
+        copy->_n_inactive_leaves = this->_n_inactive_leaves;
+        copy->_inactive_leaf_size_estimate = this->_inactive_leaf_size_estimate;
+        copy->_active_leaf_size_estimate = this->_active_leaf_size_estimate;
+        copy->_size_estimate_overhead_fraction =
+            this->_size_estimate_overhead_fraction;
+        copy->_growth_allowed = this->_growth_allowed;
+        copy->_train_weight_seen_by_model = this->_train_weight_seen_by_model;
+        copy->merit_preprune = this->merit_preprune;
+        copy->_max_byte_size = this->_max_byte_size;
+        delete copy->_root;
+        copy->_root = this->_root != nullptr
+            ? this->_root->clone_for_prediction()
+            : nullptr;
+    }
     virtual BranchOrLeaf<num_features, num_labels>* _new_leaf(LeafNaiveBayesAdaptive<num_features, num_labels>* parent=nullptr) {
         int depth;
         if (parent == nullptr) {
@@ -66,10 +89,18 @@ protected:
     }
 public:
     HoeffdingTreeClassifier(int grace_period = 200, double delta = 1e-7, double tau = 0.05,
-        double max_share_to_split = 0.99, 
-        double min_branch_fraction = 0.01) : 
+        double max_share_to_split = 0.99,
+        double min_branch_fraction = 0.01) :
         HoeffdingTree<num_features, num_labels>(), grace_period(grace_period), delta(delta), tau(tau),
         max_share_to_split(max_share_to_split), min_branch_fraction(min_branch_fraction) {}
+    std::unique_ptr<Classifier> clone_for_prediction() const override {
+        auto copy = std::unique_ptr<HoeffdingTreeClassifier>(
+            new HoeffdingTreeClassifier(
+                grace_period, delta, tau, max_share_to_split,
+                min_branch_fraction));
+        copy_prediction_state_to(copy.get());
+        return copy;
+    }
     void learn_one(const std::vector<double>& x, int y, double w=1.0) override {
         classes.insert(y);
         this->_train_weight_seen_by_model += w;

@@ -5,6 +5,7 @@
 # include <vector>
 # include <cmath>
 # include <random>
+# include <memory>
 
 # include "drift/DetectorConcept.h"
 # include "Classifier.h"
@@ -18,12 +19,20 @@ class BaseTreeClassifier : public HoeffdingTreeClassifier<num_features, num_labe
 protected:
     int max_features;
 public:
-    BaseTreeClassifier(int max_features=2, int grace_period = 200, 
+    BaseTreeClassifier(int max_features=2, int grace_period = 200,
         double delta = 1e-7, double tau = 0.05,
-        double max_share_to_split = 0.99, 
-        double min_branch_fraction = 0.01) : 
+        double max_share_to_split = 0.99,
+        double min_branch_fraction = 0.01) :
         HoeffdingTreeClassifier<num_features, num_labels>(grace_period, delta, tau, max_share_to_split, min_branch_fraction),
-        max_features(max_features) {}   
+        max_features(max_features) {}
+    std::unique_ptr<Classifier> clone_for_prediction() const override {
+        auto copy = std::unique_ptr<BaseTreeClassifier>(
+            new BaseTreeClassifier(
+                max_features, this->grace_period, this->delta, this->tau,
+                this->max_share_to_split, this->min_branch_fraction));
+        this->copy_prediction_state_to(copy.get());
+        return copy;
+    }
     virtual BranchOrLeaf<num_features, num_labels>* _new_leaf(LeafNaiveBayesAdaptive<num_features, num_labels>* parent=nullptr) {
         int depth;
         if (parent == nullptr) {
@@ -105,6 +114,28 @@ public:
                 delete model;
         }
     }
+    std::unique_ptr<Classifier> clone_for_prediction() const override {
+        auto copy = std::unique_ptr<ARFClassifier>(
+            new ARFClassifier(
+                n_models, max_features, seed, grace_period, lambda_value,
+                delta, tau, max_share_to_split, min_branch_fraction));
+        copy->_metrics = _metrics;
+        copy->_drift_tracker = _drift_tracker;
+        copy->_warning_tracker = _warning_tracker;
+        copy->models.clear();
+        copy->models.reserve(n_models);
+        if (models.empty()) {
+            copy->_init_ensemble();
+        } else {
+            for (Classifier* model : models) {
+                copy->models.push_back(
+                    model != nullptr
+                        ? model->clone_for_prediction().release()
+                        : nullptr);
+            }
+        }
+        return copy;
+    }
     void learn_one(const std::vector<double>& x, int y, double w=1.0) {
         if (models.size() == 0) {
             _init_ensemble();
@@ -167,7 +198,7 @@ public:
             for (int i=0;i<n_models;i++) {
                 Classifier* model = models[i];
                 std::vector<double> y_proba_temp = model->predict_proba_one(x);
-                double metric_value = _metrics[i].get_accuracy();
+                double metric_value = _metrics[i].get_balanced_accuracy();
                 for (int j=0;j<num_labels;j++) {
                     proba[j] += (metric_value > 0.0) ? y_proba_temp[j] * metric_value : y_proba_temp[j];
                 }

@@ -7,6 +7,7 @@
 # include <vector>
 # include <array>
 # include <cstdint>
+# include <memory>
 
 // always with_std
 template <int num_features>
@@ -33,6 +34,9 @@ public:
             res[i] = var > 0.0 ? (x[i] - means[i]) / std::sqrt(var) : 0.0;
         }
         return res;
+    }
+    std::unique_ptr<Transformer> clone() const override {
+        return std::unique_ptr<Transformer>(new StandardScaler(*this));
     }
 };
 

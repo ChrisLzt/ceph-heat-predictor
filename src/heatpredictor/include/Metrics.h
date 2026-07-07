@@ -11,9 +11,32 @@ private:
     // uint64_t sum_row[num_labels] = {0};
     // uint64_t sum_col[num_labels] = {0};
     // int n_samples = 0;
-    std::mutex mtx;
+    mutable std::mutex mtx;
     uint64_t total_weight = 0;
 public:
+    ConfusionMatrix() = default;
+    ConfusionMatrix(const ConfusionMatrix& other) {
+        std::lock_guard<std::mutex> lock(other.mtx);
+        for (int i = 0; i < num_labels; ++i) {
+            for (int j = 0; j < num_labels; ++j) {
+                data[i][j] = other.data[i][j];
+            }
+        }
+        total_weight = other.total_weight;
+    }
+    ConfusionMatrix& operator=(const ConfusionMatrix& other) {
+        if (this == &other) {
+            return *this;
+        }
+        std::scoped_lock lock(mtx, other.mtx);
+        for (int i = 0; i < num_labels; ++i) {
+            for (int j = 0; j < num_labels; ++j) {
+                data[i][j] = other.data[i][j];
+            }
+        }
+        total_weight = other.total_weight;
+        return *this;
+    }
     void update(int y_true, int y_pred, uint64_t w = 1) {
         std::lock_guard<std::mutex> lock(mtx);
         // n_samples++;
@@ -47,6 +70,22 @@ public:
             total += data[i][i];
         }
         return static_cast<double>(total) / total_weight;
+    }
+    double get_balanced_accuracy() {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (total_weight == 0) return 0;
+
+        double recall_sum = 0.0;
+        for (int label = 0; label < num_labels; ++label) {
+            uint64_t actual = 0;
+            for (int pred = 0; pred < num_labels; ++pred) {
+                actual += data[label][pred];
+            }
+            recall_sum += actual > 0
+                ? static_cast<double>(data[label][label]) / actual
+                : 0.0;
+        }
+        return recall_sum / num_labels;
     }
     double get_label_precision(int label) {
         std::lock_guard<std::mutex> lock(mtx);
@@ -98,6 +137,9 @@ public:
     }
     double get_accuracy() {
         return cm.get_accuracy();
+    }
+    double get_balanced_accuracy() {
+        return cm.get_balanced_accuracy();
     }
     // label=1=hot, label=0=cold
     // TP: 预测热，实际热   TN: 预测冷，实际冷

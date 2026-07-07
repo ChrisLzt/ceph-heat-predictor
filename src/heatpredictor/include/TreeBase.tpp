@@ -13,6 +13,58 @@
 # include "GaussianSplitter.h"
 
 template <int num_features, int num_labels>
+BranchOrLeaf<num_features, num_labels>*
+NumericBinaryBranch<num_features, num_labels>::clone_for_prediction() const {
+    BranchOrLeaf<num_features, num_labels>* left =
+        children[0] != nullptr ? children[0]->clone_for_prediction() : nullptr;
+    BranchOrLeaf<num_features, num_labels>* right =
+        children[1] != nullptr ? children[1]->clone_for_prediction() : nullptr;
+    return new NumericBinaryBranch<num_features, num_labels>(
+        feature, threshold, left, right, this->stats);
+}
+
+template <int num_features, int num_labels>
+void LeafNaiveBayesAdaptive<num_features, num_labels>::copy_leaf_state_to(
+        LeafNaiveBayesAdaptive<num_features, num_labels> *copy) const {
+    copy->stats = this->stats;
+    copy->_mc_correct_weight = _mc_correct_weight;
+    copy->_nb_correct_weight = _nb_correct_weight;
+    copy->last_split_attempt_at = last_split_attempt_at;
+    copy->depth = depth;
+    copy->is_active = is_active;
+
+    for (auto splitter : copy->splitters) {
+        delete splitter;
+    }
+    copy->splitters.assign(num_features, nullptr);
+    for (int i = 0; i < num_features; ++i) {
+        if (splitters[i] != nullptr) {
+            copy->splitters[i] =
+                new GaussianSplitter<num_features, num_labels>(*splitters[i]);
+        }
+    }
+}
+
+template <int num_features, int num_labels>
+BranchOrLeaf<num_features, num_labels>*
+LeafNaiveBayesAdaptive<num_features, num_labels>::clone_for_prediction() const {
+    auto *copy = new LeafNaiveBayesAdaptive<num_features, num_labels>(depth);
+    copy_leaf_state_to(copy);
+    return copy;
+}
+
+template <int num_features, int num_labels>
+BranchOrLeaf<num_features, num_labels>*
+RandomLeafNaiveBayesAdaptive<num_features, num_labels>::clone_for_prediction()
+        const {
+    auto *copy = new RandomLeafNaiveBayesAdaptive<num_features, num_labels>(
+        this->depth, max_features);
+    this->copy_leaf_state_to(copy);
+    copy->feature_indices = feature_indices;
+    return copy;
+}
+
+template <int num_features, int num_labels>
 std::vector<BranchFactory<num_features, num_labels> > LeafNaiveBayesAdaptive<num_features, num_labels>::best_split_suggestions(
     HoeffdingTree<num_features, num_labels>* tree, 
     double max_share_to_split, double min_branch_fraction) {
