@@ -79,11 +79,13 @@ namespace {
   };
 
   const ObjectHpCounterField object_hp_counter_fields[] = {
+    {"hp_enabled", ObjectHpAggregate::sum},
     {"hp_io_count", ObjectHpAggregate::sum},
     {"hp_labeled_io_total", ObjectHpAggregate::sum},
     {"hp_pending_io_count", ObjectHpAggregate::sum},
     {"hp_heat_state_count", ObjectHpAggregate::sum},
     {"hp_lru_count", ObjectHpAggregate::sum},
+    {"hp_otsu_histogram_bin_count", ObjectHpAggregate::sum},
     {"hp_true_positive_count", ObjectHpAggregate::sum},
     {"hp_false_positive_count", ObjectHpAggregate::sum},
     {"hp_true_negative_count", ObjectHpAggregate::sum},
@@ -1724,6 +1726,8 @@ bool DaemonServer::_handle_command(
     uint64_t threshold_method_none_osds = 0;
     uint64_t threshold_method_quantile_osds = 0;
     uint64_t threshold_method_otsu_osds = 0;
+    uint64_t enabled_osds = 0;
+    uint64_t disabled_osds = 0;
     uint64_t predict_latency_sum_ns = 0;
     uint64_t predict_latency_count = 0;
 
@@ -1768,6 +1772,11 @@ bool DaemonServer::_handle_command(
         values["hp_true_positive_count"] + values["hp_false_negative_count"];
       uint64_t actual_cold_count =
         values["hp_true_negative_count"] + values["hp_false_positive_count"];
+      if (values["hp_enabled"] > 0) {
+        enabled_osds++;
+      } else {
+        disabled_osds++;
+      }
       auto threshold_method = values.find("hp_hot_threshold_method");
       if (threshold_method != values.end()) {
         switch (threshold_method->second) {
@@ -1821,6 +1830,8 @@ bool DaemonServer::_handle_command(
     f->open_object_section("osds");
     f->dump_unsigned("up_osds", up_osds.size());
     f->dump_unsigned("reporting_osds", up_osds.size() - missing_osds.size());
+    f->dump_unsigned("enabled_osds", enabled_osds);
+    f->dump_unsigned("disabled_osds", disabled_osds);
     f->open_array_section("missing_osds");
     for (auto osd : missing_osds) {
       f->dump_int("osd", osd);
@@ -1837,6 +1848,8 @@ bool DaemonServer::_handle_command(
     f->open_object_section("heat_state");
     f->dump_unsigned("hp_heat_state_count", summary["hp_heat_state_count"]);
     f->dump_unsigned("hp_lru_count", summary["hp_lru_count"]);
+    f->dump_unsigned("hp_otsu_histogram_bin_count",
+                     summary["hp_otsu_histogram_bin_count"]);
     {
       uint64_t weight = weighted_count["hp_hot_threshold_avg"];
       hp_dump_float(f.get(), "hp_hot_threshold_avg",
@@ -2036,10 +2049,15 @@ bool DaemonServer::_handle_command(
     f->flush(cmdctx->odata);
     cmdctx->reply(0, ss);
     return true;
-  } else if (prefix == "osd hp reset") {
+  } else if (prefix == "osd hp reset" ||
+             prefix == "osd hp enable" ||
+             prefix == "osd hp disable") {
     if (!f) {
       f.reset(Formatter::create("json-pretty"));
     }
+    const std::string action = prefix == "osd hp enable" ? "enable" :
+      (prefix == "osd hp disable" ? "disable" : "reset");
+    const std::string osd_prefix = "object_hp " + action;
     std::set<int32_t> up_osds;
     cluster_state.with_osdmap([&](const OSDMap& osdmap) {
       osdmap.get_up_osds(up_osds);
@@ -2047,7 +2065,7 @@ bool DaemonServer::_handle_command(
 
     std::vector<int32_t> sent_osds;
     std::vector<int32_t> missing_osds;
-    const std::string reset_cmd = "{\"prefix\":\"object_hp reset\"}";
+    const std::string hp_cmd = "{\"prefix\":\"" + osd_prefix + "\"}";
     for (auto osd : up_osds) {
       auto p = osd_cons.find(osd);
       if (p == osd_cons.end() || p->second.empty()) {
@@ -2059,21 +2077,24 @@ bool DaemonServer::_handle_command(
       bufferlist inbl;
       py_modules.get_objecter().osd_command(
         osd,
-        {reset_cmd},
+        {hp_cmd},
         inbl,
         &tid,
-        [osd](boost::system::error_code ec, std::string outs, bufferlist outbl) {
+        [osd, osd_prefix](boost::system::error_code ec,
+                          std::string outs,
+                          bufferlist outbl) {
           if (ec) {
-            dout(1) << "object_hp reset failed on osd." << osd
+            dout(1) << osd_prefix << " failed on osd." << osd
                     << ": " << ec.message() << " " << outs << dendl;
           } else {
-            dout(10) << "object_hp reset finished on osd." << osd
+            dout(10) << osd_prefix << " finished on osd." << osd
                      << ": " << outs << dendl;
           }
         });
     }
 
-    f->open_object_section("osd_hp_reset");
+    f->open_object_section("osd_hp_control");
+    f->dump_string("action", action);
     f->dump_unsigned("requested", up_osds.size());
     f->dump_unsigned("sent", sent_osds.size());
     f->dump_unsigned("not_connected", missing_osds.size());
@@ -2091,11 +2112,11 @@ bool DaemonServer::_handle_command(
     f->flush(cmdctx->odata);
 
     if (!missing_osds.empty()) {
-      ss << "sent object_hp reset to " << sent_osds.size()
+      ss << "sent " << osd_prefix << " to " << sent_osds.size()
          << " osd(s); " << missing_osds.size() << " osd(s) not connected";
       r = sent_osds.empty() ? -EAGAIN : 0;
     } else {
-      ss << "sent object_hp reset to " << sent_osds.size() << " osd(s)";
+      ss << "sent " << osd_prefix << " to " << sent_osds.size() << " osd(s)";
     }
     cmdctx->reply(r, ss);
     return true;

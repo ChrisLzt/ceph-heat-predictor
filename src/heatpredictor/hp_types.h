@@ -51,11 +51,13 @@ struct TrainingSample {
 };
 
 struct HeatPredictorStats {
+    bool enabled;
     uint64_t io_count;
     uint64_t labeled_io_total;
     uint64_t pending_io_count;
     uint64_t heat_state_count;
     uint64_t lru_count;
+    uint64_t otsu_histogram_bin_count;
     uint64_t true_positive;
     uint64_t false_positive;
     uint64_t true_negative;
