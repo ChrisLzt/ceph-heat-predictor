@@ -1,6 +1,9 @@
+#include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <type_traits>
 
 #include "heatpredictor/heat_predictor.h"
 
@@ -40,6 +43,21 @@ void require_close(double lhs, double rhs, const char *message)
   }
 }
 
+double expected_next_predict_threshold(double current_threshold, double ratio)
+{
+  double safe_ratio = std::max(ratio, std::numeric_limits<double>::min());
+  double feedback = std::clamp(
+      safe_ratio,
+      HP_PRED_ACTUAL_HOT_RATIO_MIN,
+      HP_PRED_ACTUAL_HOT_RATIO_MAX);
+  double target = current_threshold * feedback;
+  return std::clamp(
+      (1.0 - HP_HOT_PREDICT_THRESHOLD_EMA_ALPHA) * current_threshold +
+      HP_HOT_PREDICT_THRESHOLD_EMA_ALPHA * target,
+      HP_HOT_PREDICT_THRESHOLD_MIN,
+      HP_HOT_PREDICT_THRESHOLD_MAX);
+}
+
 void require_proba_close(
     const std::vector<double>& lhs,
     const std::vector<double>& rhs,
@@ -49,6 +67,80 @@ void require_proba_close(
   for (size_t i = 0; i < lhs.size(); ++i) {
     require_close(lhs[i], rhs[i], message);
   }
+}
+
+template <typename T, typename = void>
+struct has_predicted_hot : std::false_type {};
+
+template <typename T>
+struct has_predicted_hot<T, std::void_t<decltype(std::declval<T>().predicted_hot)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct has_predicted_cold : std::false_type {};
+
+template <typename T>
+struct has_predicted_cold<T, std::void_t<decltype(std::declval<T>().predicted_cold)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct has_actual_hot_counter : std::false_type {};
+
+template <typename T>
+struct has_actual_hot_counter<T, std::void_t<decltype(std::declval<T>().actual_hot)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct has_actual_cold_counter : std::false_type {};
+
+template <typename T>
+struct has_actual_cold_counter<T, std::void_t<decltype(std::declval<T>().actual_cold)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct has_hot_predict_threshold_stat : std::false_type {};
+
+template <typename T>
+struct has_hot_predict_threshold_stat<
+    T, std::void_t<decltype(std::declval<T>().hot_predict_threshold)>>
+    : std::true_type {};
+
+void test_stats_drop_online_prediction_ratio_source()
+{
+  require(!has_predicted_hot<HeatPredictorStats>::value,
+          "HeatPredictorStats should not expose predicted_hot");
+  require(!has_predicted_cold<HeatPredictorStats>::value,
+          "HeatPredictorStats should not expose predicted_cold");
+}
+
+void test_predictor_drops_unused_actual_label_counters()
+{
+  require(!has_actual_hot_counter<HeatPredictor>::value,
+          "HeatPredictor should not keep unused actual_hot counter");
+  require(!has_actual_cold_counter<HeatPredictor>::value,
+          "HeatPredictor should not keep unused actual_cold counter");
+}
+
+void test_stats_export_hot_predict_threshold()
+{
+  require(has_hot_predict_threshold_stat<HeatPredictorStats>::value,
+          "HeatPredictorStats should expose hot_predict_threshold");
+}
+
+void test_otsu_update_cost_knobs()
+{
+  require(HP_OTSU_EAGER_OBJECTS == 1000,
+          "Otsu eager object threshold should cap per-IO eager scans at 1000");
+  require(HP_OTSU_UPDATE_INTERVAL == 1000,
+          "Otsu update interval should cap amortized full scans at 1/1000");
+}
+
+void test_learning_lag_knobs()
+{
+  require(HP_EVALUATION_WINDOW == 2000,
+          "evaluation window should be 2000 for hotspot migration sensitivity");
+  require(HeatPredictor::MODEL_UPDATE_REPORT_INTERVAL == 500,
+          "snapshot publish interval should be 500 trained samples");
 }
 
 void test_prediction_clone_is_independent()
@@ -287,8 +379,86 @@ void test_object_heat_threshold_decays_idle_objects()
           "new object should outrank an idle object after one decay window");
 }
 
+void test_otsu_threshold_separates_bimodal_object_heat()
+{
+  EvaluationQueue eq(
+    10000,  // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+
+  for (uint64_t i = 0; i < 100; ++i) {
+    eq.record_object_heat(i, 1.0, 1);
+  }
+  for (uint64_t i = 100; i < 120; ++i) {
+    eq.record_object_heat(i, 1000.0, 1);
+  }
+
+  require(eq.hot_threshold > 10.0,
+          "Otsu threshold should rise above the cold object heat");
+  require(eq.hot_threshold < 500.0,
+          "Otsu threshold should not collapse to the hot cluster value");
+  require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_OTSU,
+          "Otsu threshold method should be reported when Otsu is active");
+  require_close(eq.hot_quantile_threshold, eq.hot_threshold,
+                "reported quantile threshold should match the active Otsu threshold");
+  require(eq.otsu_separation >= HP_OTSU_MIN_SEPARATION,
+          "Otsu separation should be reported when Otsu is active");
+}
+
+void test_threshold_ema_smooths_large_otsu_shift()
+{
+  EvaluationQueue eq(
+    10000,  // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+
+  for (uint64_t i = 0; i < 100; ++i) {
+    eq.record_object_heat(i, 1.0, 1);
+  }
+  for (uint64_t i = 100; i < 120; ++i) {
+    eq.record_object_heat(i, 1000.0, 1);
+  }
+
+  double first_threshold = eq.hot_threshold;
+  require(first_threshold > 10.0 && first_threshold < 500.0,
+          "initial Otsu threshold should split the first bimodal heat set");
+
+  for (uint64_t i = 100; i < 120; ++i) {
+    eq.record_object_heat(i, 1000000.0, 2);
+  }
+
+  require(eq.hot_threshold > first_threshold,
+          "EMA threshold should still move toward the new hot cluster");
+  require(eq.hot_threshold < 500.0,
+          "EMA threshold should smooth a large Otsu threshold jump");
+}
+
+void test_threshold_reports_quantile_fallback()
+{
+  EvaluationQueue eq(
+    10000,  // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+
+  eq.record_object_heat(1, 10.0, 1);
+  eq.record_object_heat(2, 20.0, 1);
+
+  require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_QUANTILE,
+          "small threshold windows should report quantile fallback");
+  require_close(eq.hot_threshold, eq.hot_quantile_threshold,
+                "fallback threshold should equal quantile threshold");
+  require_close(eq.otsu_separation, 0.0,
+                "Otsu separation should be zero when Otsu is not active");
+}
+
 void test_simple_training_weight_uses_hot_class_weight()
 {
+  require(std::abs(HP_HOT_CLASS_WEIGHT - 3.0) < 0.000001,
+          "hot class weight should be fixed at 3.0");
+
   EvaluationQueue hot_eq(
     1,      // evaluation_window
     8,      // lru_capacity
@@ -296,11 +466,13 @@ void test_simple_training_weight_uses_hot_class_weight()
     100.0); // heat_increment
 
   TraceItem first_hot = make_item(1, 42);
+  first_hot.pred = 1;
   hot_eq.prepare_features(first_hot);
   require(!hot_eq.enqueue(first_hot).has_value(),
           "first hot weight probe item should stay pending");
 
   TraceItem second_hot = make_item(2, 42);
+  second_hot.pred = 1;
   hot_eq.prepare_features(second_hot);
   hot_eq.hot_threshold = 50.0;
   auto hot = hot_eq.enqueue(second_hot);
@@ -329,10 +501,163 @@ void test_simple_training_weight_uses_hot_class_weight()
           "cold sample should keep unit weight");
 }
 
+void test_pred_actual_hot_ratio_tracks_prediction_bias()
+{
+  EvaluationQueue false_positive_eq(
+    1,      // evaluation_window
+    8,      // lru_capacity
+    50.0,   // hot_threshold
+    100.0); // heat_increment
+
+  TraceItem cold_pred_hot = make_item(1, 1);
+  cold_pred_hot.pred = 1;
+  false_positive_eq.prepare_features(cold_pred_hot);
+  require(!false_positive_eq.enqueue(cold_pred_hot).has_value(),
+          "first false-positive probe item should stay pending");
+
+  TraceItem next_cold = make_item(2, 2);
+  next_cold.pred = 1;
+  false_positive_eq.prepare_features(next_cold);
+  auto false_positive = false_positive_eq.enqueue(next_cold);
+  require(false_positive.has_value(),
+          "second false-positive probe item should evaluate first item");
+  require(false_positive->label == 0,
+          "first false-positive probe item should be actually cold");
+  require(false_positive_eq.pred_actual_hot_ratio() > 1.0,
+          "false positives should make predicted/actual hot ratio exceed 1");
+
+  EvaluationQueue false_negative_eq(
+    1,      // evaluation_window
+    8,      // lru_capacity
+    50.0,   // hot_threshold
+    100.0); // heat_increment
+
+  TraceItem hot_pred_cold = make_item(1, 42);
+  hot_pred_cold.pred = 0;
+  false_negative_eq.prepare_features(hot_pred_cold);
+  require(!false_negative_eq.enqueue(hot_pred_cold).has_value(),
+          "first false-negative probe item should stay pending");
+
+  TraceItem next_hot = make_item(2, 42);
+  next_hot.pred = 0;
+  false_negative_eq.prepare_features(next_hot);
+  false_negative_eq.hot_threshold = 50.0;
+  auto false_negative = false_negative_eq.enqueue(next_hot);
+  require(false_negative.has_value(),
+          "second false-negative probe item should evaluate first item");
+  require(false_negative->label == 1,
+          "first false-negative probe item should be actually hot");
+  require(false_negative_eq.pred_actual_hot_ratio() < 1.0,
+          "false negatives should make predicted/actual hot ratio fall below 1");
+}
+
+void test_dynamic_hot_predict_threshold_uses_pred_actual_ratio()
+{
+  require_close(HP_PRED_ACTUAL_HOT_RATIO_MIN, 0.80,
+                "dynamic predict threshold ratio lower clamp should be 0.80");
+  require_close(HP_PRED_ACTUAL_HOT_RATIO_MAX, 1.25,
+                "dynamic predict threshold ratio upper clamp should be 1.25");
+  require_close(HP_HOT_PREDICT_THRESHOLD, 0.50,
+                "hot predict threshold should start at 0.50");
+  require_close(HP_HOT_PREDICT_THRESHOLD_MIN, 0.45,
+                "hot predict threshold lower bound should be 0.45");
+  require_close(HP_HOT_PREDICT_THRESHOLD_MAX, 0.55,
+                "hot predict threshold upper bound should be 0.55");
+  require_close(HP_HOT_PREDICT_THRESHOLD_EMA_ALPHA, 0.10,
+                "hot predict threshold EMA alpha should be 0.10");
+
+  EvaluationQueue formula_eq(
+    1,      // evaluation_window
+    8,      // lru_capacity
+    50.0,   // hot_threshold
+    100.0); // heat_increment
+  require_close(
+      formula_eq.next_hot_predict_threshold_for_ratio(1.1),
+      expected_next_predict_threshold(HP_HOT_PREDICT_THRESHOLD, 1.1),
+      "dynamic predict threshold should update from current threshold and ratio");
+  require_close(
+      formula_eq.next_hot_predict_threshold_for_ratio(2.0),
+      expected_next_predict_threshold(HP_HOT_PREDICT_THRESHOLD, 2.0),
+      "dynamic predict threshold should clamp high feedback ratios");
+  require_close(
+      formula_eq.next_hot_predict_threshold_for_ratio(0.5),
+      expected_next_predict_threshold(HP_HOT_PREDICT_THRESHOLD, 0.5),
+      "dynamic predict threshold should clamp low feedback ratios");
+
+  EvaluationQueue cold_biased_eq(
+    1,      // evaluation_window
+    8,      // lru_capacity
+    50.0,   // hot_threshold
+    100.0); // heat_increment
+
+  TraceItem first_hot = make_item(1, 42);
+  first_hot.pred = 0;
+  cold_biased_eq.prepare_features(first_hot);
+  require(!cold_biased_eq.enqueue(first_hot).has_value(),
+          "first dynamic weight item should stay pending");
+
+  TraceItem second_hot = make_item(2, 42);
+  second_hot.pred = 0;
+  cold_biased_eq.prepare_features(second_hot);
+  cold_biased_eq.hot_threshold = 50.0;
+  auto hot = cold_biased_eq.enqueue(second_hot);
+  require(hot.has_value(), "second dynamic weight item should evaluate first");
+  require(hot->label == 1, "dynamic weight item should be hot");
+  require_close(hot->training_weight, HP_HOT_CLASS_WEIGHT,
+                "hot sample weight should stay fixed under cold-biased history");
+  require(cold_biased_eq.dynamic_hot_predict_threshold <
+          HP_HOT_PREDICT_THRESHOLD,
+          "cold-biased prediction should lower hot predict threshold");
+
+  EvaluationQueue hot_biased_eq(
+    1,      // evaluation_window
+    8,      // lru_capacity
+    50.0,   // hot_threshold
+    100.0); // heat_increment
+
+  TraceItem first_cold = make_item(1, 1);
+  first_cold.pred = 1;
+  hot_biased_eq.prepare_features(first_cold);
+  require(!hot_biased_eq.enqueue(first_cold).has_value(),
+          "first hot-biased item should stay pending");
+
+  TraceItem second_cold = make_item(2, 2);
+  second_cold.pred = 1;
+  hot_biased_eq.prepare_features(second_cold);
+  auto cold = hot_biased_eq.enqueue(second_cold);
+  require(cold.has_value(), "second hot-biased item should evaluate first");
+  require(cold->label == 0, "hot-biased probe should first evaluate cold");
+
+  TraceItem first_hot_after_bias = make_item(3, 42);
+  first_hot_after_bias.pred = 1;
+  hot_biased_eq.prepare_features(first_hot_after_bias);
+  (void)hot_biased_eq.enqueue(first_hot_after_bias);
+
+  TraceItem second_hot_after_bias = make_item(4, 42);
+  second_hot_after_bias.pred = 1;
+  hot_biased_eq.prepare_features(second_hot_after_bias);
+  hot_biased_eq.hot_threshold = 50.0;
+  auto hot_after_bias = hot_biased_eq.enqueue(second_hot_after_bias);
+  require(hot_after_bias.has_value(),
+          "hot sample after hot-biased history should be evaluated");
+  require(hot_after_bias->label == 1,
+          "hot sample after hot-biased history should be hot");
+  require_close(hot_after_bias->training_weight, HP_HOT_CLASS_WEIGHT,
+                "hot sample weight should stay fixed under hot-biased history");
+  require(hot_biased_eq.dynamic_hot_predict_threshold >
+          HP_HOT_PREDICT_THRESHOLD,
+          "hot-biased prediction should raise hot predict threshold");
+}
+
 } // namespace
 
 int main()
 {
+  test_stats_drop_online_prediction_ratio_source();
+  test_predictor_drops_unused_actual_label_counters();
+  test_stats_export_hot_predict_threshold();
+  test_otsu_update_cost_knobs();
+  test_learning_lag_knobs();
   test_prediction_clone_is_independent();
   test_future_heat_label_ignores_decayed_history_only();
   test_balanced_accuracy_penalizes_missing_hot_class();
@@ -344,7 +669,12 @@ int main()
   test_threshold_window_tracks_object_current_heat();
   test_threshold_window_order_has_one_entry_per_object();
   test_object_heat_threshold_decays_idle_objects();
+  test_otsu_threshold_separates_bimodal_object_heat();
+  test_threshold_ema_smooths_large_otsu_shift();
+  test_threshold_reports_quantile_fallback();
   test_simple_training_weight_uses_hot_class_weight();
+  test_pred_actual_hot_ratio_tracks_prediction_bias();
+  test_dynamic_hot_predict_threshold_uses_pred_actual_ratio();
   std::cout << "PASS: hp algorithm probe" << std::endl;
   return 0;
 }

@@ -60,8 +60,6 @@ struct HeatPredictorStats {
     uint64_t false_positive;
     uint64_t true_negative;
     uint64_t false_negative;
-    uint64_t predicted_hot;
-    uint64_t predicted_cold;
     uint64_t actual_hot_object_access_count_sum;
     uint64_t actual_cold_object_access_count_sum;
     // Exported as hp_actual_hot_object_avg_heat and
@@ -75,6 +73,12 @@ struct HeatPredictorStats {
     HpDistributionSummary actual_hot_future_heat;
     HpDistributionSummary actual_cold_future_heat;
     double hot_threshold;
+    double hot_quantile_threshold;
+    uint64_t hot_threshold_method;
+    double otsu_separation;
+    double hot_predict_threshold;
+    double pred_actual_hot_ratio;
+    double dynamic_hot_class_weight;
 };
 
 #endif

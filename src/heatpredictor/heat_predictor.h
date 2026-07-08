@@ -71,7 +71,7 @@ public:
     std::mutex eq_mutex;
     Accuracy<2> accu;
 
-    static constexpr int MODEL_UPDATE_REPORT_INTERVAL = 2000;
+    static constexpr int MODEL_UPDATE_REPORT_INTERVAL = 500;
     int model_update_train_count{0};
     std::atomic<uint64_t> snapshot_publish_count{0};
 
@@ -174,8 +174,6 @@ public:
     }
 
     std::atomic<uint64_t> hp_index{0};
-    std::atomic<uint64_t> hot_cnt{0}, cold_cnt{0};
-    std::atomic<uint64_t> actual_hot{0}, actual_cold{0};
     uint64_t actual_hot_object_access_count_sum{0};
     uint64_t actual_cold_object_access_count_sum{0};
     double actual_hot_object_heat_sum{0};
@@ -242,10 +240,6 @@ public:
         model_update_train_count = 0;
         snapshot_publish_count.store(0);
         hp_index.store(0);
-        hot_cnt.store(0);
-        cold_cnt.store(0);
-        actual_hot.store(0);
-        actual_cold.store(0);
         actual_hot_object_access_count_sum = 0;
         actual_cold_object_access_count_sum = 0;
         actual_hot_object_heat_sum = 0;
@@ -297,22 +291,21 @@ public:
 
             eq->prepare_features(item);
             std::shared_ptr<Classifier> snapshot = get_prediction_snapshot();
+            double hot_predict_threshold = eq->dynamic_hot_predict_threshold;
             if (snapshot) {
                 std::vector<double> proba =
                     snapshot->predict_proba_one(to_feat(item));
                 item.pred_hot_proba = proba.size() > 1 ? proba[1] : 0.0;
-                res = item.pred_hot_proba >= HP_HOT_PREDICT_THRESHOLD ? 1 : 0;
+                res = item.pred_hot_proba >= hot_predict_threshold ? 1 : 0;
             } else {
                 item.pred_hot_proba = 0.0;
                 res = 0;
             }
-            res ? hot_cnt++ : cold_cnt++;
             item.pred = res;
 
             evaluated = eq->enqueue(item);
             if (evaluated.has_value()) {
                 if (evaluated->label) {
-                    actual_hot++;
                     actual_hot_object_access_count_sum +=
                         evaluated->future_access_count;
                     actual_hot_object_heat_sum += evaluated->future_heat;
@@ -323,7 +316,6 @@ public:
                     actual_hot_future_heat_window.insert(
                         evaluated->future_heat);
                 } else {
-                    actual_cold++;
                     actual_cold_object_access_count_sum +=
                         evaluated->future_access_count;
                     actual_cold_object_heat_sum += evaluated->future_heat;
@@ -373,8 +365,6 @@ public:
             accu.false_positives(),
             accu.true_negatives(),
             accu.false_negatives(),
-            hot_cnt.load(),
-            cold_cnt.load(),
             actual_hot_object_access_count_sum,
             actual_cold_object_access_count_sum,
             actual_hot_object_heat_sum,
@@ -385,7 +375,13 @@ public:
             actual_cold_future_access_window.summary(),
             actual_hot_future_heat_window.summary(),
             actual_cold_future_heat_window.summary(),
-            eq->hot_threshold
+            eq->hot_threshold,
+            eq->hot_quantile_threshold,
+            eq->hot_threshold_method,
+            eq->otsu_separation,
+            eq->dynamic_hot_predict_threshold,
+            eq->pred_actual_hot_ratio(),
+            HP_HOT_CLASS_WEIGHT
         };
     }
 
