@@ -19,6 +19,7 @@
 #include <errno.h>
 
 #include <charconv>
+#include <functional>
 #include <sstream>
 #include <utility>
 
@@ -62,6 +63,7 @@
 #include "OpRequest.h"
 #include "PG.h"
 #include "Session.h"
+#include "ObjectHeatPredictor.h"
 
 // required includes order:
 #include "json_spirit/json_spirit_value.h"
@@ -78,6 +80,7 @@
 #define dout_context cct
 #define dout_subsys ceph_subsys_osd
 #define DOUT_PREFIX_ARGS this, osd->whoami, get_osdmap()
+
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, this)
 
@@ -6046,6 +6049,8 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	       << " -> TRUNCATE " << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
       op.op = CEPH_OSD_OP_TRUNCATE;
     }
+
+    hp_notify_osd_object_op(cct, soid, op);
 
     switch (op.op) {
 
