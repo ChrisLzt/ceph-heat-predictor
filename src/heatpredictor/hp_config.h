@@ -20,7 +20,7 @@ static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MIN = 0.80;
 static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MAX = 1.25;
 
 // Evaluation and retained object state.
-static constexpr size_t HP_EVALUATION_WINDOW = 2000;
+static constexpr size_t HP_EVALUATION_WINDOW = 10000;
 static constexpr size_t HP_LRU_CAPACITY = 100000;
 static constexpr size_t HP_LABEL_THRESHOLD_WINDOW_CAPACITY = 1000000;
 
