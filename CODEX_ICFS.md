@@ -1,6 +1,6 @@
 # CODEX Context: ICFS/IDFS Heat Predictor Port
 
-本文档记录 Ceph object-layer heat predictor 向 `/home/hust/icfs` 的迁移约定。Ceph 源实现见 `CODEX_CEPH.md`，测试流程见 `CODEX_TEST.md`。
+本文档记录 Ceph object-layer heat predictor 向 `/home/hust/icfs` 的迁移约定。Ceph 源实现见 `CODEX_CEPH.md`。Ceph 单节点操作见 `CEPH_OPERATIONS_MANUAL.md`，测试负载以 `/home/chris/ceph-test/new_workload/` 为准。
 
 ## 项目判断
 

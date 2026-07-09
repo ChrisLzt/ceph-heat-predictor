@@ -26,11 +26,13 @@ static constexpr uint64_t object_hp_logger_update_interval = 1000;
 
 enum {
   object_hp_first = 592000,
+  object_hp_enabled,
   object_hp_io_count,
   object_hp_labeled_io_total,
   object_hp_pending_io_count,
   object_hp_heat_state_count,
   object_hp_lru_count,
+  object_hp_otsu_histogram_bin_count,
   object_hp_true_positive_count,
   object_hp_false_positive_count,
   object_hp_true_negative_count,
@@ -173,11 +175,15 @@ static void hp_ensure_object_logger(CephContext *cct)
 
   PerfCountersBuilder b(cct, "object_hp_status", object_hp_first, object_hp_last);
   b.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
+  b.add_u64(object_hp_enabled, "hp_enabled", "heat predictor enabled");
   b.add_u64(object_hp_io_count, "hp_io_count", "predicted I/O total");
   b.add_u64(object_hp_labeled_io_total, "hp_labeled_io_total", "evaluated I/O total");
   b.add_u64(object_hp_pending_io_count, "hp_pending_io_count", "pending evaluation I/O count");
   b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked object heat state count");
   b.add_u64(object_hp_lru_count, "hp_lru_count", "object heat states in LRU");
+  b.add_u64(object_hp_otsu_histogram_bin_count,
+            "hp_otsu_histogram_bin_count",
+            "occupied Otsu histogram bin count");
   b.add_u64(object_hp_true_positive_count, "hp_true_positive_count", "true positive count");
   b.add_u64(object_hp_false_positive_count, "hp_false_positive_count", "false positive count");
   b.add_u64(object_hp_true_negative_count, "hp_true_negative_count", "true negative count");
@@ -367,11 +373,14 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
   uint64_t hot_recall =
     hp_ratio10000(true_positive, true_positive + false_negative);
 
+  logger->set(object_hp_enabled, stats.enabled ? 1 : 0);
   logger->set(object_hp_io_count, io_count);
   logger->set(object_hp_labeled_io_total, labeled_io_total);
   logger->set(object_hp_pending_io_count, stats.pending_io_count);
   logger->set(object_hp_heat_state_count, stats.heat_state_count);
   logger->set(object_hp_lru_count, stats.lru_count);
+  logger->set(object_hp_otsu_histogram_bin_count,
+              stats.otsu_histogram_bin_count);
   logger->set(object_hp_true_positive_count, true_positive);
   logger->set(object_hp_false_positive_count, false_positive);
   logger->set(object_hp_true_negative_count, true_negative);
@@ -461,11 +470,14 @@ static void hp_zero_object_logger()
   }
 
   logger->reset();
+  logger->set(object_hp_enabled,
+              osd_object_heat_predictor.is_enabled() ? 1 : 0);
   logger->set(object_hp_io_count, 0);
   logger->set(object_hp_labeled_io_total, 0);
   logger->set(object_hp_pending_io_count, 0);
   logger->set(object_hp_heat_state_count, 0);
   logger->set(object_hp_lru_count, 0);
+  logger->set(object_hp_otsu_histogram_bin_count, 0);
   logger->set(object_hp_true_positive_count, 0);
   logger->set(object_hp_false_positive_count, 0);
   logger->set(object_hp_true_negative_count, 0);
@@ -625,14 +637,55 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
   if (f != nullptr) {
     f->open_object_section("object_hp_reset");
     f->dump_bool("ok", true);
+    f->dump_bool("enabled", osd_object_heat_predictor.is_enabled());
     f->dump_unsigned("discarded_pending_io", discarded_pending_io);
     f->dump_unsigned("hp_io_count", osd_object_heat_predictor.hp_index.load());
     f->dump_unsigned("hp_labeled_io_total", osd_object_heat_predictor.get_total_weight());
     f->dump_unsigned("hp_pending_io_count", osd_object_heat_predictor.get_pending_io_count());
     f->dump_unsigned("hp_heat_state_count", osd_object_heat_predictor.get_heat_state_count());
     f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
+    f->dump_unsigned("hp_otsu_histogram_bin_count",
+                     osd_object_heat_predictor.get_otsu_histogram_bin_count());
     f->dump_unsigned("hp_train_queue_length", osd_object_heat_predictor.get_train_queue_length());
     f->dump_unsigned("hp_train_drop_count", osd_object_heat_predictor.get_train_drop_count());
+    f->dump_unsigned("hp_snapshot_publish_count",
+                     osd_object_heat_predictor.get_snapshot_publish_count());
+    f->close_section();
+  }
+}
+
+void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
+                                              ceph::Formatter *f,
+                                              bool enabled)
+{
+  std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+
+  hp_ensure_object_logger(cct);
+  uint64_t discarded_pending_io =
+    osd_object_heat_predictor.set_enabled(enabled);
+  hp_reset_osd_op_counters();
+  hp_zero_object_logger();
+
+  if (f != nullptr) {
+    f->open_object_section(enabled ? "object_hp_enable" : "object_hp_disable");
+    f->dump_bool("ok", true);
+    f->dump_bool("enabled", osd_object_heat_predictor.is_enabled());
+    f->dump_unsigned("discarded_pending_io", discarded_pending_io);
+    f->dump_unsigned("hp_io_count", osd_object_heat_predictor.hp_index.load());
+    f->dump_unsigned("hp_labeled_io_total",
+                     osd_object_heat_predictor.get_total_weight());
+    f->dump_unsigned("hp_pending_io_count",
+                     osd_object_heat_predictor.get_pending_io_count());
+    f->dump_unsigned("hp_heat_state_count",
+                     osd_object_heat_predictor.get_heat_state_count());
+    f->dump_unsigned("hp_lru_count",
+                     osd_object_heat_predictor.get_lru_count());
+    f->dump_unsigned("hp_otsu_histogram_bin_count",
+                     osd_object_heat_predictor.get_otsu_histogram_bin_count());
+    f->dump_unsigned("hp_train_queue_length",
+                     osd_object_heat_predictor.get_train_queue_length());
+    f->dump_unsigned("hp_train_drop_count",
+                     osd_object_heat_predictor.get_train_drop_count());
     f->dump_unsigned("hp_snapshot_publish_count",
                      osd_object_heat_predictor.get_snapshot_publish_count());
     f->close_section();
@@ -643,6 +696,10 @@ void hp_notify_osd_object_op(CephContext *cct,
                              const hobject_t& soid,
                              const ceph_osd_op& op)
 {
+  if (!osd_object_heat_predictor.is_enabled()) {
+    return;
+  }
+
   if (!hp_track_osd_op(op.op)) {
     return;
   }

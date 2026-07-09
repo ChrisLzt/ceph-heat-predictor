@@ -84,6 +84,7 @@ public:
     std::thread train_thread;
     std::once_flag start_flag;
     std::atomic<bool> train_running{false};
+    std::atomic<bool> enabled{true};
     std::atomic<int> pending_notify{0};
     std::atomic<uint64_t> train_drop_count{0};
 
@@ -254,12 +255,36 @@ public:
         return discarded_pending;
     }
 
+    bool is_enabled() const {
+        return enabled.load(std::memory_order_acquire);
+    }
+
+    uint64_t set_enabled(bool next_enabled) {
+        enabled.store(false, std::memory_order_release);
+        uint64_t discarded_pending = reset();
+        enabled.store(next_enabled, std::memory_order_release);
+        return discarded_pending;
+    }
+
     int predict(int operation, uint64_t size,
             int64_t pool, uint64_t ceph_object_hash, uint64_t object_name_hash,
             uint64_t *index_out) {
+        if (!is_enabled()) {
+            if (index_out != nullptr) {
+                *index_out = 0;
+            }
+            return 0;
+        }
+
         ensure_started();
 
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        if (!is_enabled()) {
+            if (index_out != nullptr) {
+                *index_out = 0;
+            }
+            return 0;
+        }
         uint64_t key = make_object_key(
             pool, ceph_object_hash, object_name_hash);
 
@@ -356,11 +381,13 @@ public:
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> eq_lock(eq_mutex);
         return HeatPredictorStats{
+            is_enabled(),
             hp_index.load(),
             accu.get_total_weight(),
             eq->pending_size(),
             eq->heat_state_size(),
             eq->lru_size(),
+            eq->otsu_histogram_bin_count(),
             accu.true_positives(),
             accu.false_positives(),
             accu.true_negatives(),
@@ -408,6 +435,11 @@ public:
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> lock(eq_mutex);
         return eq->lru_size();
+    }
+    uint64_t get_otsu_histogram_bin_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        std::lock_guard<std::mutex> lock(eq_mutex);
+        return eq->otsu_histogram_bin_count();
     }
     uint64_t get_train_drop_count() { return train_drop_count.load(); }
 };

@@ -105,6 +105,14 @@ struct has_hot_predict_threshold_stat<
     T, std::void_t<decltype(std::declval<T>().hot_predict_threshold)>>
     : std::true_type {};
 
+template <typename T, typename = void>
+struct has_otsu_histogram_bin_count_stat : std::false_type {};
+
+template <typename T>
+struct has_otsu_histogram_bin_count_stat<
+    T, std::void_t<decltype(std::declval<T>().otsu_histogram_bin_count)>>
+    : std::true_type {};
+
 void test_stats_drop_online_prediction_ratio_source()
 {
   require(!has_predicted_hot<HeatPredictorStats>::value,
@@ -127,12 +135,24 @@ void test_stats_export_hot_predict_threshold()
           "HeatPredictorStats should expose hot_predict_threshold");
 }
 
+void test_stats_export_otsu_histogram_bin_count()
+{
+  require(has_otsu_histogram_bin_count_stat<HeatPredictorStats>::value,
+          "HeatPredictorStats should expose Otsu histogram bin count");
+}
+
 void test_otsu_update_cost_knobs()
 {
-  require(HP_OTSU_EAGER_OBJECTS == 1000,
-          "Otsu eager object threshold should cap per-IO eager scans at 1000");
-  require(HP_OTSU_UPDATE_INTERVAL == 1000,
-          "Otsu update interval should cap amortized full scans at 1/1000");
+  require(HP_OTSU_EAGER_OBJECTS == 0,
+          "Otsu eager updates should be disabled for fixed interval updates");
+  require(HP_OTSU_UPDATE_INTERVAL == 100,
+          "Otsu update interval should refresh every 100 IO observations");
+  require_close(HP_OTSU_HEAT_MIN, 1.0,
+                "Otsu heat clamp lower bound should be 1.0");
+  require_close(HP_OTSU_HEAT_MAX, 3000.0,
+                "Otsu heat clamp upper bound should be 3000.0");
+  require_close(HP_OTSU_LOG_HEAT_BIN_WIDTH, 0.05,
+                "Otsu log-heat histogram bin width should be 0.05");
 }
 
 void test_learning_lag_knobs()
@@ -173,6 +193,49 @@ void test_prediction_clone_is_independent()
       snapshot_before,
       snapshot_after,
       "snapshot should be independent from later source training");
+}
+
+void test_predictor_enable_disable_resets_and_gates_io()
+{
+  HeatPredictor predictor;
+  uint64_t index = 0;
+
+  require(predictor.is_enabled(),
+          "heat predictor should be enabled by default");
+  predictor.predict(0, 4096, 1, 1, 1, &index);
+  require(index == 1, "enabled predictor should process the first IO");
+  require(predictor.hp_index.load() == 1,
+          "enabled predictor should count processed IO");
+
+  uint64_t discarded = predictor.set_enabled(false);
+  require(discarded == 1,
+          "disable should reset and report discarded pending IO");
+  require(!predictor.is_enabled(),
+          "disable should turn off the predictor");
+  require(predictor.hp_index.load() == 0,
+          "disable should reset processed IO count");
+
+  index = 99;
+  predictor.predict(0, 4096, 1, 1, 1, &index);
+  require(index == 0,
+          "disabled predictor should report no processed IO index");
+  require(predictor.hp_index.load() == 0,
+          "disabled predictor should not count IO");
+  require(predictor.get_pending_io_count() == 0,
+          "disabled predictor should not enqueue IO");
+
+  predictor.predict(0, 4096, 1, 1, 1, nullptr);
+  uint64_t enabled_discarded = predictor.set_enabled(true);
+  require(enabled_discarded == 0,
+          "enable should reset even when disabled left no pending IO");
+  require(predictor.is_enabled(),
+          "enable should turn on the predictor");
+  require(predictor.hp_index.load() == 0,
+          "enable should reset processed IO count");
+
+  predictor.predict(0, 4096, 1, 1, 1, &index);
+  require(index == 1,
+          "predictor should process IO again after enable");
 }
 
 void test_future_heat_label_ignores_decayed_history_only()
@@ -323,22 +386,26 @@ void test_threshold_window_tracks_object_current_heat()
     100.0); // heat_increment
 
   eq.record_object_heat(42, 10.0, 1);
+  eq.update_hot_threshold(1);
   require(eq.hot_list.size() == 1,
           "first object should create one object heat entry");
   require(std::abs(eq.hot_threshold - 10.0) < 0.000001,
           "single-object threshold should use current object heat");
 
   eq.record_object_heat(42, 30.0, 2);
+  eq.update_hot_threshold(2);
   require(eq.hot_list.size() == 1,
           "same object should replace object heat instead of appending");
   require(std::abs(eq.hot_threshold - 30.0) < 0.000001,
           "same object replacement should update threshold heat");
 
   eq.record_object_heat(7, 20.0, 2);
+  eq.update_hot_threshold(2);
   require(eq.hot_list.size() == 2,
           "different object should create a second object heat entry");
 
   eq.record_object_heat(42, 5.0, 2);
+  eq.update_hot_threshold(2);
   require(eq.hot_list.size() == 2,
           "replacing one object should not change object heat entry count");
   require(std::abs(eq.hot_threshold - 20.0) < 0.000001,
@@ -374,6 +441,7 @@ void test_object_heat_threshold_decays_idle_objects()
 
   eq.record_object_heat(1, 100.0, 1);
   eq.record_object_heat(2, 100.0, 10001);
+  eq.update_hot_threshold(10001);
 
   require(std::abs(eq.hot_threshold - 100.0) < 0.000001,
           "new object should outrank an idle object after one decay window");
@@ -388,11 +456,12 @@ void test_otsu_threshold_separates_bimodal_object_heat()
     100.0); // heat_increment
 
   for (uint64_t i = 0; i < 100; ++i) {
-    eq.record_object_heat(i, 1.0, 1);
+    eq.record_object_heat(i, 10.0, 1);
   }
   for (uint64_t i = 100; i < 120; ++i) {
     eq.record_object_heat(i, 1000.0, 1);
   }
+  eq.update_hot_threshold(1);
 
   require(eq.hot_threshold > 10.0,
           "Otsu threshold should rise above the cold object heat");
@@ -406,6 +475,73 @@ void test_otsu_threshold_separates_bimodal_object_heat()
           "Otsu separation should be reported when Otsu is active");
 }
 
+void test_otsu_histogram_tracks_threshold_window_entries()
+{
+  EvaluationQueue eq(
+    10000,  // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+  eq.hot_list_cap = 2;
+
+  eq.record_object_heat(1, 10.0, 1);
+  require(eq.otsu_histogram.size() == 1,
+          "histogram should track the first threshold object");
+  require(eq.otsu_histogram.bin_count() == 1,
+          "histogram should report one occupied bin for one object");
+
+  eq.record_object_heat(1, 20.0, 2);
+  require(eq.otsu_histogram.size() == 1,
+          "histogram should replace existing object heat");
+  require(eq.otsu_histogram.bin_count() == 1,
+          "histogram should keep one occupied bin after object replacement");
+
+  eq.record_object_heat(2, 30.0, 2);
+  require(eq.otsu_histogram.size() == 2,
+          "histogram should track distinct threshold objects");
+  require(eq.otsu_histogram.bin_count() == 2,
+          "histogram should report occupied map bins separately from sample count");
+
+  eq.record_object_heat(3, 40.0, 3);
+  require(eq.hot_list.size() == 2,
+          "threshold tree should evict to hot_list_cap");
+  require(eq.otsu_histogram.size() == eq.hot_list.size(),
+          "histogram should evict with the threshold tree");
+  require(eq.otsu_histogram.bin_count() == eq.hot_list.size(),
+          "histogram bin count should evict with the threshold tree");
+}
+
+void test_otsu_threshold_window_clamps_low_scores_without_dropping_entries()
+{
+  EvaluationQueue eq(
+    2000,   // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+
+  eq.record_object_heat(1, HP_OTSU_HEAT_MIN, 1);
+  require(eq.hot_list_by_key.count(1) == 1,
+          "fresh min-heat object should enter the threshold window");
+  require(eq.otsu_histogram.size() == 1,
+          "histogram should track the fresh threshold object");
+
+  eq.record_object_heat(2, HP_OTSU_HEAT_MIN, 10000);
+  require(eq.hot_list_by_key.count(1) == 1,
+          "threshold window should keep old objects until TW size eviction");
+  require(eq.hot_list_by_key.count(2) == 1,
+          "current min-heat object should remain in the threshold window");
+  require(eq.otsu_histogram.size() == eq.hot_list_by_key.size(),
+          "histogram sample count should stay synchronized with threshold entries");
+  require(eq.otsu_histogram.bin_count() == 1,
+          "old low-score bins should be merged into the current lower-bound bin");
+
+  eq.record_object_heat(1, HP_OTSU_HEAT_MIN, 10001);
+  require(eq.hot_list_by_key.size() == 2,
+          "updating an old low-score object should replace instead of append");
+  require(eq.otsu_histogram.size() == eq.hot_list_by_key.size(),
+          "histogram replacement should keep one sample per threshold object");
+}
+
 void test_threshold_ema_smooths_large_otsu_shift()
 {
   EvaluationQueue eq(
@@ -415,11 +551,12 @@ void test_threshold_ema_smooths_large_otsu_shift()
     100.0); // heat_increment
 
   for (uint64_t i = 0; i < 100; ++i) {
-    eq.record_object_heat(i, 1.0, 1);
+    eq.record_object_heat(i, 10.0, 1);
   }
   for (uint64_t i = 100; i < 120; ++i) {
     eq.record_object_heat(i, 1000.0, 1);
   }
+  eq.update_hot_threshold(1);
 
   double first_threshold = eq.hot_threshold;
   require(first_threshold > 10.0 && first_threshold < 500.0,
@@ -428,11 +565,31 @@ void test_threshold_ema_smooths_large_otsu_shift()
   for (uint64_t i = 100; i < 120; ++i) {
     eq.record_object_heat(i, 1000000.0, 2);
   }
+  eq.update_hot_threshold(2);
 
   require(eq.hot_threshold > first_threshold,
           "EMA threshold should still move toward the new hot cluster");
   require(eq.hot_threshold < 500.0,
           "EMA threshold should smooth a large Otsu threshold jump");
+}
+
+void test_otsu_threshold_updates_every_100_observations()
+{
+  EvaluationQueue eq(
+    10000,  // evaluation_window
+    200,    // lru_capacity
+    100.0,  // hot_threshold
+    100.0); // heat_increment
+
+  for (uint64_t i = 0; i < 99; ++i) {
+    eq.record_object_heat(i, 10.0, i + 1);
+  }
+  require_close(eq.hot_threshold, 100.0,
+                "Otsu threshold should not update before 100 observations");
+
+  eq.record_object_heat(99, 10.0, 100);
+  require(eq.hot_threshold > 9.9 && eq.hot_threshold < 10.1,
+          "Otsu threshold should update on the 100th observation");
 }
 
 void test_threshold_reports_quantile_fallback()
@@ -445,6 +602,7 @@ void test_threshold_reports_quantile_fallback()
 
   eq.record_object_heat(1, 10.0, 1);
   eq.record_object_heat(2, 20.0, 1);
+  eq.update_hot_threshold(1);
 
   require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_QUANTILE,
           "small threshold windows should report quantile fallback");
@@ -656,9 +814,11 @@ int main()
   test_stats_drop_online_prediction_ratio_source();
   test_predictor_drops_unused_actual_label_counters();
   test_stats_export_hot_predict_threshold();
+  test_stats_export_otsu_histogram_bin_count();
   test_otsu_update_cost_knobs();
   test_learning_lag_knobs();
   test_prediction_clone_is_independent();
+  test_predictor_enable_disable_resets_and_gates_io();
   test_future_heat_label_ignores_decayed_history_only();
   test_balanced_accuracy_penalizes_missing_hot_class();
   test_quantile_window_keeps_recent_values();
@@ -670,7 +830,10 @@ int main()
   test_threshold_window_order_has_one_entry_per_object();
   test_object_heat_threshold_decays_idle_objects();
   test_otsu_threshold_separates_bimodal_object_heat();
+  test_otsu_histogram_tracks_threshold_window_entries();
+  test_otsu_threshold_window_clamps_low_scores_without_dropping_entries();
   test_threshold_ema_smooths_large_otsu_shift();
+  test_otsu_threshold_updates_every_100_observations();
   test_threshold_reports_quantile_fallback();
   test_simple_training_weight_uses_hot_class_weight();
   test_pred_actual_hot_ratio_tracks_prediction_bias();

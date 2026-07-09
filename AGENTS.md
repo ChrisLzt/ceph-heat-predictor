@@ -7,7 +7,10 @@ Before making changes, read the relevant CODEX document:
 
 - `CODEX_CEPH.md`: Ceph object-layer heat predictor implementation, hook location, model features, and `object_hp_status` fields.
 - `CODEX_ICFS.md`: ICFS/IDFS porting notes, OSS/MergePG hook points, ICFS-specific op coverage, and migration risks.
-- `CODEX_TEST.md`: Ceph and ICFS test scripts, background run commands, data/log paths, and test cautions.
+- `CEPH_OPERATIONS_MANUAL.md`: single-node Ceph deployment, OSD/MGR operation, and basic heat predictor checks.
+
+Test workloads and reports are maintained outside this repository under
+`/home/chris/ceph-test/new_workload/`.
 
 Do not rely on old KernelDevice/BlockDevice heat-predictor assumptions unless the user explicitly asks to inspect historical code.
 

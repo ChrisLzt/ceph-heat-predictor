@@ -75,6 +75,14 @@ COMMAND("osd hp reset", \
         "reset heat predictor state on all up OSDs", \
         "osd", \
         "rw")
+COMMAND("osd hp enable", \
+        "enable and reset heat predictor on all up OSDs", \
+        "osd", \
+        "rw")
+COMMAND("osd hp disable", \
+        "disable and reset heat predictor on all up OSDs", \
+        "osd", \
+        "rw")
 COMMAND("osd df " \
         "name=output_method,type=CephChoices,strings=plain|tree,req=false " \
         "name=filter_by,type=CephChoices,strings=class|name,req=false " \

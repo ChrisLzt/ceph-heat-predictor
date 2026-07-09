@@ -20,7 +20,7 @@ static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MIN = 0.80;
 static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MAX = 1.25;
 
 // Evaluation and retained object state.
-static constexpr size_t HP_EVALUATION_WINDOW = 2000;
+static constexpr size_t HP_EVALUATION_WINDOW = 10000;
 static constexpr size_t HP_LRU_CAPACITY = 100000;
 static constexpr size_t HP_LABEL_THRESHOLD_WINDOW_CAPACITY = 1000000;
 
@@ -36,8 +36,11 @@ static constexpr double HP_HOT_QUANTILE = 0.85;
 static constexpr size_t HP_OTSU_MIN_OBJECTS = 32;
 static constexpr double HP_OTSU_MIN_SEPARATION = 0.60;
 static constexpr double HP_OTSU_EMA_ALPHA = 0.10;
-static constexpr size_t HP_OTSU_EAGER_OBJECTS = 1000;
-static constexpr size_t HP_OTSU_UPDATE_INTERVAL = 1000;
+static constexpr size_t HP_OTSU_EAGER_OBJECTS = 0;
+static constexpr size_t HP_OTSU_UPDATE_INTERVAL = 100;
+static constexpr double HP_OTSU_HEAT_MIN = 1.0;
+static constexpr double HP_OTSU_HEAT_MAX = 3000.0;
+static constexpr double HP_OTSU_LOG_HEAT_BIN_WIDTH = 0.05;
 static constexpr uint64_t HP_THRESHOLD_METHOD_NONE = 0;
 static constexpr uint64_t HP_THRESHOLD_METHOD_QUANTILE = 1;
 static constexpr uint64_t HP_THRESHOLD_METHOD_OTSU = 2;

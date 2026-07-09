@@ -65,15 +65,32 @@ key = make_object_key(pool, ceph_object_hash, object_name_hash);
 当前参数位于 `hp_config.h`：
 
 ```cpp
-HP_HOT_QUANTILE = 0.85
-HP_HOT_CLASS_WEIGHT = 4.0
 HP_HOT_PREDICT_THRESHOLD = 0.50
-HP_EVALUATION_WINDOW = 10000
-HP_LABEL_THRESHOLD_WINDOW_CAPACITY = 1000000
-HP_HEAT_INCREMENT = 100.0
+HP_HOT_CLASS_WEIGHT = 3.0
+HP_DYNAMIC_HOT_CLASS_WEIGHT_MIN = 1.0
+HP_DYNAMIC_HOT_CLASS_WEIGHT_MAX = 5.0
+HP_PRED_ACTUAL_HOT_RATIO_SMOOTHING = 1.0
+HP_PRED_ACTUAL_HOT_RATIO_MIN = 0.80
+HP_PRED_ACTUAL_HOT_RATIO_MAX = 1.25
+
+HP_EVALUATION_WINDOW = 2000
 HP_LRU_CAPACITY = 100000
+HP_LABEL_THRESHOLD_WINDOW_CAPACITY = 1000000
+
+HP_HEAT_INCREMENT = 100.0
 HP_HEAT_RETAIN_RATIO = 1.0 / 10.0
+
 HP_REPORT_STATS_WINDOW_CAPACITY = 400000
+
+HP_HOT_QUANTILE = 0.85
+HP_OTSU_MIN_OBJECTS = 32
+HP_OTSU_MIN_SEPARATION = 0.60
+HP_OTSU_EMA_ALPHA = 0.10
+HP_OTSU_EAGER_OBJECTS = 1000
+HP_OTSU_UPDATE_INTERVAL = 1000
+HP_THRESHOLD_METHOD_NONE = 0
+HP_THRESHOLD_METHOD_QUANTILE = 1
+HP_THRESHOLD_METHOD_OTSU = 2
 ```
 
 热度衰减系数由 `hp_heat_decay_alpha(evaluation_window)` 计算，使热度在一个评估窗口后保留 `HP_HEAT_RETAIN_RATIO`。
@@ -87,7 +104,8 @@ HP_REPORT_STATS_WINDOW_CAPACITY = 400000
 - 同一 object 在 `heat_map` 中共享 `heat/access_count/pending_count/first_access/last_access`。
 - 到期标签使用未来窗口内新增热度：`future_heat = decayed_total_heat - decayed_entry_heat`。
 - `future_heat > hot_threshold` 标记为实际热。
-- 热样本训练权重固定为 `HP_HOT_CLASS_WEIGHT`，冷样本权重为 1。
+- 热样本训练权重根据已评估样本的 `预测热数 / 实际热数` 动态调节：预测热偏少时提高热样本权重，预测热偏多时降低热样本权重；冷样本权重固定为 1。
+- 动态热权重使用 `clamp((pred_actual_hot_ratio)^2, 0.80, 1.25)` 调节，收窄调节幅度以减少震荡。
 
 WT/阈值窗口维护 object 当前热度分布：
 
@@ -95,7 +113,9 @@ WT/阈值窗口维护 object 当前热度分布：
 - `hot_list` 是按 `log(heat) - alpha * timestamp` 存储的可求分位数树。
 - `hot_list_order` 是 `std::list`，`hot_list_by_key` 保存 list iterator；同一 object 更新时会删除旧位置再插入队尾，不保留 stale entry。
 - 超过 `HP_LABEL_THRESHOLD_WINDOW_CAPACITY` 时淘汰最久未更新 object。
-- `hot_threshold` 是当前 object 热度分布的 `HP_HOT_QUANTILE` 分位数，按当前 timestamp 还原为真实热度。
+- `hot_threshold` 使用 hybrid 动态阈值：默认回退到 `HP_HOT_QUANTILE` 分位数；当 object 数量不少于 `HP_OTSU_MIN_OBJECTS` 且 Otsu 分离度不低于 `HP_OTSU_MIN_SEPARATION` 时，对 `log1p(heat)` 分布做 Otsu 切分。
+- Otsu 阈值在 `log1p(heat)` 空间用 `HP_OTSU_EMA_ALPHA` 做 EMA 平滑，减少大幅跳变；分位数 fallback 不做 EMA，避免小样本阶段阈值滞后。
+- 为控制前台开销，object 数量不超过 `HP_OTSU_EAGER_OBJECTS` 时每次更新阈值；更大集合按 `HP_OTSU_UPDATE_INTERVAL` 间隔重算 Otsu。当前 TW 容量为 1000000，`HP_OTSU_EAGER_OBJECTS = 1000`、`HP_OTSU_UPDATE_INTERVAL = 1000` 时，Otsu 扫描部分的均摊遍历量不超过约 1000 个 entry/I/O；单次触发仍可能扫描完整 TW。
 
 LRU 只管理无 pending 的 object 状态：
 
@@ -120,7 +140,7 @@ hp_labeled_io_total = TP + FP + TN + FN
 - 到期时同步更新 I/O 级 TP/FP/TN/FN，再把样本送入后台训练队列。
 - 后台线程只训练 `train_model`，不直接修改前台正在使用的快照。
 - `BATCH_SIZE = 100` 只控制后台训练线程唤醒频率；后台仍有 50ms 定时唤醒，不会无限等待凑满 100 条。
-- 每累计训练 `MODEL_UPDATE_REPORT_INTERVAL = 2000` 个样本后，从 `train_model` clone 一个新的 `prediction_snapshot` 并发布。
+- 每累计训练 `MODEL_UPDATE_REPORT_INTERVAL = 500` 个样本后，从 `train_model` clone 一个新的 `prediction_snapshot` 并发布。
 - `hp_snapshot_publish_count` 表示已发布的预测快照次数。
 - 超过 `MAX_TRAIN_QUEUE_LENGTH` 时丢弃最老训练样本并增加 drop 计数。
 
@@ -185,11 +205,11 @@ ceph osd hp reset
 
 - `summary.osds`：`up_osds`、`reporting_osds`、`missing_osds`
 - `summary.samples`：I/O 总数、已评估数、pending 数
-- `summary.heat_state`：共享热度状态、LRU 数量、`hp_hot_threshold_avg`
+- `summary.heat_state`：共享热度状态、LRU 数量、当前阈值、分位数阈值、Otsu 分离度和各阈值方法的 OSD 数
 - `summary.confusion_matrix`：TP/FP/TN/FN
-- `summary.actual_behavior`：实际热/冷样本在未来窗口内的 object 平均访问次数、到期平均热度和分布
-- `summary.prediction`：预测比例和评估指标
-- `summary.training`：训练队列、丢弃样本和预测快照发布次数
+- `summary.actual_behavior`：实际热/冷样本在未来窗口内的 object 平均访问次数、到期平均热度、热冷比值和分布；分布字段按 `max/p99/p95/p90/p50` 输出。
+- `summary.prediction`：accuracy/precision/recall、评估样本预测热比例、实际热比例、预测热/实际热比值，以及实际热/冷样本的平均预测热概率
+- `summary.training`：动态热样本权重、训练队列、丢弃样本和预测快照发布次数
 - `summary.latency`：所有上报 OSD 的预测耗时总和、次数和全局平均值
 - `summary.read_ops`：read 类 op 计数
 - `summary.write_ops`：write 类 op 计数
@@ -197,7 +217,6 @@ ceph osd hp reset
 汇总规则由 `DaemonServer.cc` 的 `object_hp_counter_fields` 表驱动：
 
 - `sum`：计数字段直接求和。
-- `io_weighted`：如 `hp_pred_hot_percent`，按 `hp_io_count` 加权平均。
 - `hot_weighted` / `cold_weighted`：按实际热/冷样本数加权平均。
 - `osd_average`：如 `hp_hot_threshold_avg`，按上报 OSD 数简单平均，仅作参考。
 - `none`：不直接聚合，由全局 TP/FP/TN/FN 重新计算。
@@ -227,15 +246,23 @@ ceph daemon osd.0 perf dump object_hp_status
 | `hp_false_negative_count` | 实际热但预测冷 |
 | `hp_actual_hot_object_avg_future_access_count` | 实际热样本的未来窗口内 object 平均访问次数，除以 `10000` |
 | `hp_actual_cold_object_avg_future_access_count` | 实际冷样本的未来窗口内 object 平均访问次数，除以 `10000` |
+| `hp_future_access_hot_cold_ratio` | 上面两个平均访问次数的热/冷比值，除以 `10000` |
 | `hp_actual_hot_object_avg_heat` | 实际热样本到期时的 object 平均热度，除以 `10000` |
 | `hp_actual_cold_object_avg_heat` | 实际冷样本到期时的 object 平均热度，除以 `10000` |
-| `hp_pred_hot_percent` | 在线预测路径中预测热比例，除以 `10000` |
+| `hp_future_heat_hot_cold_ratio` | 上面两个平均热度的热/冷比值，除以 `10000` |
 | `hp_eval_pred_hot_percent` | 评估样本预测热比例 |
 | `hp_eval_actual_hot_percent` | 评估样本实际热比例 |
+| `hp_pred_actual_hot_ratio` | 评估样本预测热数 / 实际热数，除以 `10000`；MGR 汇总按全局 TP/FP/FN 重新计算 |
 | `hp_hot_accuracy` | `(TP + TN) / labeled_total * 10000` |
 | `hp_hot_precision` | `TP / (TP + FP) * 10000` |
 | `hp_hot_recall` | `TP / (TP + FN) * 10000` |
+| `hp_actual_hot_avg_pred_hot_percent` | 对所有实际热样本，统计它们入队时模型给出的平均热概率，除以 `10000` |
+| `hp_actual_cold_avg_pred_hot_percent` | 对所有实际冷样本，统计它们入队时模型给出的平均热概率，除以 `10000` |
 | `hp_hot_threshold` | 当前 OSD 本地热度阈值 |
+| `hp_hot_quantile_threshold` | 当前实际生效的分位数热度阈值；Otsu 生效时等于 `hp_hot_threshold` |
+| `hp_hot_threshold_method` | 当前阈值来源：0 none、1 quantile fallback、2 Otsu |
+| `hp_otsu_separation` | Otsu 类间方差占总方差比例，除以 `10000` |
+| `hp_dynamic_hot_class_weight` | 当前 OSD 动态热样本训练权重，除以 `10000` |
 | `hp_train_queue_length` | 后台训练队列长度 |
 | `hp_train_drop_count` | 后台训练队列满后丢弃的样本数 |
 | `hp_snapshot_publish_count` | 每累计训练 `MODEL_UPDATE_REPORT_INTERVAL` 个样本发布一次预测快照 |

@@ -20,6 +20,7 @@
 
 #include "common/debug.h"
 #include "hp_config.h"
+#include "hp_otsu_histogram.h"
 #include "hp_types.h"
 
 class EvaluationQueue {
@@ -56,6 +57,8 @@ public:
     };
     std::list<uint64_t> hot_list_order;
     std::unordered_map<uint64_t, HotListEntry> hot_list_by_key;
+    std::unordered_map<uint64_t, uint64_t> hot_list_key_by_counter;
+    HpOtsuHistogram otsu_histogram;
     uint64_t pbds_counter = 0;
     uint64_t threshold_observation_count = 0;
     bool otsu_threshold_ema_initialized = false;
@@ -157,25 +160,6 @@ public:
         return std::exp(log_heat);
     }
 
-    double log1p_heat_from_score(double score, uint64_t timestamp) const {
-        double log_heat = score + alpha * static_cast<double>(timestamp);
-        if (log_heat > 36.0) {
-            return log_heat;
-        }
-        if (log_heat < -36.0) {
-            return std::exp(log_heat);
-        }
-        return std::log1p(std::exp(log_heat));
-    }
-
-    double heat_from_log1p(double log1p_heat) const {
-        double max_log = std::log(std::numeric_limits<double>::max());
-        if (log1p_heat >= max_log) {
-            return std::numeric_limits<double>::max();
-        }
-        return std::expm1(log1p_heat);
-    }
-
     double quantile_threshold(uint64_t timestamp) const {
         if (hot_list.empty()) {
             return hot_threshold;
@@ -184,70 +168,22 @@ public:
         if (idx >= hot_list.size()) {
             idx = hot_list.size() - 1;
         }
-        return from_heat_score(hot_list.find_by_order(idx)->first, timestamp);
+        return std::clamp(
+            from_heat_score(hot_list.find_by_order(idx)->first, timestamp),
+            HP_OTSU_HEAT_MIN,
+            HP_OTSU_HEAT_MAX);
     }
 
     std::optional<double> otsu_threshold_score(
             uint64_t timestamp,
             double *separation) const {
-        if (hot_list.size() < HP_OTSU_MIN_OBJECTS) {
-            return std::nullopt;
-        }
-
-        std::vector<double> values;
-        values.reserve(hot_list.size());
-        double total_sum = 0.0;
-        double total_square_sum = 0.0;
-        for (const auto& entry : hot_list) {
-            double value = log1p_heat_from_score(entry.first, timestamp);
-            values.push_back(value);
-            total_sum += value;
-            total_square_sum += value * value;
-        }
-
-        const double total_count = static_cast<double>(values.size());
-        const double total_mean = total_sum / total_count;
-        const double total_variance =
-            total_square_sum / total_count - total_mean * total_mean;
-        if (total_variance <= 0.0) {
-            return std::nullopt;
-        }
-
-        double lhs_sum = 0.0;
-        double best_between_variance = -1.0;
-        double best_threshold_score = 0.0;
-        for (size_t i = 0; i + 1 < values.size(); ++i) {
-            lhs_sum += values[i];
-            if (values[i] == values[i + 1]) {
-                continue;
-            }
-
-            const double lhs_count = static_cast<double>(i + 1);
-            const double rhs_count = total_count - lhs_count;
-            const double lhs_mean = lhs_sum / lhs_count;
-            const double rhs_mean = (total_sum - lhs_sum) / rhs_count;
-            const double mean_diff = lhs_mean - rhs_mean;
-            const double between_variance =
-                (lhs_count * rhs_count * mean_diff * mean_diff) /
-                (total_count * total_count);
-            if (between_variance > best_between_variance) {
-                best_between_variance = between_variance;
-                best_threshold_score = (values[i] + values[i + 1]) / 2.0;
-            }
-        }
-
-        if (best_between_variance < 0.0) {
-            return std::nullopt;
-        }
-
-        *separation = best_between_variance / total_variance;
-        if (*separation < HP_OTSU_MIN_SEPARATION) {
-            return std::nullopt;
-        }
-        return best_threshold_score;
+        (void)timestamp;
+        return otsu_histogram.otsu_threshold_score(separation);
     }
 
     void update_hot_threshold(uint64_t timestamp) {
+        maintain_otsu_lower_bound(timestamp);
+
         if (hot_list.empty()) {
             hot_quantile_threshold = hot_threshold;
             hot_threshold_method = HP_THRESHOLD_METHOD_NONE;
@@ -274,7 +210,10 @@ public:
                 HP_OTSU_EMA_ALPHA * (*otsu_score) +
                 (1.0 - HP_OTSU_EMA_ALPHA) * otsu_threshold_score_ema;
         }
-        hot_threshold = heat_from_log1p(otsu_threshold_score_ema);
+        hot_threshold = std::clamp(
+            from_heat_score(otsu_threshold_score_ema, timestamp),
+            HP_OTSU_HEAT_MIN,
+            HP_OTSU_HEAT_MAX);
         hot_quantile_threshold = hot_threshold;
         hot_threshold_method = HP_THRESHOLD_METHOD_OTSU;
         otsu_separation = separation;
@@ -285,16 +224,22 @@ public:
             return;
         }
 
+        maintain_otsu_lower_bound(timestamp);
+
         auto old = hot_list_by_key.find(key);
         if (old != hot_list_by_key.end()) {
-            hot_list.erase(old->second.score);
-            hot_list_order.erase(old->second.order_position);
+            erase_threshold_entry(old, timestamp);
         }
 
         auto entry = std::make_pair(
-            to_heat_score(heat, timestamp), ++pbds_counter);
+            threshold_score_for_heat(heat, timestamp),
+            ++pbds_counter);
+
         hot_list.insert(entry);
+        otsu_histogram.insert(histogram_score_for_threshold_score(
+            entry.first, timestamp));
         hot_list_order.push_back(key);
+        hot_list_key_by_counter[entry.second] = key;
         hot_list_by_key[key] = HotListEntry{
             entry,
             std::prev(hot_list_order.end())
@@ -303,12 +248,9 @@ public:
         while (hot_list_by_key.size() > hot_list_cap) {
             ceph_assert(!hot_list_order.empty());
             uint64_t victim = hot_list_order.front();
-            hot_list_order.pop_front();
-
             auto victim_it = hot_list_by_key.find(victim);
             ceph_assert(victim_it != hot_list_by_key.end());
-            hot_list.erase(victim_it->second.score);
-            hot_list_by_key.erase(victim_it);
+            erase_threshold_entry(victim_it, timestamp);
         }
 
         ++threshold_observation_count;
@@ -416,6 +358,41 @@ public:
     size_t pending_size() const { return pending_queue.size(); }
     size_t heat_state_size() const { return heat_map.size(); }
     size_t lru_size() const { return lru_list.size(); }
+    size_t otsu_histogram_bin_count() const {
+        return otsu_histogram.bin_count();
+    }
+
+private:
+    double otsu_score_min(uint64_t timestamp) const {
+        return to_heat_score(HP_OTSU_HEAT_MIN, timestamp);
+    }
+
+    double threshold_score_for_heat(
+            double heat,
+            uint64_t timestamp) const {
+        return to_heat_score(heat, timestamp);
+    }
+
+    double histogram_score_for_threshold_score(
+            double score,
+            uint64_t timestamp) const {
+        return std::max(score, otsu_score_min(timestamp));
+    }
+
+    void erase_threshold_entry(
+            std::unordered_map<uint64_t, HotListEntry>::iterator it,
+            uint64_t timestamp) {
+        hot_list.erase(it->second.score);
+        otsu_histogram.erase(histogram_score_for_threshold_score(
+            it->second.score.first, timestamp));
+        hot_list_order.erase(it->second.order_position);
+        hot_list_key_by_counter.erase(it->second.score.second);
+        hot_list_by_key.erase(it);
+    }
+
+    void maintain_otsu_lower_bound(uint64_t timestamp) {
+        otsu_histogram.clamp_lower_bound(otsu_score_min(timestamp));
+    }
 };
 
 #endif
