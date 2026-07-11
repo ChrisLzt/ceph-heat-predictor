@@ -2,6 +2,7 @@
 # define HOEFFDING_TREE_H
 
 # include <cmath>
+# include <cstddef>
 
 template <int num_features, int num_labels>
 class BranchOrLeaf;
@@ -21,7 +22,8 @@ protected:
     double _active_leaf_size_estimate = 0.0;
     double _size_estimate_overhead_fraction = 1.0;
     bool _growth_allowed = true;
-    int _train_weight_seen_by_model = 0;
+    double _train_weight_seen_by_model = 0.0;
+    double _last_memory_estimate_at = 0.0;
 public:
     bool merit_preprune;
     double _max_byte_size;
@@ -50,7 +52,7 @@ public:
         return range_val * std::sqrt(-std::log(confidence) / (2.0 * n));
     }
 
-    void _enforce_size_limit();
+    void _enforce_size_limit(size_t estimated_model_size);
     void _estimate_model_size();
 };
 

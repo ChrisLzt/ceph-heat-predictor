@@ -199,10 +199,15 @@ sudo install -d -o "$USER" -g "$USER" -m 0755 /mnt/cephfs/vdbench
 ```bash
 sudo ceph daemon osd.0 perf dump object_hp_status
 sudo ceph daemon osd.1 perf dump object_hp_status
+sudo ceph daemon osd.0 object_hp status
+sudo ceph daemon osd.1 object_hp status
 sudo ceph osd hp status -f json-pretty
 sudo ceph osd hp reset
 ```
 
-汇总包括 `samples`、`heat_state`、`confusion_matrix`、`bucket_access`、
-`prediction`、`training`、`latency`、`read_ops` 和 `write_ops`。`bucket_access`
-是历史命名，当前按 object 级统计；重点看 precision、recall 及 TP/FP/TN/FN。
+OSD `object_hp status` 直接读取实时训练队列；测试结束后不要只用可能滞后的
+perf/MGR 队列字段判断训练是否完成。
+
+汇总包括 `samples`、`heat_state`、`confusion_matrix`、`actual_behavior`、
+`prediction`、`training`、`latency`、`read_ops` 和 `write_ops`。
+`actual_behavior` 当前按 object 级统计；重点看 precision、recall 及 TP/FP/TN/FN。

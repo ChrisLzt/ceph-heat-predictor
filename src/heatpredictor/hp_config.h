@@ -7,20 +7,44 @@
 
 #include "common/debug.h"
 
-#define NUM_FEATURES 7
+#ifndef HP_ENABLE_ACCESS_ACCELERATION
+#define HP_ENABLE_ACCESS_ACCELERATION 1
+#endif
+
+#ifndef HP_ENABLE_HEAT_PERCENTILE
+#define HP_ENABLE_HEAT_PERCENTILE 0
+#endif
+
+#define HP_BASE_FEATURE_COUNT 5
+#define NUM_FEATURES \
+    (HP_BASE_FEATURE_COUNT + HP_ENABLE_ACCESS_ACCELERATION + \
+     HP_ENABLE_HEAT_PERCENTILE)
+
+// Adaptive Random Forest model.
+static constexpr int HP_ARF_N_MODELS = 25;
+static constexpr int HP_ARF_MAX_FEATURES = NUM_FEATURES;
+static constexpr int HP_ARF_SEED = 591422;
+static constexpr int HP_ARF_GRACE_PERIOD = 100;
+static constexpr int HP_ARF_LAMBDA = 4;
+static constexpr double HP_ARF_DELTA = 0.001;
+static constexpr double HP_ARF_TAU = 0.05;
+static constexpr double HP_ARF_MAX_SHARE_TO_SPLIT = 0.99;
+static constexpr double HP_ARF_MIN_BRANCH_FRACTION = 0.01;
 
 // Prediction and training policy.
 static constexpr double HP_HOT_PREDICT_THRESHOLD = 0.50;
-static constexpr double HP_HOT_PREDICT_THRESHOLD_MIN = 0.45;
-static constexpr double HP_HOT_PREDICT_THRESHOLD_MAX = 0.55;
+static constexpr double HP_HOT_PREDICT_THRESHOLD_MIN = 0.40;
+static constexpr double HP_HOT_PREDICT_THRESHOLD_MAX = 0.60;
 static constexpr double HP_HOT_PREDICT_THRESHOLD_EMA_ALPHA = 0.10;
-static constexpr double HP_HOT_CLASS_WEIGHT = 3.0;
-static constexpr double HP_PRED_ACTUAL_HOT_RATIO_SMOOTHING = 1.0;
-static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MIN = 0.80;
-static constexpr double HP_PRED_ACTUAL_HOT_RATIO_MAX = 1.25;
+static constexpr size_t HP_PREDICT_CALIBRATION_WINDOW = 10000;
+static constexpr size_t HP_PREDICT_CALIBRATION_UPDATE_INTERVAL = 500;
+static constexpr size_t HP_PREDICT_CALIBRATION_MIN_SAMPLES = 1000;
+static constexpr size_t HP_PREDICT_PROBABILITY_BIN_COUNT = 1001;
+static constexpr double HP_HOT_CLASS_WEIGHT = 1.0;
 
 // Evaluation and retained object state.
 static constexpr size_t HP_EVALUATION_WINDOW = 10000;
+static constexpr size_t HP_ACCESS_ACCELERATION_WINDOW = 2500;
 static constexpr size_t HP_LRU_CAPACITY = 100000;
 static constexpr size_t HP_LABEL_THRESHOLD_WINDOW_CAPACITY = 1000000;
 
@@ -32,18 +56,22 @@ static constexpr double HP_HEAT_RETAIN_RATIO = 1.0 / 10.0;
 static constexpr size_t HP_REPORT_STATS_WINDOW_CAPACITY = 400000;
 
 // Dynamic hot threshold.
-static constexpr double HP_HOT_QUANTILE = 0.85;
 static constexpr size_t HP_OTSU_MIN_OBJECTS = 32;
-static constexpr double HP_OTSU_MIN_SEPARATION = 0.60;
-static constexpr double HP_OTSU_EMA_ALPHA = 0.10;
+static constexpr size_t HP_OTSU_FULL_CONFIDENCE_OBJECTS = 1000;
+static constexpr double HP_OTSU_NEAR_OPTIMAL_RATIO = 0.99;
+static constexpr double HP_OTSU_SHARPNESS_FULL_WIDTH_RATIO = 0.20;
+static constexpr double HP_OTSU_SEPARATION_CONFIDENCE_WEIGHT = 0.65;
+static constexpr double HP_OTSU_SAMPLE_CONFIDENCE_WEIGHT = 0.20;
+static constexpr double HP_OTSU_SHARPNESS_CONFIDENCE_WEIGHT = 0.15;
+static constexpr double HP_OTSU_MAX_UPDATE_ALPHA = 0.10;
 static constexpr size_t HP_OTSU_EAGER_OBJECTS = 0;
 static constexpr size_t HP_OTSU_UPDATE_INTERVAL = 100;
 static constexpr double HP_OTSU_HEAT_MIN = 1.0;
 static constexpr double HP_OTSU_HEAT_MAX = 3000.0;
 static constexpr double HP_OTSU_LOG_HEAT_BIN_WIDTH = 0.05;
-static constexpr uint64_t HP_THRESHOLD_METHOD_NONE = 0;
-static constexpr uint64_t HP_THRESHOLD_METHOD_QUANTILE = 1;
-static constexpr uint64_t HP_THRESHOLD_METHOD_OTSU = 2;
+static constexpr uint64_t HP_THRESHOLD_METHOD_INITIALIZING = 0;
+static constexpr uint64_t HP_THRESHOLD_METHOD_TRACKING = 1;
+static constexpr uint64_t HP_THRESHOLD_METHOD_HOLDING = 2;
 
 inline double hp_heat_decay_alpha(size_t evaluation_window) {
     ceph_assert(evaluation_window > 0);

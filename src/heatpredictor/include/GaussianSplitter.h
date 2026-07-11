@@ -2,9 +2,11 @@
 # define GAUSSIAN_SPLITTER_H
 
 # include <cmath>
+# include <array>
 # include <limits>
 # include <vector>
 # include <unordered_map>
+# include <utility>
 # include "TreeBase.h"
 
 class Gaussian {
@@ -41,9 +43,9 @@ public:
 template <int num_features, int num_labels>
 class GaussianSplitter {
 private:
-    std::vector<Gaussian> _att_dist_per_class{std::vector<Gaussian>(num_labels)};
-    std::vector<double> _min_per_class{std::vector<double>(num_labels, std::numeric_limits<double>::max())};
-    std::vector<double> _max_per_class{std::vector<double>(num_labels, std::numeric_limits<double>::lowest())};
+    std::array<Gaussian, num_labels> _att_dist_per_class{};
+    std::array<double, num_labels> _min_per_class{};
+    std::array<double, num_labels> _max_per_class{};
     int n_split;
     std::vector<double> _split_point_suggestions() {
         std::vector<double> res;
@@ -80,7 +82,10 @@ private:
         return std::make_pair(lhs_dist, rhs_dist);
     }
 public:
-    GaussianSplitter(int n_split=5) : n_split(n_split) {}
+    GaussianSplitter(int n_split=5) : n_split(n_split) {
+        _min_per_class.fill(std::numeric_limits<double>::max());
+        _max_per_class.fill(std::numeric_limits<double>::lowest());
+    }
     void update(double att_val, int target_val, double w=1.0) {
         if (att_val < _min_per_class[target_val]) _min_per_class[target_val] = att_val;
         if (att_val > _max_per_class[target_val]) _max_per_class[target_val] = att_val;
@@ -97,7 +102,8 @@ public:
             std::pair<std::vector<double>, std::vector<double> > post_split_dist = _class_dists_from_binary_split(split_value);
             double merit = InfoGainSplitCriterion::merit_of_split(pre_split_dist, post_split_dist, min_branch_fraction);
             if (merit > best_suggestion.merit) {
-                best_suggestion = BranchFactory<num_features, num_labels>(merit, att_idx, split_value);
+                best_suggestion = BranchFactory<num_features, num_labels>(
+                    merit, att_idx, split_value, std::move(post_split_dist));
             }
         }
         return best_suggestion;

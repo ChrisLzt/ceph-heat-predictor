@@ -20,13 +20,24 @@ public:
     }
     void learn_one(const std::vector<double>& x, int y, double w=1.0) override {
         transformer->learn_one(x, y);
-        classifier->learn_one(transformer->transform_one(x), y, w);
+        thread_local std::vector<double> transformed;
+        transformer->transform_one_into(x, transformed);
+        classifier->learn_one(transformed, y, w);
     }
     int predict_one(const std::vector<double>& x) override {
-        return classifier->predict_one(transformer->transform_one(x));
+        return Classifier::predict_one(x);
     }
     std::vector<double> predict_proba_one(const std::vector<double>& x) override {
-        return classifier->predict_proba_one(transformer->transform_one(x));
+        std::vector<double> proba;
+        predict_proba_one_into(x, proba);
+        return proba;
+    }
+    void predict_proba_one_into(
+            const std::vector<double>& x,
+            std::vector<double>& proba) override {
+        thread_local std::vector<double> transformed;
+        transformer->transform_one_into(x, transformed);
+        classifier->predict_proba_one_into(transformed, proba);
     }
     std::unique_ptr<Classifier> clone_for_prediction() const override {
         std::unique_ptr<Transformer> transformer_copy = transformer->clone();

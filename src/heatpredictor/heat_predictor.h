@@ -23,6 +23,8 @@
 
 #include "hp_config.h"
 #include "hp_evaluation_queue.h"
+#include "hp_features.h"
+#include "hp_integer_quantile_window.h"
 #include "hp_quantile_window.h"
 #include "hp_types.h"
 
@@ -50,7 +52,16 @@ public:
             new StandardScaler<NUM_FEATURES>(),
             new ARFClassifier<NUM_FEATURES, 2,
                 DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(15, NUM_FEATURES, 591422, 100, 4, 0.001, 0.05, 0.99, 0.01)
+                DetectorFactory<ADWIN<5>, 1>>(
+                    HP_ARF_N_MODELS,
+                    HP_ARF_MAX_FEATURES,
+                    HP_ARF_SEED,
+                    HP_ARF_GRACE_PERIOD,
+                    HP_ARF_LAMBDA,
+                    HP_ARF_DELTA,
+                    HP_ARF_TAU,
+                    HP_ARF_MAX_SHARE_TO_SPLIT,
+                    HP_ARF_MIN_BRANCH_FRACTION)
         );
     }
 
@@ -65,10 +76,10 @@ public:
     std::shared_ptr<Classifier> train_model;
     mutable std::mutex train_model_mutex;
     std::shared_ptr<Classifier> prediction_snapshot;
-    mutable std::mutex prediction_snapshot_mutex;
 
     std::unique_ptr<EvaluationQueue> eq;
     std::mutex eq_mutex;
+    std::condition_variable eq_ready_cv;
     Accuracy<2> accu;
 
     static constexpr int MODEL_UPDATE_REPORT_INTERVAL = 500;
@@ -85,25 +96,10 @@ public:
     std::once_flag start_flag;
     std::atomic<bool> train_running{false};
     std::atomic<bool> enabled{true};
-    std::atomic<int> pending_notify{0};
     std::atomic<uint64_t> train_drop_count{0};
 
     static const std::vector<double>& to_feat(const TraceItem& item) {
-        thread_local std::vector<double> feat(NUM_FEATURES);
-        double threshold = item.hot_threshold > 1.0 ? item.hot_threshold : 1.0;
-
-        feat[0] = static_cast<double>(item.operation);
-        feat[1] = std::log2(static_cast<double>(item.size) + 1.0);
-        feat[2] = std::log2(static_cast<double>(item.access_count) + 1.0);
-        feat[3] = item.access_count > 1 ? item.current_heat / threshold : 0.0;
-        feat[4] = std::log2(
-            static_cast<double>(item.last_access_distance) + 1.0);
-        feat[5] = std::log2(static_cast<double>(item.object_age) + 1.0);
-        feat[6] = item.object_age > 0
-            ? static_cast<double>(item.access_count) /
-                static_cast<double>(item.object_age + 1)
-            : 0.0;
-        return feat;
+        return hp_to_features(item);
     }
 
     static std::shared_ptr<Classifier> to_shared_model(
@@ -125,13 +121,42 @@ public:
     }
 
     void publish_prediction_snapshot(std::shared_ptr<Classifier> snapshot) {
-        std::lock_guard<std::mutex> lock(prediction_snapshot_mutex);
-        prediction_snapshot = std::move(snapshot);
+        std::atomic_store_explicit(
+            &prediction_snapshot, std::move(snapshot),
+            std::memory_order_release);
     }
 
     std::shared_ptr<Classifier> get_prediction_snapshot() const {
-        std::lock_guard<std::mutex> lock(prediction_snapshot_mutex);
-        return prediction_snapshot;
+        return std::atomic_load_explicit(
+            &prediction_snapshot, std::memory_order_acquire);
+    }
+
+    static std::queue<TrainingSample> take_training_batch(
+            std::queue<TrainingSample>& source) {
+        std::queue<TrainingSample> batch;
+        size_t count = std::min(
+            source.size(), static_cast<size_t>(BATCH_SIZE));
+        while (count-- > 0) {
+            batch.push(std::move(source.front()));
+            source.pop();
+        }
+        return batch;
+    }
+
+    void enqueue_training_sample(TrainingSample sample) {
+        bool should_notify = false;
+        {
+            std::lock_guard<std::mutex> lock(train_queue_mutex);
+            should_notify = train_queue.empty();
+            train_queue.push(std::move(sample));
+            if (train_queue.size() > MAX_TRAIN_QUEUE_LENGTH) {
+                train_queue.pop();
+                train_drop_count++;
+            }
+        }
+        if (should_notify) {
+            train_queue_cv.notify_one();
+        }
     }
 
     void train_worker() {
@@ -149,12 +174,12 @@ public:
             if (!train_running && train_queue.empty()) break;
             if (train_queue.empty()) continue;
 
-            std::queue<TrainingSample> batch;
-            std::swap(batch, train_queue);
+            std::queue<TrainingSample> batch =
+                take_training_batch(train_queue);
             lock.unlock();
 
             while (!batch.empty()) {
-                TrainingSample sample = batch.front();
+                TrainingSample sample = std::move(batch.front());
                 batch.pop();
                 std::shared_ptr<Classifier> next_snapshot;
 
@@ -181,8 +206,8 @@ public:
     double actual_cold_object_heat_sum{0};
     double actual_hot_pred_hot_proba_sum{0};
     double actual_cold_pred_hot_proba_sum{0};
-    HpQuantileWindow actual_hot_future_access_window;
-    HpQuantileWindow actual_cold_future_access_window;
+    HpIntegerQuantileWindow actual_hot_future_access_window;
+    HpIntegerQuantileWindow actual_cold_future_access_window;
     HpQuantileWindow actual_hot_future_heat_window;
     HpQuantileWindow actual_cold_future_heat_window;
 
@@ -221,8 +246,6 @@ public:
             std::queue<TrainingSample> empty;
             std::swap(train_queue, empty);
         }
-        pending_notify.store(0);
-
         std::shared_ptr<Classifier> next_snapshot;
         {
             std::lock_guard<std::mutex> lock(train_model_mutex);
@@ -266,9 +289,8 @@ public:
         return discarded_pending;
     }
 
-    int predict(int operation, uint64_t size,
-            int64_t pool, uint64_t ceph_object_hash, uint64_t object_name_hash,
-            uint64_t *index_out) {
+    int predict(int64_t pool, uint64_t ceph_object_hash,
+            uint64_t object_name_hash, uint64_t *index_out) {
         if (!is_enabled()) {
             if (index_out != nullptr) {
                 *index_out = 0;
@@ -290,23 +312,29 @@ public:
 
         uint64_t index = 0;
         TraceItem item = {
-            0,                                // index
-            static_cast<uint64_t>(operation), // operation
-            size,                             // size
-            key,                              // key
-            0.0,                              // current_heat
-            0.0,                              // hot_threshold
-            0,                                // access_count
-            0,                                // last_access_distance
-            0,                                // object_age
-            0.0,                              // pred_hot_proba
-            0                                 // pred
+            0,    // index
+            key,  // key
+            0.0,  // current_heat
+            0.0,  // hot_threshold
+            0,    // access_count
+            0,    // last_access_distance
+            0,    // past_window_access_count
+            0,    // recent_window_access_count
+            0.0,  // heat_percentile
+            0.0,  // pred_hot_proba
+            0     // pred
         };
 
         int res;
         std::optional<EvaluatedItem> evaluated;
+        EvaluationQueue::PendingSlot *pending_slot = nullptr;
+        std::shared_ptr<Classifier> snapshot;
+        double hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
         {
-            std::lock_guard<std::mutex> eq_lock(eq_mutex);
+            std::unique_lock<std::mutex> eq_lock(eq_mutex);
+            eq_ready_cv.wait(eq_lock, [this] {
+                return eq->can_reserve_prediction();
+            });
             // fetch_add() returns the old value; +1 makes the first index 1.
             index = hp_index.fetch_add(1) + 1;
             item.index = index;
@@ -315,20 +343,11 @@ public:
             }
 
             eq->prepare_features(item);
-            std::shared_ptr<Classifier> snapshot = get_prediction_snapshot();
-            double hot_predict_threshold = eq->dynamic_hot_predict_threshold;
-            if (snapshot) {
-                std::vector<double> proba =
-                    snapshot->predict_proba_one(to_feat(item));
-                item.pred_hot_proba = proba.size() > 1 ? proba[1] : 0.0;
-                res = item.pred_hot_proba >= hot_predict_threshold ? 1 : 0;
-            } else {
-                item.pred_hot_proba = 0.0;
-                res = 0;
-            }
-            item.pred = res;
-
-            evaluated = eq->enqueue(item);
+            snapshot = get_prediction_snapshot();
+            hot_predict_threshold = eq->hot_predict_threshold();
+            auto reservation = eq->reserve_prediction(item);
+            pending_slot = reservation.slot;
+            evaluated = std::move(reservation.evaluated);
             if (evaluated.has_value()) {
                 if (evaluated->label) {
                     actual_hot_object_access_count_sum +=
@@ -337,7 +356,7 @@ public:
                     actual_hot_pred_hot_proba_sum +=
                         evaluated->item.pred_hot_proba;
                     actual_hot_future_access_window.insert(
-                        static_cast<double>(evaluated->future_access_count));
+                        evaluated->future_access_count);
                     actual_hot_future_heat_window.insert(
                         evaluated->future_heat);
                 } else {
@@ -347,12 +366,45 @@ public:
                     actual_cold_pred_hot_proba_sum +=
                         evaluated->item.pred_hot_proba;
                     actual_cold_future_access_window.insert(
-                        static_cast<double>(evaluated->future_access_count));
+                        evaluated->future_access_count);
                     actual_cold_future_heat_window.insert(
                         evaluated->future_heat);
                 }
                 accu.update(evaluated->label, evaluated->item.pred);
             }
+        }
+
+        try {
+            if (snapshot) {
+                thread_local std::vector<double> proba;
+                snapshot->predict_proba_one_into(to_feat(item), proba);
+                item.pred_hot_proba = proba.size() > 1 ? proba[1] : 0.0;
+                res = item.pred_hot_proba >= hot_predict_threshold ? 1 : 0;
+            } else {
+                item.pred_hot_proba = 0.0;
+                res = 0;
+            }
+        } catch (...) {
+            bool should_notify = false;
+            {
+                std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                should_notify =
+                    eq->complete_prediction(pending_slot, 0.0, 0);
+            }
+            if (should_notify) {
+                eq_ready_cv.notify_all();
+            }
+            throw;
+        }
+        item.pred = res;
+        bool should_notify = false;
+        {
+            std::lock_guard<std::mutex> eq_lock(eq_mutex);
+            should_notify = eq->complete_prediction(
+                pending_slot, item.pred_hot_proba, item.pred);
+        }
+        if (should_notify) {
+            eq_ready_cv.notify_all();
         }
 
         if (evaluated.has_value()) {
@@ -361,18 +413,7 @@ public:
                 evaluated->label,
                 evaluated->training_weight
             };
-            {
-                std::lock_guard<std::mutex> lock(train_queue_mutex);
-                train_queue.push(sample);
-                while (train_queue.size() > MAX_TRAIN_QUEUE_LENGTH) {
-                    train_queue.pop();
-                    train_drop_count++;
-                }
-            }
-            if (++pending_notify >= BATCH_SIZE) {
-                pending_notify = 0;
-                train_queue_cv.notify_one();
-            }
+            enqueue_training_sample(std::move(sample));
         }
         return res;
     }
@@ -388,6 +429,7 @@ public:
             eq->heat_state_size(),
             eq->lru_size(),
             eq->otsu_histogram_bin_count(),
+            eq->otsu_histogram_object_count(),
             accu.true_positives(),
             accu.false_positives(),
             accu.true_negatives(),
@@ -403,12 +445,17 @@ public:
             actual_hot_future_heat_window.summary(),
             actual_cold_future_heat_window.summary(),
             eq->hot_threshold,
-            eq->hot_quantile_threshold,
-            eq->hot_threshold_method,
+            eq->otsu_candidate_threshold,
             eq->otsu_separation,
-            eq->dynamic_hot_predict_threshold,
-            eq->pred_actual_hot_ratio(),
-            HP_HOT_CLASS_WEIGHT
+            eq->otsu_confidence,
+            eq->otsu_sample_confidence,
+            eq->otsu_sharpness_confidence,
+            eq->hot_threshold_method,
+            eq->hot_predict_threshold(),
+            eq->hot_predict_threshold_target(),
+            eq->prediction_calibration_size(),
+            eq->prediction_calibration_current_accuracy(),
+            eq->prediction_calibration_target_accuracy()
         };
     }
 
@@ -440,6 +487,11 @@ public:
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> lock(eq_mutex);
         return eq->otsu_histogram_bin_count();
+    }
+    uint64_t get_otsu_histogram_object_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        std::lock_guard<std::mutex> lock(eq_mutex);
+        return eq->otsu_histogram_object_count();
     }
     uint64_t get_train_drop_count() { return train_drop_count.load(); }
 };

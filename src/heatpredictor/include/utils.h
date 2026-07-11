@@ -2,11 +2,13 @@
 # define UTILS_H
 
 # include <cmath>
+# include <array>
 # include <limits>
 # include <vector>
 # include <unordered_map>
 # include <random>
 # include <algorithm>
+# include <stdexcept>
 # include "GaussianSplitter.h"
 
 inline double sum(const std::unordered_map<int, double>& x) {
@@ -38,40 +40,73 @@ inline int poisson(int lambda, std::default_random_engine* gen) {
 }
 
 template <int num_features, int num_labels>
-void do_naive_bayes_prediction(std::vector<double>& votes, const std::vector<double>& x, 
-    const std::unordered_map<int, double>& observed_class_distribution, 
-    const std::vector<GaussianSplitter<num_features, num_labels>*>& splitters){
+void do_naive_bayes_prediction(std::vector<double>& votes, const std::vector<double>& x,
+    const std::unordered_map<int, double>& observed_class_distribution,
+    const std::array<GaussianSplitter<num_features, num_labels>*, num_features>& splitters){
+    if (x.size() != num_features || splitters.size() != num_features) {
+        throw std::invalid_argument("invalid Naive Bayes feature count");
+    }
+    votes.assign(num_labels, 0.0);
     double total_weight = sum(observed_class_distribution);
-    if (total_weight == 0.0) {
+    if (!(total_weight > 0.0) || !std::isfinite(total_weight)) {
         return;
     }
+
+    auto use_class_priors = [&]() {
+        votes.assign(num_labels, 0.0);
+        for (const auto& [label, weight] : observed_class_distribution) {
+            if (label >= 0 && label < num_labels && weight > 0.0 &&
+                std::isfinite(weight)) {
+                votes[label] = weight / total_weight;
+            }
+        }
+    };
+
+    const double min_density = std::numeric_limits<double>::min();
+    std::vector<double> log_votes(
+        num_labels, -std::numeric_limits<double>::infinity());
     for (const auto& kv : observed_class_distribution) {
-        if (kv.second > 0) {
-            votes[kv.first] = std::log(kv.second / total_weight);
-        } else {
-            votes[kv.first] = 0.0;
+        if (kv.first < 0 || kv.first >= num_labels ||
+            !(kv.second > 0.0) || !std::isfinite(kv.second)) {
             continue;
         }
 
+        double log_vote = std::log(kv.second / total_weight);
         for (size_t i=0;i<splitters.size();i++) {
             if (splitters[i] == nullptr) {
                 continue;
             }
             double tmp = splitters[i]->cond_proba(x[i], kv.first);
-            votes[kv.first] += tmp > 0 ? std::log(tmp) : std::numeric_limits<double>::lowest();
+            if (!(tmp > 0.0) || !std::isfinite(tmp)) {
+                tmp = min_density;
+            }
+            log_vote += std::log(tmp);
         }
+        log_votes[kv.first] = log_vote;
     }
 
-    double max_ll = *std::max_element(votes.begin(), votes.end());
+    double max_ll = *std::max_element(log_votes.begin(), log_votes.end());
+    if (!std::isfinite(max_ll)) {
+        use_class_priors();
+        return;
+    }
 
     double lse = 0.0;
-    for (double d : votes) {
-        lse += std::exp(d - max_ll);
+    for (double d : log_votes) {
+        if (std::isfinite(d)) {
+            lse += std::exp(d - max_ll);
+        }
     }
-    lse = max_ll + std::log(lse);
+    if (!(lse > 0.0) || !std::isfinite(lse)) {
+        use_class_priors();
+        return;
+    }
+    const double log_normalizer = max_ll + std::log(lse);
 
     for (size_t i=0;i<votes.size();i++) {
-        votes[i] = std::exp(votes[i] - lse);
+        votes[i] = std::isfinite(log_votes[i])
+            ? std::exp(log_votes[i] - log_normalizer)
+            : 0.0;
     }
 }
 

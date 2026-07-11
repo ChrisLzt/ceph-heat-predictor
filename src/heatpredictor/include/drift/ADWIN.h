@@ -2,14 +2,17 @@
 # define ADWIN_H
 
 # include <cmath>
-# include <vector>
+# include <array>
+# include <cstdint>
 # include <deque>
+# include <limits>
+# include <stdexcept>
 
 template <int max_size>
 class Bucket {
 public:
-    std::vector<double> total_array = std::vector<double>(max_size+1);
-    std::vector<double> variance_array = std::vector<double>(max_size+1);
+    std::array<double, max_size + 1> total_array{};
+    std::array<double, max_size + 1> variance_array{};
     int current_idx=0;
     void insert_data(double value, double variance) {
         total_array[current_idx] = value;
@@ -43,11 +46,15 @@ public:
     int grace_period;
     int n_buckets = 0;
     int max_n_buckets = 0;
-    int width = 0;
-    int tick = 0;
-    int total_width = 0;
-    int n_detections = 0;
-    inline int _calculate_bucket_size (int row) { return 1 << row;}
+    uint64_t width = 0;
+    uint64_t tick = 0;
+    uint64_t n_detections = 0;
+    uint64_t _calculate_bucket_size(size_t row) const {
+        if (row >= std::numeric_limits<uint64_t>::digits) {
+            throw std::overflow_error("ADWIN bucket row exceeds uint64_t");
+        }
+        return uint64_t{1} << row;
+    }
     void _compress_buckets() {
         Bucket<max_buckets>* bucket = bucket_deque[0];
         Bucket<max_buckets>* next_bucket = nullptr;
@@ -61,16 +68,19 @@ public:
                     next_bucket = new Bucket<max_buckets>();
                     bucket_deque.push_back(next_bucket);
                 }
-                int n1 = _calculate_bucket_size(idx);
-                int n2 = _calculate_bucket_size(idx);
-                double mu1 = bucket->total_array[0] / n1;
-                double mu2 = bucket->total_array[1] / n2;
+                uint64_t n1 = _calculate_bucket_size(idx);
+                uint64_t n2 = _calculate_bucket_size(idx);
+                double n1_d = static_cast<double>(n1);
+                double n2_d = static_cast<double>(n2);
+                double mu1 = bucket->total_array[0] / n1_d;
+                double mu2 = bucket->total_array[1] / n2_d;
 
                 double total12 = bucket->total_array[0] + bucket->total_array[1];
-                double temp = n1 * n2 * (mu1 - mu2) * (mu1 - mu2) / (n1 + n2);
+                double temp = n1_d * n2_d * (mu1 - mu2) * (mu1 - mu2) /
+                    (n1_d + n2_d);
                 double v12 = bucket->variance_array[0] + bucket->variance_array[1] + temp;
                 next_bucket->insert_data(total12, v12);
-                n_buckets++;
+                n_buckets--;
                 bucket->compress(2);
 
                 if (next_bucket->current_idx <= max_buckets) {
@@ -107,17 +117,21 @@ public:
 
         _compress_buckets();
     }
-    int _delete_element() {
+    uint64_t _delete_element() {
         Bucket<max_buckets>* bucket = bucket_deque[bucket_deque.size()-1];
-        int n = _calculate_bucket_size(bucket_deque.size()-1);
+        uint64_t n = _calculate_bucket_size(bucket_deque.size()-1);
+        double n_d = static_cast<double>(n);
         double u = bucket->total_array[0];
-        double mu = u / n;
+        double mu = u / n_d;
         double v = bucket->variance_array[0];
 
         width -= n;
         total -= u;
-        double mu_window = total / width;
-        double increment_variance = v + n * width * (mu - mu_window) * (mu - mu_window) / (n + width);
+        double width_d = static_cast<double>(width);
+        double mu_window = total / width_d;
+        double increment_variance = v +
+            n_d * width_d * (mu - mu_window) * (mu - mu_window) /
+            (n_d + width_d);
         variance -= increment_variance;
 
         bucket->compress(1);
@@ -141,39 +155,24 @@ public:
         bool exit_flag = false;
         tick++;
 
-        if ((tick%clock == 0) && (width > grace_period)) {
+        if ((tick % static_cast<uint64_t>(clock) == 0) &&
+            (width > static_cast<uint64_t>(grace_period))) {
             bool reduce_width = true;
             while (reduce_width) {
                 reduce_width = false;
                 exit_flag = false;
-                int n0 = 0;
-                int n1 = width;
+                uint64_t n0 = 0;
+                uint64_t n1 = width;
                 double u0 = 0.0;
                 double u1 = total;
-                double v0 = 0.0;
-                double v1 = variance;
 
                 for (int idx=bucket_deque.size()-1;idx>=0;idx--) {
                     if (exit_flag) {
                         break;
                     }
                     Bucket<max_buckets>* bucket = bucket_deque[idx];
-                    
+
                     for (int k=0;k<bucket->current_idx;k++) {
-                        int n2 = _calculate_bucket_size(idx);
-                        double u2 = bucket->total_array[k];
-                        double mu2 = u2 / n2;
-                        
-                        if (n0 > 0) {
-                            double mu0 = u0 / n0;
-                            v0 += bucket->variance_array[k] + n0 * n2 * (mu0 - mu2) * (mu0 - mu2) / (n0 + n2);
-                        }
-
-                        if (n1 > 0) {
-                            double mu1 = u1 / n1;
-                            v1 += bucket->variance_array[k] + n1 * n2 * (mu1 - mu2) * (mu1 - mu2) / (n1 + n2);
-                        }
-
                         n0 += _calculate_bucket_size(idx);
                         n1 -= _calculate_bucket_size(idx);
                         u0 += bucket->total_array[k];
@@ -185,7 +184,8 @@ public:
                         }
 
                         double delta_mean = (u0 / n0) - (u1 / n1);
-                        if ((n1 >= min_window_length) && (n0 >= min_window_length) 
+                        if ((n1 >= static_cast<uint64_t>(min_window_length)) &&
+                            (n0 >= static_cast<uint64_t>(min_window_length))
                             && (_evaluate_cut(n0, n1, delta_mean, delta))) {
                             reduce_width = true;
                             change_detected = true;
@@ -200,7 +200,6 @@ public:
             }
         }
 
-        total_width += width;
         if (change_detected) {
             n_detections++;
         }
@@ -235,7 +234,6 @@ public:
         this->width = other.width;
         this->total = other.total;
         this->variance = other.variance;
-        this->total_width = other.total_width;
         this->n_detections = other.n_detections;
         this->tick = other.tick;
         this->n_buckets = other.n_buckets;

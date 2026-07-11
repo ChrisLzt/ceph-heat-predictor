@@ -2,7 +2,7 @@
 # define HOEFFDING_TREE_CLASSIFIER_H
 
 # include <memory>
-# include <unordered_set>
+# include <stdexcept>
 # include "Classifier.h"
 # include "TreeBase.h"
 # include "HoeffdingTree.h"
@@ -10,14 +10,12 @@
 template<int num_features, int num_labels>
 class HoeffdingTreeClassifier : public HoeffdingTree<num_features, num_labels>, public Classifier {
 protected:
-    std::unordered_set<int> classes;
     int grace_period;
     double delta;
     double tau;
     double max_share_to_split;
     double min_branch_fraction;
     void copy_prediction_state_to(HoeffdingTreeClassifier *copy) const {
-        copy->classes = classes;
         copy->max_depth = this->max_depth;
         copy->binary_split = this->binary_split;
         copy->max_size = this->max_size;
@@ -31,6 +29,7 @@ protected:
             this->_size_estimate_overhead_fraction;
         copy->_growth_allowed = this->_growth_allowed;
         copy->_train_weight_seen_by_model = this->_train_weight_seen_by_model;
+        copy->_last_memory_estimate_at = this->_last_memory_estimate_at;
         copy->merit_preprune = this->merit_preprune;
         copy->_max_byte_size = this->_max_byte_size;
         delete copy->_root;
@@ -72,9 +71,18 @@ protected:
                     this->_n_active_leaves--;
                     this->_n_inactive_leaves++;
                 } else {
-                    BranchOrLeaf<num_features, num_labels>* leaves[2] = 
-                        { _new_leaf(leaf), _new_leaf(leaf) };
-                    NumericBinaryBranch<num_features, num_labels>* new_split = split_decision.assemble(leaf->stats, leaf->depth, leaves);
+                    std::unique_ptr<BranchOrLeaf<num_features, num_labels>> left(
+                        _new_leaf(leaf));
+                    std::unique_ptr<BranchOrLeaf<num_features, num_labels>> right(
+                        _new_leaf(leaf));
+                    BranchOrLeaf<num_features, num_labels>* leaves[2] = {
+                        left.get(), right.get()
+                    };
+                    NumericBinaryBranch<num_features, num_labels>* new_split =
+                        split_decision.assemble(
+                            leaf->stats, leaf->depth, leaves);
+                    left.release();
+                    right.release();
                     this->_n_active_leaves++;
                     if (parent == nullptr) {
                         this->_root = new_split;
@@ -83,7 +91,6 @@ protected:
                     }
                     delete leaf;
                 }
-                this->_enforce_size_limit();
             }
         }
     }
@@ -92,7 +99,14 @@ public:
         double max_share_to_split = 0.99,
         double min_branch_fraction = 0.01) :
         HoeffdingTree<num_features, num_labels>(), grace_period(grace_period), delta(delta), tau(tau),
-        max_share_to_split(max_share_to_split), min_branch_fraction(min_branch_fraction) {}
+        max_share_to_split(max_share_to_split), min_branch_fraction(min_branch_fraction) {
+        if (grace_period <= 0 || !(delta > 0.0 && delta < 1.0) ||
+            tau < 0.0 ||
+            !(max_share_to_split > 0.0 && max_share_to_split <= 1.0) ||
+            !(min_branch_fraction >= 0.0 && min_branch_fraction < 0.5)) {
+            throw std::invalid_argument("invalid Hoeffding tree parameter");
+        }
+    }
     std::unique_ptr<Classifier> clone_for_prediction() const override {
         auto copy = std::unique_ptr<HoeffdingTreeClassifier>(
             new HoeffdingTreeClassifier(
@@ -102,7 +116,10 @@ public:
         return copy;
     }
     void learn_one(const std::vector<double>& x, int y, double w=1.0) override {
-        classes.insert(y);
+        if (x.size() != num_features || y < 0 || y >= num_labels ||
+            !(w > 0.0) || !std::isfinite(w)) {
+            throw std::invalid_argument("invalid Hoeffding tree training sample");
+        }
         this->_train_weight_seen_by_model += w;
         if (!this->_root) {
             this->_root = _new_leaf();
@@ -133,23 +150,36 @@ public:
                     if (pnode) {
                         p_branch = pnode->branch_no(x);
                     }
-                    _attempt_to_split(node, pnode, p_branch);
                     node->last_split_attempt_at = weight_seen;
+                    _attempt_to_split(node, pnode, p_branch);
                 }
             }
         }
-        if (this->_train_weight_seen_by_model % this->memory_estimate_period == 0) {
+        if (this->_train_weight_seen_by_model -
+                this->_last_memory_estimate_at >=
+            static_cast<double>(this->memory_estimate_period)) {
+            this->_last_memory_estimate_at =
+                this->_train_weight_seen_by_model;
             this->_estimate_model_size();
         }
     }
 
-    virtual std::vector<double> predict_proba_one(const std::vector<double>& x) override {
-        std::vector<double> proba(num_labels, 0.0);
+    std::vector<double> predict_proba_one(const std::vector<double>& x) override {
+        std::vector<double> proba;
+        predict_proba_one_into(x, proba);
+        return proba;
+    }
+    void predict_proba_one_into(
+            const std::vector<double>& x,
+            std::vector<double>& proba) override {
+        if (x.size() != num_features) {
+            throw std::invalid_argument("invalid Hoeffding tree feature count");
+        }
+        proba.assign(num_labels, 0.0);
         if (this->_root) {
             BranchOrLeaf<num_features, num_labels>* leaf = this->_root->traverse(x);
             leaf->prediction(proba, x);
         }
-        return proba;
     }
 };
 

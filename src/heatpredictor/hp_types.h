@@ -6,14 +6,14 @@
 
 struct TraceItem {
     uint64_t index;
-    uint64_t operation;
-    uint64_t size;
     uint64_t key;
     double current_heat;
     double hot_threshold;
     uint64_t access_count;
     uint64_t last_access_distance;
-    uint64_t object_age;
+    uint64_t past_window_access_count;
+    uint64_t recent_window_access_count;
+    double heat_percentile;
     double pred_hot_proba;
     int pred;
 };
@@ -21,9 +21,9 @@ struct TraceItem {
 struct HeatState {
     double heat;
     uint64_t last_access;
-    uint64_t first_access;
     uint64_t access_count;
     uint64_t pending_count;
+    uint64_t short_count;
     std::list<uint64_t>::iterator lru_position;
 };
 
@@ -58,6 +58,7 @@ struct HeatPredictorStats {
     uint64_t heat_state_count;
     uint64_t lru_count;
     uint64_t otsu_histogram_bin_count;
+    uint64_t otsu_histogram_object_count;
     uint64_t true_positive;
     uint64_t false_positive;
     uint64_t true_negative;
@@ -75,12 +76,17 @@ struct HeatPredictorStats {
     HpDistributionSummary actual_hot_future_heat;
     HpDistributionSummary actual_cold_future_heat;
     double hot_threshold;
-    double hot_quantile_threshold;
-    uint64_t hot_threshold_method;
+    double otsu_candidate_threshold;
     double otsu_separation;
+    double otsu_confidence;
+    double otsu_sample_confidence;
+    double otsu_sharpness_confidence;
+    uint64_t hot_threshold_method;
     double hot_predict_threshold;
-    double pred_actual_hot_ratio;
-    double dynamic_hot_class_weight;
+    double hot_predict_threshold_target;
+    uint64_t predict_calibration_sample_count;
+    double predict_calibration_current_accuracy;
+    double predict_calibration_target_accuracy;
 };
 
 #endif

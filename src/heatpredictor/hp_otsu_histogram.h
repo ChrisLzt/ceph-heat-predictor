@@ -9,9 +9,18 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <vector>
 
 #include "common/debug.h"
 #include "hp_config.h"
+
+struct HpOtsuResult {
+    double threshold_score;
+    double separation;
+    double near_optimal_score_range;
+    double occupied_score_range;
+    uint64_t sample_count;
+};
 
 class HpOtsuHistogram {
 public:
@@ -41,8 +50,6 @@ public:
         BinStats& stats = it->second;
         stats.count--;
         total_count--;
-        total_sum -= bin_center(bin);
-        total_square_sum -= bin_center(bin) * bin_center(bin);
 
         if (stats.count == 0) {
             bins.erase(it);
@@ -65,10 +72,6 @@ public:
 
             uint64_t count = it->second.count;
             total_count -= count;
-            total_sum -= bin_center(it->first) * static_cast<double>(count);
-            total_square_sum -=
-                bin_center(it->first) * bin_center(it->first) *
-                static_cast<double>(count);
             bins.erase(it);
             add_count_to_bin(min_bin, count);
         }
@@ -86,15 +89,25 @@ public:
         return total_count == 0;
     }
 
-    std::optional<double> otsu_threshold_score(double *separation) const {
+    std::optional<HpOtsuResult> otsu_result() const {
         if (total_count < HP_OTSU_MIN_OBJECTS || bins.size() < 2) {
             return std::nullopt;
         }
 
         const double count = static_cast<double>(total_count);
-        const double total_mean = total_sum / count;
+        const double origin = bin_center(bins.begin()->first);
+        double shifted_total_sum = 0.0;
+        double shifted_total_square_sum = 0.0;
+        for (const auto& [bin, stats] : bins) {
+            const double shifted_center = bin_center(bin) - origin;
+            const double bin_count = static_cast<double>(stats.count);
+            shifted_total_sum += shifted_center * bin_count;
+            shifted_total_square_sum +=
+                shifted_center * shifted_center * bin_count;
+        }
+        const double total_mean = shifted_total_sum / count;
         const double total_variance =
-            total_square_sum / count - total_mean * total_mean;
+            shifted_total_square_sum / count - total_mean * total_mean;
         if (total_variance <= 0.0) {
             return std::nullopt;
         }
@@ -103,6 +116,14 @@ public:
         double lhs_sum = 0.0;
         double best_between_variance = -1.0;
         double best_threshold_score = 0.0;
+        struct Candidate {
+            double threshold_score;
+            double between_variance;
+            double plateau_min_score;
+            double plateau_max_score;
+        };
+        std::vector<Candidate> candidates;
+        candidates.reserve(bins.size() - 1);
 
         for (auto it = bins.begin(); it != bins.end(); ++it) {
             auto next = std::next(it);
@@ -112,7 +133,7 @@ public:
 
             lhs_count_u += it->second.count;
             lhs_sum +=
-                bin_center(it->first) *
+                (bin_center(it->first) - origin) *
                 static_cast<double>(it->second.count);
 
             const double lhs_count = static_cast<double>(lhs_count_u);
@@ -122,15 +143,23 @@ public:
             }
 
             const double lhs_mean = lhs_sum / lhs_count;
-            const double rhs_mean = (total_sum - lhs_sum) / rhs_count;
+            const double rhs_mean =
+                (shifted_total_sum - lhs_sum) / rhs_count;
             const double mean_diff = lhs_mean - rhs_mean;
             const double between_variance =
                 (lhs_count * rhs_count * mean_diff * mean_diff) /
                 (count * count);
+            const double threshold_score =
+                (bin_center(it->first) + bin_center(next->first)) / 2.0;
+            candidates.push_back(Candidate{
+                threshold_score,
+                between_variance,
+                bin_center(it->first),
+                bin_center(next->first)
+            });
             if (between_variance > best_between_variance) {
                 best_between_variance = between_variance;
-                best_threshold_score =
-                    (bin_center(it->first) + bin_center(next->first)) / 2.0;
+                best_threshold_score = threshold_score;
             }
         }
 
@@ -138,11 +167,28 @@ public:
             return std::nullopt;
         }
 
-        *separation = best_between_variance / total_variance;
-        if (*separation < HP_OTSU_MIN_SEPARATION) {
-            return std::nullopt;
+        const double near_optimal_minimum =
+            HP_OTSU_NEAR_OPTIMAL_RATIO * best_between_variance;
+        double near_optimal_min_score = best_threshold_score;
+        double near_optimal_max_score = best_threshold_score;
+        for (const Candidate& candidate : candidates) {
+            if (candidate.between_variance >= near_optimal_minimum) {
+                near_optimal_min_score = std::min(
+                    near_optimal_min_score, candidate.plateau_min_score);
+                near_optimal_max_score = std::max(
+                    near_optimal_max_score, candidate.plateau_max_score);
+            }
         }
-        return best_threshold_score;
+
+        const double occupied_score_range =
+            bin_center(bins.rbegin()->first) - bin_center(bins.begin()->first);
+        return HpOtsuResult{
+            best_threshold_score,
+            std::clamp(best_between_variance / total_variance, 0.0, 1.0),
+            near_optimal_max_score - near_optimal_min_score,
+            occupied_score_range,
+            total_count
+        };
     }
 
 private:
@@ -174,16 +220,11 @@ private:
         }
         BinStats& stats = bins[bin];
         stats.count += count;
-        const double center = bin_center(bin);
         total_count += count;
-        total_sum += center * static_cast<double>(count);
-        total_square_sum += center * center * static_cast<double>(count);
     }
 
     std::map<int64_t, BinStats> bins;
     uint64_t total_count = 0;
-    double total_sum = 0.0;
-    double total_square_sum = 0.0;
     bool lower_bound_initialized = false;
     int64_t lower_bound_bin = std::numeric_limits<int64_t>::min();
 };
