@@ -46,7 +46,6 @@ public:
     uint64_t hot_threshold_method;
     double otsu_separation;
     double otsu_confidence;
-    double otsu_sample_confidence;
     double otsu_sharpness_confidence;
     double alpha;
     double heat_increment;
@@ -79,6 +78,8 @@ public:
     HpOtsuHistogram otsu_histogram;
     uint64_t pbds_counter = 0;
     uint64_t threshold_observation_count = 0;
+    bool legacy_otsu_ema_initialized = false;
+    double legacy_otsu_score_ema = 0.0;
 
     EvaluationQueue(
             size_t evaluation_window = HP_EVALUATION_WINDOW,
@@ -92,7 +93,6 @@ public:
             hot_threshold_method(HP_THRESHOLD_METHOD_INITIALIZING),
             otsu_separation(0.0),
             otsu_confidence(0.0),
-            otsu_sample_confidence(0.0),
             otsu_sharpness_confidence(0.0),
             alpha(hp_heat_decay_alpha(evaluation_window)),
             heat_increment(heat_increment),
@@ -111,11 +111,19 @@ public:
     }
 
     double hot_predict_threshold() const {
+#if HP_ENABLE_PREDICTION_CALIBRATION
         return prediction_calibrator.threshold();
+#else
+        return HP_HOT_PREDICT_THRESHOLD;
+#endif
     }
 
     double hot_predict_threshold_target() const {
+#if HP_ENABLE_PREDICTION_CALIBRATION
         return prediction_calibrator.target_threshold();
+#else
+        return HP_HOT_PREDICT_THRESHOLD;
+#endif
     }
 
     size_t prediction_calibration_size() const {
@@ -162,51 +170,35 @@ public:
         return std::exp(log_heat);
     }
 
-    static double otsu_sample_confidence_for(size_t sample_count) {
-        if (sample_count <= HP_OTSU_MIN_OBJECTS) {
-            return 0.0;
-        }
-        if (sample_count >= HP_OTSU_FULL_CONFIDENCE_OBJECTS) {
-            return 1.0;
-        }
-        return static_cast<double>(sample_count - HP_OTSU_MIN_OBJECTS) /
-            static_cast<double>(
-                HP_OTSU_FULL_CONFIDENCE_OBJECTS - HP_OTSU_MIN_OBJECTS);
-    }
-
     static double otsu_sharpness_confidence_for(
             const HpOtsuResult& result) {
-        if (result.occupied_score_range <= 0.0) {
+        if (result.sample_count == 0) {
             return 0.0;
         }
-        const double plateau_ratio = result.near_optimal_score_range /
-            result.occupied_score_range;
+        const double ambiguous_ratio =
+            static_cast<double>(result.ambiguous_sample_count) /
+            static_cast<double>(result.sample_count);
         return std::clamp(
-            1.0 - plateau_ratio / HP_OTSU_SHARPNESS_FULL_WIDTH_RATIO,
+            1.0 - ambiguous_ratio /
+                HP_OTSU_SHARPNESS_FULL_AMBIGUOUS_RATIO,
             0.0,
             1.0);
     }
 
     static double otsu_total_confidence_for(
             double separation_confidence,
-            double sample_confidence,
             double sharpness_confidence) {
         separation_confidence = std::clamp(
             separation_confidence, 0.0, 1.0);
-        sample_confidence = std::clamp(sample_confidence, 0.0, 1.0);
         sharpness_confidence = std::clamp(
             sharpness_confidence, 0.0, 1.0);
         if (separation_confidence == 0.0 ||
-            sample_confidence == 0.0 ||
             sharpness_confidence == 0.0) {
             return 0.0;
         }
         return std::pow(
                 separation_confidence,
                 HP_OTSU_SEPARATION_CONFIDENCE_WEIGHT) *
-            std::pow(
-                sample_confidence,
-                HP_OTSU_SAMPLE_CONFIDENCE_WEIGHT) *
             std::pow(
                 sharpness_confidence,
                 HP_OTSU_SHARPNESS_CONFIDENCE_WEIGHT);
@@ -215,8 +207,8 @@ public:
     void update_hot_threshold(uint64_t timestamp) {
         maintain_otsu_lower_bound(timestamp);
 
+#if HP_OTSU_PROFILE != HP_OTSU_PROFILE_LEGACY
         const size_t object_count = otsu_histogram.size();
-        otsu_sample_confidence = otsu_sample_confidence_for(object_count);
         if (object_count < HP_OTSU_MIN_OBJECTS) {
             clear_otsu_candidate_state();
             hot_threshold_method = HP_THRESHOLD_METHOD_INITIALIZING;
@@ -226,7 +218,6 @@ public:
         auto result = otsu_histogram.otsu_result();
         if (!result.has_value()) {
             clear_otsu_candidate_state();
-            otsu_sample_confidence = otsu_sample_confidence_for(object_count);
             hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
             return;
         }
@@ -240,9 +231,10 @@ public:
             otsu_sharpness_confidence_for(*result);
         otsu_confidence = otsu_total_confidence_for(
             otsu_separation,
-            otsu_sample_confidence,
             otsu_sharpness_confidence);
-        const double gain = HP_OTSU_MAX_UPDATE_ALPHA * otsu_confidence;
+        const double gain = HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA
+            ? HP_OTSU_FIXED_EMA_ALPHA
+            : HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA * otsu_confidence;
         if (gain <= std::numeric_limits<double>::epsilon()) {
             hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
             return;
@@ -256,6 +248,44 @@ public:
             HP_OTSU_HEAT_MIN,
             HP_OTSU_HEAT_MAX);
         hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
+#else
+        if (threshold_order_stats.empty()) {
+            clear_otsu_candidate_state();
+            hot_threshold_method = HP_THRESHOLD_METHOD_INITIALIZING;
+            return;
+        }
+
+        auto result = otsu_histogram.otsu_result();
+        if (!result.has_value() ||
+            result->separation < HP_LEGACY_OTSU_MIN_SEPARATION) {
+            clear_otsu_candidate_state();
+            hot_threshold = legacy_quantile_threshold(timestamp);
+            hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
+            return;
+        }
+
+        otsu_candidate_threshold = std::clamp(
+            from_heat_score(result->threshold_score, timestamp),
+            HP_OTSU_HEAT_MIN,
+            HP_OTSU_HEAT_MAX);
+        otsu_separation = result->separation;
+        otsu_sharpness_confidence =
+            otsu_sharpness_confidence_for(*result);
+        otsu_confidence = 0.0;
+        if (!legacy_otsu_ema_initialized) {
+            legacy_otsu_score_ema = result->threshold_score;
+            legacy_otsu_ema_initialized = true;
+        } else {
+            legacy_otsu_score_ema =
+                HP_LEGACY_OTSU_EMA_ALPHA * result->threshold_score +
+                (1.0 - HP_LEGACY_OTSU_EMA_ALPHA) * legacy_otsu_score_ema;
+        }
+        hot_threshold = std::clamp(
+            from_heat_score(legacy_otsu_score_ema, timestamp),
+            HP_OTSU_HEAT_MIN,
+            HP_OTSU_HEAT_MAX);
+        hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
+#endif
     }
 
     void record_object_heat(uint64_t key, double heat, uint64_t timestamp) {
@@ -446,7 +476,9 @@ private:
         int label = future_heat > hot_threshold ? 1 : 0;
         uint64_t future_access_count =
             expired_state.access_count - expired.access_count;
+#if HP_ENABLE_PREDICTION_CALIBRATION
         prediction_calibrator.observe(expired.pred_hot_proba, label);
+#endif
         double training_weight =
             label == 1 ? HP_HOT_CLASS_WEIGHT : 1.0;
 
@@ -511,6 +543,23 @@ private:
         otsu_separation = 0.0;
         otsu_confidence = 0.0;
         otsu_sharpness_confidence = 0.0;
+        legacy_otsu_ema_initialized = false;
+        legacy_otsu_score_ema = 0.0;
+    }
+
+    double legacy_quantile_threshold(uint64_t timestamp) const {
+        ceph_assert(!threshold_order_stats.empty());
+        size_t index = static_cast<size_t>(
+            HP_LEGACY_HOT_QUANTILE * threshold_order_stats.size());
+        if (index >= threshold_order_stats.size()) {
+            index = threshold_order_stats.size() - 1;
+        }
+        const auto entry = threshold_order_stats.find_by_order(index);
+        ceph_assert(entry != threshold_order_stats.end());
+        return std::clamp(
+            from_heat_score(entry->first, timestamp),
+            HP_OTSU_HEAT_MIN,
+            HP_OTSU_HEAT_MAX);
     }
 };
 

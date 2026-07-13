@@ -13,27 +13,32 @@
 
 约束：
 1. enum、perf 声明、更新、输出顺序必须一致。
-2. 同步更新 CODEX_CEPH.md 和 CEPH_OPERATIONS_MANUAL.md。
+2. 稳定实现变化同步更新 `codex_docs/CODEX_CEPH.md`；操作命令变化同步更新
+   `codex_docs/CEPH_OPERATIONS_MANUAL.md`。
 3. 代码改完后可以直接执行 install、ldconfig 和 restart，无需再次确认。
 
 测试：
-1. 编译：
+1. 先按 `AGENTS.md` 和 `codex_docs/CODEX_CEPH_TODO.md` 判定 L0-L3，不无条件运行
+   更高检查级别。
+2. L2 全量构建和安装：
     cd /home/chris/ceph-heat-predictor/build
     sudo env CCACHE_TEMPDIR=/tmp ninja -j64
     sudo ninja install
     sudo ldconfig
-2. 重启：
+3. L2 重启：
     sudo systemctl reset-failed ceph-osd@0 ceph-osd@1
     sudo systemctl reset-failed ceph-mgr@s52
     sudo systemctl restart ceph-osd@0 ceph-osd@1
     sudo systemctl restart ceph-mgr@s52
-3. 测试负载：
+4. L3 测试负载：
     路径：/home/chris/ceph-test/new_workload
     在每次测试前，清空 mgr 的统计信息（指令：sudo ceph osd hp reset）
     在每次测试时，观察 mgr 的统计信息（指令：sudo ceph osd hp status -f json-pretty）
+    每个正式负载只运行一次；若出现巨大误差、结果异常或与历史明显冲突，只在报告中
+    指出并停止。是否复测及复测次数由用户决定，不得自动追加测试。
 
 验收标准：
-- 编译通过。
-- OSD/MGR 能正常启动。
-- 新字段在 OSD perf 和 MGR 汇总里都有。
-- ceph -s 只允许出现单副本相关 HEALTH_WARN。
+- L0/L1 以文档检查、探针和目标编译结果为准。
+- L2 要求 OSD/MGR 正常启动，PG `active+clean`，且只允许单副本相关 HEALTH_WARN。
+- 涉及新统计字段时，字段必须同时出现在 OSD perf 和 MGR 汇总。
+- L3 还要求训练队列清空、drop 为 0、计数关系成立并生成报告。

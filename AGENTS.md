@@ -1,19 +1,58 @@
-# Agent Instructions
+# 代理说明
 
-This repository contains a Ceph OSD object-level heat predictor prototype and
-notes for its ICFS/IDFS port.
+本仓库包含 Ceph OSD object 级热度预测器原型，以及将其移植到 ICFS/IDFS 的相关记录。
 
-Before making changes, read the relevant CODEX document:
+修改前先阅读 `codex_docs/README.md`，然后只阅读其中标明且与当前任务相关的有效文档。
 
-- `CODEX_CEPH.md`: Ceph object-layer heat predictor implementation, hook location, model features, and `object_hp_status` fields.
-- `CODEX_ICFS.md`: ICFS/IDFS porting notes, OSS/MergePG hook points, ICFS-specific op coverage, and migration risks.
-- `CEPH_OPERATIONS_MANUAL.md`: single-node Ceph deployment, OSD/MGR operation, and basic heat predictor checks.
+测试负载和报告在本仓库之外维护，路径为：
+`/home/chris/ceph-test/new_workload/`。
 
-Test workloads and reports are maintained outside this repository under
-`/home/chris/ceph-test/new_workload/`.
+除非用户明确要求检查历史代码，否则不要沿用旧 KernelDevice/BlockDevice 热度预测器的
+假设。
 
-Do not rely on old KernelDevice/BlockDevice heat-predictor assumptions unless the user explicitly asks to inspect historical code.
+当前实现仅位于 object 层。Ceph 特有的 object op 适配应保留在
+`src/osd/ObjectHeatPredictor.*`；可复用算法应保留在 `src/heatpredictor/`。
 
-The current implementation is object-layer only. Keep Ceph-specific object op
-adaptation in `src/osd/ObjectHeatPredictor.*`; keep the reusable algorithm in
-`src/heatpredictor/`.
+## 主代理与子代理职责
+
+使用 ChatGPT 5.6 Sol（`gpt-5.6-sol`）作为主代理。主代理负责仓库分析、实验设计、
+代码和文档修改、调试、高风险 Ceph 操作、结果解释以及最终集成决策。
+
+使用 ChatGPT 5.6 Luna（`gpt-5.6-luna`）作为子代理，处理不需要架构判断、简单、
+边界清晰且低风险的工作。典型任务包括监控长时间测试、轮询进程和 Ceph 状态、按固定
+间隔采集日志、检查明确的完成条件是否满足，以及汇总已经生成的输出。不得使用 Sol
+子代理进行被动测试监控。
+
+每个 Luna 任务都必须说明：
+
+- 需要观察的准确命令、进程、目录或日志；
+- 任务是否只读，以及允许创建哪些文件（如有）；
+- 轮询间隔和明确的成功、失败及超时条件；
+- 必须返回给主代理的字段或日志片段。
+
+除非任务中另有明确授权，Luna 子代理不得修改源代码、选择修复方案、安装软件、重启
+服务、reset Heat Predictor、停止进程或得出最终实验结论。发现异常状态时，应报告
+异常，并将诊断和恢复留给 Sol 主代理。
+
+主代理仍负责根据原始日志和当前系统状态核对子代理报告。仅凭子代理报告不足以证明
+构建或测试通过。如果监控任务把中间警告误报为最终失败，主代理必须检查原始输出并
+修正或恢复工作流程。
+
+## 检查级别
+
+选择能够覆盖当前改动的最低检查级别。不得仅因为更高级别的命令可用，就默认执行更高
+级别的检查。
+
+- **L0，文档：**执行 `git diff --check`，并验证有效 Markdown 链接。
+- **L1，本地算法：**L0 加 `hp_algorithm_probe` 和受影响目标的编译。适用于不需要
+  运行 Ceph 进程即可验证行为的算法、参数和纯头文件改动。
+- **L2，Ceph 集成：**L1 加 `codex_docs/CEPH_OPERATIONS_MANUAL.md` 中的完整构建和
+  安装流程；只重启受影响的服务，等待 `active+clean`，然后 reset 并检查 Heat
+  Predictor 状态。
+- **L3，负载验证：**L2 加负载模型验证、每个必要正式负载运行一次、队列/drop/计数
+  检查以及中文报告。
+
+在 L3 中，每个必要负载默认且只运行一次。如果结果存在巨大误差、异常或与历史结论
+冲突，应在中文报告中记录并停止。是否复测以及复测次数只能由用户决定，禁止自动增加
+重复次数。ASan/UBSan 仅在容器、内存或核心算法发生变化时增加；TSan 仅在并发逻辑
+变化时增加；性能探针仅在性能路径变化时增加。

@@ -133,8 +133,6 @@ namespace {
      "hp_otsu_separation_avg"},
     {"hp_otsu_confidence", ObjectHpAggregate::otsu_weighted,
      "hp_otsu_confidence_avg"},
-    {"hp_otsu_sample_confidence", ObjectHpAggregate::otsu_weighted,
-     "hp_otsu_sample_confidence_avg"},
     {"hp_otsu_sharpness_confidence", ObjectHpAggregate::otsu_weighted,
      "hp_otsu_sharpness_confidence_avg"},
     {"hp_hot_threshold_method", ObjectHpAggregate::none},
@@ -1901,9 +1899,6 @@ bool DaemonServer::_handle_command(
     };
     dump_otsu_confidence(
       "hp_otsu_confidence_avg", "hp_otsu_confidence_percent_avg");
-    dump_otsu_confidence(
-      "hp_otsu_sample_confidence_avg",
-      "hp_otsu_sample_confidence_percent_avg");
     dump_otsu_confidence(
       "hp_otsu_sharpness_confidence_avg",
       "hp_otsu_sharpness_confidence_percent_avg");

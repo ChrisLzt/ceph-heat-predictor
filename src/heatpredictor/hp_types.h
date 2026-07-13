@@ -79,7 +79,6 @@ struct HeatPredictorStats {
     double otsu_candidate_threshold;
     double otsu_separation;
     double otsu_confidence;
-    double otsu_sample_confidence;
     double otsu_sharpness_confidence;
     uint64_t hot_threshold_method;
     double hot_predict_threshold;

@@ -15,6 +15,23 @@
 #define HP_ENABLE_HEAT_PERCENTILE 0
 #endif
 
+#ifndef HP_ENABLE_PREDICTION_CALIBRATION
+#define HP_ENABLE_PREDICTION_CALIBRATION 1
+#endif
+
+#define HP_PREDICTION_RANGE_C0 0
+#define HP_PREDICTION_RANGE_CW 1
+#ifndef HP_PREDICTION_RANGE_PROFILE
+#define HP_PREDICTION_RANGE_PROFILE HP_PREDICTION_RANGE_C0
+#endif
+
+#define HP_OTSU_PROFILE_LEGACY 0
+#define HP_OTSU_PROFILE_FIXED_EMA 1
+#define HP_OTSU_PROFILE_CONFIDENCE 2
+#ifndef HP_OTSU_PROFILE
+#define HP_OTSU_PROFILE HP_OTSU_PROFILE_CONFIDENCE
+#endif
+
 #define HP_BASE_FEATURE_COUNT 5
 #define NUM_FEATURES \
     (HP_BASE_FEATURE_COUNT + HP_ENABLE_ACCESS_ACCELERATION + \
@@ -33,8 +50,15 @@ static constexpr double HP_ARF_MIN_BRANCH_FRACTION = 0.01;
 
 // Prediction and training policy.
 static constexpr double HP_HOT_PREDICT_THRESHOLD = 0.50;
+#if HP_PREDICTION_RANGE_PROFILE == HP_PREDICTION_RANGE_C0
 static constexpr double HP_HOT_PREDICT_THRESHOLD_MIN = 0.40;
 static constexpr double HP_HOT_PREDICT_THRESHOLD_MAX = 0.60;
+#elif HP_PREDICTION_RANGE_PROFILE == HP_PREDICTION_RANGE_CW
+static constexpr double HP_HOT_PREDICT_THRESHOLD_MIN = 0.20;
+static constexpr double HP_HOT_PREDICT_THRESHOLD_MAX = 0.80;
+#else
+#error "invalid HP_PREDICTION_RANGE_PROFILE"
+#endif
 static constexpr double HP_HOT_PREDICT_THRESHOLD_EMA_ALPHA = 0.10;
 static constexpr size_t HP_PREDICT_CALIBRATION_WINDOW = 10000;
 static constexpr size_t HP_PREDICT_CALIBRATION_UPDATE_INTERVAL = 500;
@@ -57,13 +81,15 @@ static constexpr size_t HP_REPORT_STATS_WINDOW_CAPACITY = 400000;
 
 // Dynamic hot threshold.
 static constexpr size_t HP_OTSU_MIN_OBJECTS = 32;
-static constexpr size_t HP_OTSU_FULL_CONFIDENCE_OBJECTS = 1000;
 static constexpr double HP_OTSU_NEAR_OPTIMAL_RATIO = 0.99;
-static constexpr double HP_OTSU_SHARPNESS_FULL_WIDTH_RATIO = 0.20;
-static constexpr double HP_OTSU_SEPARATION_CONFIDENCE_WEIGHT = 0.65;
-static constexpr double HP_OTSU_SAMPLE_CONFIDENCE_WEIGHT = 0.20;
-static constexpr double HP_OTSU_SHARPNESS_CONFIDENCE_WEIGHT = 0.15;
-static constexpr double HP_OTSU_MAX_UPDATE_ALPHA = 0.10;
+static constexpr double HP_OTSU_SHARPNESS_FULL_AMBIGUOUS_RATIO = 0.20;
+static constexpr double HP_OTSU_SEPARATION_CONFIDENCE_WEIGHT = 0.80;
+static constexpr double HP_OTSU_SHARPNESS_CONFIDENCE_WEIGHT = 0.20;
+static constexpr double HP_OTSU_FIXED_EMA_ALPHA = 0.10;
+static constexpr double HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA = 0.50;
+static constexpr double HP_LEGACY_HOT_QUANTILE = 0.85;
+static constexpr double HP_LEGACY_OTSU_EMA_ALPHA = 0.10;
+static constexpr double HP_LEGACY_OTSU_MIN_SEPARATION = 0.60;
 static constexpr size_t HP_OTSU_EAGER_OBJECTS = 0;
 static constexpr size_t HP_OTSU_UPDATE_INTERVAL = 100;
 static constexpr double HP_OTSU_HEAT_MIN = 1.0;
@@ -72,6 +98,10 @@ static constexpr double HP_OTSU_LOG_HEAT_BIN_WIDTH = 0.05;
 static constexpr uint64_t HP_THRESHOLD_METHOD_INITIALIZING = 0;
 static constexpr uint64_t HP_THRESHOLD_METHOD_TRACKING = 1;
 static constexpr uint64_t HP_THRESHOLD_METHOD_HOLDING = 2;
+
+static_assert(HP_OTSU_PROFILE >= HP_OTSU_PROFILE_LEGACY &&
+              HP_OTSU_PROFILE <= HP_OTSU_PROFILE_CONFIDENCE,
+              "invalid HP_OTSU_PROFILE");
 
 inline double hp_heat_decay_alpha(size_t evaluation_window) {
     ceph_assert(evaluation_window > 0);

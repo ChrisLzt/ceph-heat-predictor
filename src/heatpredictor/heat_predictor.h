@@ -448,7 +448,6 @@ public:
             eq->otsu_candidate_threshold,
             eq->otsu_separation,
             eq->otsu_confidence,
-            eq->otsu_sample_confidence,
             eq->otsu_sharpness_confidence,
             eq->hot_threshold_method,
             eq->hot_predict_threshold(),

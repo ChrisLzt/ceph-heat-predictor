@@ -70,7 +70,6 @@ enum {
   object_hp_otsu_candidate_threshold,
   object_hp_otsu_separation,
   object_hp_otsu_confidence,
-  object_hp_otsu_sample_confidence,
   object_hp_otsu_sharpness_confidence,
   object_hp_hot_threshold_method,
   object_hp_train_queue_length,
@@ -270,12 +269,9 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_otsu_confidence,
             "hp_otsu_confidence",
             "weighted Otsu threshold confidence (x10000)");
-  b.add_u64(object_hp_otsu_sample_confidence,
-            "hp_otsu_sample_confidence",
-            "Otsu histogram sample-count confidence (x10000)");
   b.add_u64(object_hp_otsu_sharpness_confidence,
             "hp_otsu_sharpness_confidence",
-            "Otsu near-optimal-plateau sharpness confidence (x10000)");
+            "Otsu near-optimal ambiguous-sample confidence (x10000)");
   b.add_u64(object_hp_hot_threshold_method,
             "hp_hot_threshold_method",
             "threshold state: 0 initializing, 1 tracking, 2 holding");
@@ -404,8 +400,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency)
               hp_mul10000(stats.otsu_separation));
   logger->set(object_hp_otsu_confidence,
               hp_mul10000(stats.otsu_confidence));
-  logger->set(object_hp_otsu_sample_confidence,
-              hp_mul10000(stats.otsu_sample_confidence));
   logger->set(object_hp_otsu_sharpness_confidence,
               hp_mul10000(stats.otsu_sharpness_confidence));
   logger->set(object_hp_hot_threshold_method, stats.hot_threshold_method);
@@ -489,7 +483,6 @@ static void hp_zero_object_logger()
   logger->set(object_hp_otsu_candidate_threshold, 0);
   logger->set(object_hp_otsu_separation, 0);
   logger->set(object_hp_otsu_confidence, 0);
-  logger->set(object_hp_otsu_sample_confidence, 0);
   logger->set(object_hp_otsu_sharpness_confidence, 0);
   logger->set(object_hp_hot_threshold_method,
               HP_THRESHOLD_METHOD_INITIALIZING);

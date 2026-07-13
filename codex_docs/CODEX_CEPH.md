@@ -73,10 +73,10 @@ key = make_object_key(pool, ceph_object_hash, object_name_hash);
   冷热训练样本权重均为 `1.0`。
 - 容量：`EVALUATION_WINDOW=10000`、`ACCESS_ACCELERATION_WINDOW=2500`、`LRU_CAPACITY=100000`、`LABEL_THRESHOLD_WINDOW_CAPACITY=1000000`、`REPORT_STATS_WINDOW_CAPACITY=400000`。
 - 热度：`HEAT_INCREMENT=100.0`、一个 EQ 窗口后保留 `1/10`。
-- 动态热阈值：初始热度 `100`；Otsu 最少 `32` objects、到 `1000` objects
-  获得完整样本置信度、每 `100` 次更新；热度 clamp `1~3000`，log bin 宽
-  `0.05`。总置信度使用 separation/sample/sharpness 的加权几何平均，权重分别为
-  `0.65/0.20/0.15`，单次 score 更新增益不超过 `0.10`。
+- 动态热阈值：初始热度 `100`；Otsu 最少 `32` objects、每 `100` 次更新；热度
+  clamp `1~3000`，log bin 宽 `0.05`。总置信度使用 separation/sharpness 的加权
+  几何平均，权重为 `0.80/0.20`；sharpness 按近似最优阈值之间会改变分类的 object
+  比例计算，该比例达到 `0.20` 时归零。O2 单次 score 更新增益不超过 `0.50`。
 - 阈值状态：`0 initializing`、`1 tracking`、`2 holding`。
 
 热度衰减系数由 `hp_heat_decay_alpha(evaluation_window)` 计算，使热度在一个评估窗口后保留 `HP_HEAT_RETAIN_RATIO`。
@@ -104,9 +104,10 @@ WT/阈值窗口维护 object 当前热度分布：
   最新热度；`threshold_order` 管理更新顺序，超过容量时淘汰最旧项。PBDS 当前不参与
   阈值决策，保留精确热度排名能力；当前模型不使用 percentile 特征。
 - `otsu_histogram` 对同一批 object 的热度 score 做直方图统计；score 低于当前 `HP_OTSU_HEAT_MIN` 对应下限时物理合并到下限 bin，高于 `HP_OTSU_HEAT_MAX` 时按上限逻辑 clamp。
-- Otsu 一次扫描得到候选 score、类间/总方差比、99% 近优阈值区间和占用区间。
-  separation、样本量和谷底 sharpness 形成总置信度，再用
-  `effective_score += 0.10 * confidence * (candidate_score - effective_score)`
+- Otsu 一次扫描得到候选 score、类间/总方差比，以及达到最优类间方差 `99%` 的
+  候选之间会改变分类的 object 数。该数量除以总样本数形成 sharpness 的歧义比例；
+  没有样本的宽空谷不会降低 sharpness。separation 和 sharpness 形成总置信度，再用
+  `effective_score += 0.50 * confidence * (candidate_score - effective_score)`
   连续更新。运行期不使用固定 quantile fallback，也不硬拒绝低分离度候选。
 - 样本不足保持初始阈值并标记 `initializing`；有效候选且增益非零为 `tracking`；
   平坦分布、无效候选或零置信度为 `holding`。直方图每 100 次更新，不扫描整个 TW。
@@ -177,7 +178,7 @@ reset 后用 OSD perf 或 `ceph osd hp status -f json-pretty` 确认计数归零
 - `summary.osds`：`up_osds`、`reporting_osds`、`missing_osds`
 - `summary.samples/confusion_matrix`：I/O 总数、已评估数、pending 数和 TP/FP/TN/FN
 - `summary.heat_state`：共享热度状态、LRU、Otsu 直方图 bin/object 数、有效/候选
-  热阈值、分离度、总/样本/sharpness 置信度和各阈值状态的 OSD 数
+  热阈值、分离度、总/sharpness 置信度和各阈值状态的 OSD 数
 - `summary.actual_behavior`：实际热/冷样本的平均未来访问次数、平均到期热度、热冷
   比值，以及 `p99/p95/p50` 分布。
 - `summary.prediction`：accuracy/precision/recall、预测/实际热比例、当前及候选预测
@@ -209,8 +210,8 @@ OSD perf 命令为 `ceph daemon osd.0 perf dump object_hp_status`。
   future-access/future-heat 的 `p99/p95/p50`。
 - 预测阈值校准：当前/候选概率阈值、样本数和两个窗口 accuracy。
 - 热度阈值：`hp_hot_threshold`、`hp_otsu_candidate_threshold`、
-  `hp_otsu_separation`、`hp_otsu_confidence`、`hp_otsu_sample_confidence`、
-  `hp_otsu_sharpness_confidence`、`hp_hot_threshold_method`。
+  `hp_otsu_separation`、`hp_otsu_confidence`、`hp_otsu_sharpness_confidence`、
+  `hp_hot_threshold_method`。
 - 训练、op 和延迟：队列/丢弃/快照计数、read/write 分类计数和每 1000 条有效
   I/O 采样一次的 `hp_predict_latency`。
 

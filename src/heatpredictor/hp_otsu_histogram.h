@@ -17,8 +17,7 @@
 struct HpOtsuResult {
     double threshold_score;
     double separation;
-    double near_optimal_score_range;
-    double occupied_score_range;
+    uint64_t ambiguous_sample_count;
     uint64_t sample_count;
 };
 
@@ -116,11 +115,10 @@ public:
         double lhs_sum = 0.0;
         double best_between_variance = -1.0;
         double best_threshold_score = 0.0;
+        uint64_t best_lhs_count = 0;
         struct Candidate {
-            double threshold_score;
             double between_variance;
-            double plateau_min_score;
-            double plateau_max_score;
+            uint64_t lhs_count;
         };
         std::vector<Candidate> candidates;
         candidates.reserve(bins.size() - 1);
@@ -152,14 +150,13 @@ public:
             const double threshold_score =
                 (bin_center(it->first) + bin_center(next->first)) / 2.0;
             candidates.push_back(Candidate{
-                threshold_score,
                 between_variance,
-                bin_center(it->first),
-                bin_center(next->first)
+                lhs_count_u
             });
             if (between_variance > best_between_variance) {
                 best_between_variance = between_variance;
                 best_threshold_score = threshold_score;
+                best_lhs_count = lhs_count_u;
             }
         }
 
@@ -169,24 +166,21 @@ public:
 
         const double near_optimal_minimum =
             HP_OTSU_NEAR_OPTIMAL_RATIO * best_between_variance;
-        double near_optimal_min_score = best_threshold_score;
-        double near_optimal_max_score = best_threshold_score;
+        uint64_t near_optimal_min_lhs_count = best_lhs_count;
+        uint64_t near_optimal_max_lhs_count = best_lhs_count;
         for (const Candidate& candidate : candidates) {
             if (candidate.between_variance >= near_optimal_minimum) {
-                near_optimal_min_score = std::min(
-                    near_optimal_min_score, candidate.plateau_min_score);
-                near_optimal_max_score = std::max(
-                    near_optimal_max_score, candidate.plateau_max_score);
+                near_optimal_min_lhs_count = std::min(
+                    near_optimal_min_lhs_count, candidate.lhs_count);
+                near_optimal_max_lhs_count = std::max(
+                    near_optimal_max_lhs_count, candidate.lhs_count);
             }
         }
 
-        const double occupied_score_range =
-            bin_center(bins.rbegin()->first) - bin_center(bins.begin()->first);
         return HpOtsuResult{
             best_threshold_score,
             std::clamp(best_between_variance / total_variance, 0.0, 1.0),
-            near_optimal_max_score - near_optimal_min_score,
-            occupied_score_range,
+            near_optimal_max_lhs_count - near_optimal_min_lhs_count,
             total_count
         };
     }

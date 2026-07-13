@@ -410,8 +410,15 @@ struct has_otsu_confidence_stats<T, std::void_t<
     decltype(std::declval<T>().otsu_histogram_object_count),
     decltype(std::declval<T>().otsu_candidate_threshold),
     decltype(std::declval<T>().otsu_confidence),
-    decltype(std::declval<T>().otsu_sample_confidence),
     decltype(std::declval<T>().otsu_sharpness_confidence)>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct has_otsu_sample_confidence_stat : std::false_type {};
+
+template <typename T>
+struct has_otsu_sample_confidence_stat<
+    T, std::void_t<decltype(std::declval<T>().otsu_sample_confidence)>>
     : std::true_type {};
 
 void test_stats_drop_online_prediction_ratio_source()
@@ -454,6 +461,8 @@ void test_stats_export_otsu_histogram_bin_count()
           "HeatPredictorStats should expose Otsu histogram bin count");
   require(has_otsu_confidence_stats<HeatPredictorStats>::value,
           "HeatPredictorStats should expose Otsu confidence state");
+  require(!has_otsu_sample_confidence_stat<HeatPredictorStats>::value,
+          "HeatPredictorStats should not expose removed sample confidence");
 }
 
 void test_otsu_update_cost_knobs()
@@ -462,14 +471,14 @@ void test_otsu_update_cost_knobs()
           "Otsu eager updates should be disabled for fixed interval updates");
   require(HP_OTSU_UPDATE_INTERVAL == 100,
           "Otsu update interval should refresh every 100 IO observations");
-  require(HP_OTSU_FULL_CONFIDENCE_OBJECTS == 1000,
-          "Otsu sample confidence should saturate at 1000 objects");
   require_close(HP_OTSU_NEAR_OPTIMAL_RATIO, 0.99,
                 "Otsu near-optimal candidates should use 99% of best variance");
-  require_close(HP_OTSU_SHARPNESS_FULL_WIDTH_RATIO, 0.20,
-                "Otsu sharpness should reach zero at a 20% plateau");
-  require_close(HP_OTSU_MAX_UPDATE_ALPHA, 0.10,
-                "Otsu threshold gain should be capped at 0.10");
+  require_close(HP_OTSU_SHARPNESS_FULL_AMBIGUOUS_RATIO, 0.20,
+                "Otsu sharpness should reach zero when 20% of samples are ambiguous");
+  require_close(HP_OTSU_FIXED_EMA_ALPHA, 0.10,
+                "fixed-EMA profile should retain its 0.10 control gain");
+  require_close(HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA, 0.50,
+                "confidence profile threshold gain should be capped at 0.50");
   require_close(HP_OTSU_HEAT_MIN, 1.0,
                 "Otsu heat clamp lower bound should be 1.0");
   require_close(HP_OTSU_HEAT_MAX, 3000.0,
@@ -1236,11 +1245,8 @@ void test_otsu_histogram_reports_distribution_shape()
           "Otsu result should report histogram object count");
   require(result->separation > 0.99,
           "clear bimodal samples should have high separation confidence");
-  require_close(result->near_optimal_score_range,
-                result->occupied_score_range,
-                "empty bins between two peaks should count as an Otsu plateau");
-  require(result->occupied_score_range > 0.0,
-          "bimodal samples should report a nonzero occupied score range");
+  require(result->ambiguous_sample_count == 0,
+          "an empty gap between two peaks should not make samples ambiguous");
 }
 
 void test_otsu_histogram_rejects_insufficient_and_constant_samples()
@@ -1253,7 +1259,7 @@ void test_otsu_histogram_rejects_insufficient_and_constant_samples()
           "Otsu should wait for the minimum object count");
 
   HpOtsuHistogram constant;
-  for (size_t i = 0; i < HP_OTSU_FULL_CONFIDENCE_OBJECTS; ++i) {
+  for (size_t i = 0; i < 1000; ++i) {
     constant.insert(1.0);
   }
   require(!constant.otsu_result().has_value(),
@@ -1279,7 +1285,7 @@ void test_otsu_histogram_keeps_weak_candidate()
 void test_otsu_histogram_handles_monotonic_distribution()
 {
   HpOtsuHistogram histogram;
-  for (size_t i = 0; i < HP_OTSU_FULL_CONFIDENCE_OBJECTS; ++i) {
+  for (size_t i = 0; i < 1000; ++i) {
     histogram.insert(static_cast<double>(i) / 100.0);
   }
 
@@ -1288,8 +1294,10 @@ void test_otsu_histogram_handles_monotonic_distribution()
           "monotonic nonconstant heat should still produce a candidate");
   require(std::isfinite(result->threshold_score),
           "monotonic candidate score should remain finite");
-  require(result->near_optimal_score_range <= result->occupied_score_range,
-          "near-optimal plateau must stay within the occupied score range");
+  require(result->ambiguous_sample_count > 0,
+          "multiple near-optimal partitions should report ambiguous samples");
+  require(result->ambiguous_sample_count <= result->sample_count,
+          "ambiguous samples must stay within the histogram population");
 }
 
 void test_otsu_histogram_is_stable_under_large_score_translation()
@@ -1388,24 +1396,17 @@ void test_otsu_threshold_window_clamps_low_scores_without_dropping_entries()
 
 void test_otsu_confidence_formula()
 {
-  require_close(EvaluationQueue::otsu_sample_confidence_for(32), 0.0,
-                "minimum Otsu sample count should have zero confidence");
-  require_close(EvaluationQueue::otsu_sample_confidence_for(1000), 1.0,
-                "full Otsu sample count should have full confidence");
-  require_close(EvaluationQueue::otsu_sample_confidence_for(516), 0.5,
-                "Otsu sample confidence should grow linearly");
-
-  HpOtsuResult sharp{0.0, 1.0, 0.0, 2.0, 1000};
+  HpOtsuResult sharp{0.0, 1.0, 0, 1000};
   require_close(EvaluationQueue::otsu_sharpness_confidence_for(sharp), 1.0,
-                "single sharp optimum should have full confidence");
-  HpOtsuResult flat{0.0, 1.0, 0.4, 2.0, 1000};
+                "equivalent thresholds that reclassify no samples should have full confidence");
+  HpOtsuResult flat{0.0, 1.0, 200, 1000};
   require_close(EvaluationQueue::otsu_sharpness_confidence_for(flat), 0.0,
-                "20 percent near-optimal plateau should have zero sharpness");
+                "20 percent ambiguous samples should have zero sharpness");
 
-  require_close(EvaluationQueue::otsu_total_confidence_for(1.0, 1.0, 1.0),
+  require_close(EvaluationQueue::otsu_total_confidence_for(1.0, 1.0),
                 1.0, "full confidence components should produce full confidence");
-  require_close(EvaluationQueue::otsu_total_confidence_for(1.0, 0.0, 1.0),
-                0.0, "one zero component should stop threshold movement");
+  require_close(EvaluationQueue::otsu_total_confidence_for(1.0, 0.0),
+                0.0, "zero sharpness should stop threshold movement");
 }
 
 void test_otsu_threshold_state_machine()
@@ -1415,22 +1416,34 @@ void test_otsu_threshold_state_machine()
     initializing.record_object_heat(i, i % 2 == 0 ? 10.0 : 1000.0, 1);
   }
   initializing.update_hot_threshold(1);
+#if HP_OTSU_PROFILE != HP_OTSU_PROFILE_LEGACY
   require(initializing.hot_threshold_method == HP_THRESHOLD_METHOD_INITIALIZING,
           "insufficient samples should keep threshold initialization state");
   require_close(initializing.hot_threshold, HP_HEAT_INCREMENT,
                 "initializing should keep the configured initial threshold");
+#else
+  require(initializing.hot_threshold_method == HP_THRESHOLD_METHOD_HOLDING,
+          "legacy policy should publish its quantile while Otsu initializes");
+  require_close(initializing.hot_threshold, 1000.0,
+                "legacy initialization should use the p85 object heat");
+#endif
   require_close(initializing.otsu_candidate_threshold, 0.0,
                 "initializing should not expose a stale candidate");
 
   EvaluationQueue holding;
-  for (uint64_t i = 0; i < HP_OTSU_FULL_CONFIDENCE_OBJECTS; ++i) {
+  for (uint64_t i = 0; i < 1000; ++i) {
     holding.record_object_heat(i, 10.0, 1);
   }
   holding.update_hot_threshold(1);
   require(holding.hot_threshold_method == HP_THRESHOLD_METHOD_HOLDING,
           "constant samples should hold the effective threshold");
+#if HP_OTSU_PROFILE != HP_OTSU_PROFILE_LEGACY
   require_close(holding.hot_threshold, HP_HEAT_INCREMENT,
                 "holding should not replace the effective threshold");
+#else
+  require_close(holding.hot_threshold, 10.0,
+                "legacy policy should use its p85 fallback while Otsu is unavailable");
+#endif
 
   EvaluationQueue tracking(10000, 2000, 20.0, 100.0);
   for (uint64_t i = 0; i < 400; ++i) {
@@ -1452,17 +1465,31 @@ void test_otsu_threshold_state_machine()
   const double candidate_score = tracking.to_heat_score(
       tracking.otsu_candidate_threshold, 1);
   const double expected_score = initial_score +
-      HP_OTSU_MAX_UPDATE_ALPHA * tracking.otsu_confidence *
+      HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA * tracking.otsu_confidence *
       (candidate_score - initial_score);
   require(tracking.hot_threshold_method == HP_THRESHOLD_METHOD_TRACKING,
           "clear bimodal samples should track the Otsu candidate");
-  require(tracking.otsu_candidate_threshold > tracking.hot_threshold,
-          "bounded gain should leave the effective threshold behind its candidate");
-  require(tracking.hot_threshold > threshold_before_update,
-          "tracking should move the effective threshold toward the candidate");
+#if HP_OTSU_PROFILE == HP_OTSU_PROFILE_CONFIDENCE
+  require(std::abs(tracking.hot_threshold - tracking.otsu_candidate_threshold) <=
+              std::abs(threshold_before_update -
+                       tracking.otsu_candidate_threshold),
+          "confidence gain should not move the effective threshold away from its candidate");
   require_close(tracking.to_heat_score(tracking.hot_threshold, 1),
                 expected_score,
                 "effective threshold should apply confidence-scaled score gain");
+#elif HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA
+  const double fixed_ema_expected_score = initial_score +
+      HP_OTSU_FIXED_EMA_ALPHA * (candidate_score - initial_score);
+  require_close(tracking.to_heat_score(tracking.hot_threshold, 1),
+                fixed_ema_expected_score,
+                "fixed-EMA profile should use the maximum score-space gain");
+#else
+  const double legacy_expected_score = initial_score +
+      HP_LEGACY_OTSU_EMA_ALPHA * (candidate_score - initial_score);
+  require_close(tracking.to_heat_score(tracking.hot_threshold, 1),
+                legacy_expected_score,
+                "legacy policy should use a fixed score-space EMA gain");
+#endif
 }
 
 void test_otsu_threshold_updates_every_100_observations()
@@ -1483,6 +1510,23 @@ void test_otsu_threshold_updates_every_100_observations()
   eq.record_object_heat(99, std::exp(8.0), 1);
   require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_TRACKING,
           "Otsu threshold should update on the 100th observation");
+}
+
+void test_legacy_otsu_rejects_weak_separation()
+{
+#if HP_OTSU_PROFILE == HP_OTSU_PROFILE_LEGACY
+  EvaluationQueue eq(10000, 2000, 100.0, 100.0);
+  eq.record_object_heat(0, std::exp(1.0), 1);
+  for (uint64_t i = 1; i < 999; ++i) {
+    eq.record_object_heat(i, std::exp(2.0), 1);
+  }
+  eq.record_object_heat(999, std::exp(3.0), 1);
+
+  require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_HOLDING,
+          "legacy Otsu should reject candidates below 0.60 separation");
+  require_close(eq.hot_threshold, std::exp(2.0),
+                "legacy weak-candidate fallback should publish p85 heat");
+#endif
 }
 
 void test_training_samples_use_unit_weight()
@@ -1556,8 +1600,13 @@ void test_evaluation_queue_feeds_supervised_calibrator()
           "second calibration probe item should evaluate the first item");
   require(evaluated->label == 0,
           "first calibration probe item should be actually cold");
+#if HP_ENABLE_PREDICTION_CALIBRATION
   require(eq.prediction_calibration_size() == 1,
           "expired I/O should enter the supervised calibration window");
+#else
+  require(eq.prediction_calibration_size() == 0,
+          "fixed prediction threshold must not retain calibration samples");
+#endif
   require_close(eq.hot_predict_threshold(), HP_HOT_PREDICT_THRESHOLD,
                 "insufficient calibration samples should keep the initial threshold");
 }
@@ -1586,6 +1635,24 @@ void test_supervised_threshold_maximizes_window_accuracy()
                 "selected threshold should classify the window perfectly");
   require_close(calibrator.target_accuracy(), 1.0,
                 "target accuracy should report the selected candidate");
+}
+
+void test_experiment_profile_parameters()
+{
+#if HP_PREDICTION_RANGE_PROFILE == HP_PREDICTION_RANGE_CW
+  require_close(HP_HOT_PREDICT_THRESHOLD_MIN, 0.20,
+                "CW prediction threshold lower bound should be 0.20");
+  require_close(HP_HOT_PREDICT_THRESHOLD_MAX, 0.80,
+                "CW prediction threshold upper bound should be 0.80");
+#else
+  require_close(HP_HOT_PREDICT_THRESHOLD_MIN, 0.40,
+                "C0 prediction threshold lower bound should be 0.40");
+  require_close(HP_HOT_PREDICT_THRESHOLD_MAX, 0.60,
+                "C0 prediction threshold upper bound should be 0.60");
+#endif
+  require(HP_OTSU_PROFILE >= HP_OTSU_PROFILE_LEGACY &&
+          HP_OTSU_PROFILE <= HP_OTSU_PROFILE_CONFIDENCE,
+          "Otsu experiment profile should be valid");
 }
 
 void test_supervised_threshold_is_stable_and_bounded()
@@ -1690,8 +1757,10 @@ int main()
   test_otsu_confidence_formula();
   test_otsu_threshold_state_machine();
   test_otsu_threshold_updates_every_100_observations();
+  test_legacy_otsu_rejects_weak_separation();
   test_training_samples_use_unit_weight();
   test_evaluation_queue_feeds_supervised_calibrator();
+  test_experiment_profile_parameters();
   test_supervised_threshold_maximizes_window_accuracy();
   test_supervised_threshold_is_stable_and_bounded();
   test_supervised_threshold_applies_ema_and_fifo_eviction();
