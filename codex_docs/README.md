@@ -13,6 +13,7 @@
 - [PREDICTION_THRESHOLD.md](todo/PREDICTION_THRESHOLD.md)：固定/动态预测阈值。
 - [OTSU_THRESHOLD.md](todo/OTSU_THRESHOLD.md)：固定/动态热阈值 EMA。
 - [FINAL_VALIDATION.md](todo/FINAL_VALIDATION.md)：两个阈值维度的 2×2 测试矩阵。
+- [TIME_BASED_EQ.md](todo/TIME_BASED_EQ.md)：固定时间评价窗口的后续设计与验证要求。
 
 历史设计与实施计划位于 `docs/superpowers/`，不作为当前 TODO，也不随活动文档路径
 迁移而重写。

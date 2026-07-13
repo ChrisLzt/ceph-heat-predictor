@@ -1,7 +1,7 @@
-# Heat Predictor Threshold TODO
+# Heat Predictor TODO
 
-当前只研究实际热标签阈值和模型预测阈值。feature、森林参数、训练权重、并发和性能
-优化不再列入 TODO；热、冷训练样本权重固定为 `1.0`。
+当前研究实际热标签阈值、模型预测阈值和时间型评价窗口。feature、森林参数、训练权重、
+并发和一般性能优化不再列入 TODO；热、冷训练样本权重固定为 `1.0`。
 
 ## 测试约束
 
@@ -30,6 +30,10 @@
 - [OTSU_THRESHOLD.md](todo/OTSU_THRESHOLD.md)：H0/H1 热阈值跟踪。
 - [PREDICTION_THRESHOLD.md](todo/PREDICTION_THRESHOLD.md)：P0/P1 预测阈值。
 - [FINAL_VALIDATION.md](todo/FINAL_VALIDATION.md)：H0/H1 × P0/P1 的 2×2 测试矩阵。
+- [TIME_BASED_EQ.md](todo/TIME_BASED_EQ.md)：将固定 I/O 数评价窗口改为固定时间窗口。
 
 执行规范见 [EXPERIMENT_PROTOCOL.md](EXPERIMENT_PROTOCOL.md)，但实验器本身不再作为
 功能 TODO。执行顺序为：L1 profile 检查 -> L2 部署检查 -> 2×2 L3 单轮矩阵 -> 中文报告。
+
+时间型 EQ 是独立的后续改动。阈值矩阵完成前不实施，实施时以
+`eq-io-window-baseline` 分支作为按 I/O 窗口的对照版本。
