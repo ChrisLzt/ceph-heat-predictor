@@ -36,7 +36,7 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::copy_leaf_state_to(
     for (auto splitter : copy->splitters) {
         delete splitter;
     }
-    copy->splitters.assign(num_features, nullptr);
+    copy->splitters.fill(nullptr);
     for (int i = 0; i < num_features; ++i) {
         if (splitters[i] != nullptr) {
             copy->splitters[i] =
@@ -61,6 +61,7 @@ RandomLeafNaiveBayesAdaptive<num_features, num_labels>::clone_for_prediction()
         this->depth, max_features);
     this->copy_leaf_state_to(copy);
     copy->feature_indices = feature_indices;
+    copy->feature_count = feature_count;
     return copy;
 }
 
@@ -109,9 +110,11 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::deactivate() {
 
 template <int num_features, int num_labels>
 void LeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(const std::vector<double>& x, int y, double w) {
+    if (x.size() != num_features || y < 0 || y >= num_labels) {
+        throw std::invalid_argument("invalid leaf training sample");
+    }
     for (size_t i=0;i<x.size();i++) {
         if (splitters[i] == nullptr) {
-            // should copy from saved splitter but we'll just let go
             splitters[i] = new GaussianSplitter<num_features, num_labels>();
         }
         splitters[i]->update(x[i], y, w);
@@ -130,12 +133,13 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::prediction(std::vector<do
 template <int num_features, int num_labels>
 void LeafNaiveBayesAdaptive<num_features, num_labels>::learn_one(const std::vector<double>& x, int y, double w) {
     if(is_active) {
-        std::vector<double> mc_pred(num_labels, 0.0);
+        thread_local std::vector<double> mc_pred;
+        mc_pred.assign(num_labels, 0.0);
         normalize_values_in_dict(mc_pred, this->stats);
         if (this->stats.size() == 0 || max_index(mc_pred) == y) {
             _mc_correct_weight += w;
         }
-        std::vector<double> nb_pred(num_labels, -1.0);
+        thread_local std::vector<double> nb_pred;
         do_naive_bayes_prediction<num_features, num_labels>(nb_pred, x, this->stats, splitters);
         if (max_index(nb_pred) == y) {
             _nb_correct_weight += w;
@@ -149,20 +153,31 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::learn_one(const std::vect
 }
 
 template <int num_features, int num_labels>
-int estimate_tree_memory_bytes(HoeffdingTree<num_features, num_labels>* tree) {
-    int total = 0;
-    // this
-    total += sizeof(HoeffdingTreeClassifier<num_features, num_labels>);
-    // classifier-classes
-    total += num_features * sizeof(int);
-    // root
+size_t estimate_tree_memory_bytes(HoeffdingTree<num_features, num_labels>* tree) {
+    if (tree == nullptr) {
+        return 0;
+    }
+
+    size_t total = sizeof(HoeffdingTreeClassifier<num_features, num_labels>);
+    total += num_labels * sizeof(int);
+    if (tree->_root == nullptr) {
+        return total;
+    }
+
     std::queue<BranchOrLeaf<num_features, num_labels>*> q;
     q.push(tree->_root);
     while (!q.empty()) {
         BranchOrLeaf<num_features, num_labels>* b = q.front();
         q.pop();
+        if (b == nullptr) {
+            continue;
+        }
         if (b->is_leaf) {
-            total += estimate_leaf_memory_bytes<num_features, num_labels>();
+            auto *leaf =
+                static_cast<LeafNaiveBayesAdaptive<num_features, num_labels>*>(b);
+            total += leaf->is_active
+                ? estimate_leaf_memory_bytes<num_features, num_labels>()
+                : estimate_inactive_leaf_memory_bytes<num_features, num_labels>();
         } else {
             total += estimate_branch_memory_bytes<num_features, num_labels>();
             NumericBinaryBranch<num_features, num_labels>* branch = static_cast<NumericBinaryBranch<num_features, num_labels>*>(b);
@@ -173,53 +188,43 @@ int estimate_tree_memory_bytes(HoeffdingTree<num_features, num_labels>* tree) {
     return total;
 }
 
-template <int num_features, int num_labels>
-constexpr int estimate_branch_memory_bytes() {
-    int total = 0;
-    // this
-    total += sizeof(NumericBinaryBranch<num_features, num_labels>);
-    // stats
-    total += num_features * (sizeof(int) + sizeof(double));
-
-    return total;
+template <int num_labels>
+constexpr size_t estimate_class_stats_memory_bytes() {
+    return num_labels * (
+        sizeof(std::pair<const int, double>) + 2 * sizeof(void*));
 }
 
 template <int num_features, int num_labels>
-constexpr int estimate_leaf_memory_bytes() {
-    int total = 0;
-
-    // this
-    total += sizeof(LeafNaiveBayesAdaptive<num_features, num_labels>);
-
-    // splitters
-    total += num_features * sizeof(GaussianSplitter<num_features, num_labels>*);
-
-    // splitters
-    const int szGaussian = sizeof(Gaussian);
-    int s = 0;
-    s += sizeof(GaussianSplitter<num_features, num_labels>);
-    s += num_labels * szGaussian;
-    s += num_labels * sizeof(double);
-    s += num_labels * sizeof(double);
-    total += s * num_features;
-
-    // stats
-    total += num_features * (sizeof(int) + sizeof(double));
-
-    return total;
+constexpr size_t estimate_branch_memory_bytes() {
+    return sizeof(NumericBinaryBranch<num_features, num_labels>) +
+        estimate_class_stats_memory_bytes<num_labels>();
 }
 
-// TODO: seems to have logical error but whatever
-// if accuracy drops revisit this
+template <int num_features, int num_labels>
+constexpr size_t estimate_inactive_leaf_memory_bytes() {
+    return sizeof(RandomLeafNaiveBayesAdaptive<num_features, num_labels>) +
+        estimate_class_stats_memory_bytes<num_labels>();
+}
+
+template <int num_features, int num_labels>
+constexpr size_t estimate_leaf_memory_bytes() {
+    constexpr size_t splitter_size =
+        sizeof(GaussianSplitter<num_features, num_labels>);
+    return estimate_inactive_leaf_memory_bytes<num_features, num_labels>() +
+        num_features * splitter_size;
+}
+
 template <int num_features, int num_labels>
 void RandomLeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(const std::vector<double>& x, int y, double w) {
-    if (feature_indices.size() == 0) {
-        _sample_features(feature_indices, max_features);
+    if (x.size() != num_features || y < 0 || y >= num_labels) {
+        throw std::invalid_argument("invalid random leaf training sample");
     }
-    for (size_t i=0;i<feature_indices.size();i++) {
+    if (feature_count == 0) {
+        _sample_features();
+    }
+    for (size_t i=0;i<feature_count;i++) {
         int fi = feature_indices[i];
         if (this->splitters[fi] == nullptr) {
-            // should copy from saved splitter but we'll just let go
             this->splitters[fi] = new GaussianSplitter<num_features, num_labels>();
         }
         this->splitters[fi]->update(x[fi], y, w);

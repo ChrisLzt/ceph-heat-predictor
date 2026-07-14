@@ -4,35 +4,36 @@
 #include <cstdint>
 #include <list>
 
-struct TraceItem {
-    uint64_t index;
-    uint64_t operation;
-    uint64_t size;
-    uint64_t key;
-    double current_heat;
-    double hot_threshold;
-    uint64_t access_count;
-    uint64_t last_access_distance;
-    uint64_t object_age;
-    double pred_hot_proba;
-    int pred;
+struct PredictionSample {
+    uint64_t io_sequence;
+    uint64_t object_key_hash;
+    double heat_after_current_access;
+    double heat_label_threshold_at_prediction;
+    uint64_t tracked_access_count;
+    uint64_t time_since_previous_access_ns;
+    uint64_t long_window_access_count;
+    uint64_t short_window_access_count;
+    double heat_percentile;
+    double predicted_hot_probability;
+    int predicted_label;
 };
 
-struct HeatState {
+struct ObjectHeatState {
     double heat;
-    uint64_t last_access;
-    uint64_t first_access;
-    uint64_t access_count;
-    uint64_t pending_count;
+    uint64_t last_access_time_ns;
+    uint64_t tracked_access_count;
+    uint64_t pending_evaluation_count;
+    uint64_t short_window_access_count;
+    uint64_t long_window_access_count;
     std::list<uint64_t>::iterator lru_position;
 };
 
-struct EvaluatedItem {
-    TraceItem item;
+struct EvaluatedSample {
+    PredictionSample item;
     int label;
     double training_weight;
-    uint64_t future_access_count;
-    double future_heat;
+    uint64_t future_window_access_count;
+    double future_window_added_heat;
 };
 
 struct HpDistributionSummary {
@@ -45,7 +46,7 @@ struct HpDistributionSummary {
 };
 
 struct TrainingSample {
-    TraceItem item;
+    PredictionSample item;
     int label;
     double weight;
 };
@@ -55,32 +56,38 @@ struct HeatPredictorStats {
     uint64_t io_count;
     uint64_t labeled_io_total;
     uint64_t pending_io_count;
+    uint64_t awaiting_prediction_count;
+    uint64_t eval_drop_count;
     uint64_t heat_state_count;
     uint64_t lru_count;
     uint64_t otsu_histogram_bin_count;
+    uint64_t otsu_histogram_object_count;
     uint64_t true_positive;
     uint64_t false_positive;
     uint64_t true_negative;
     uint64_t false_negative;
-    uint64_t actual_hot_object_access_count_sum;
-    uint64_t actual_cold_object_access_count_sum;
-    // Exported as hp_actual_hot_object_avg_heat and
-    // hp_actual_cold_object_avg_heat after averaging.
-    double actual_hot_object_heat_sum;
-    double actual_cold_object_heat_sum;
-    double actual_hot_pred_hot_proba_sum;
-    double actual_cold_pred_hot_proba_sum;
-    HpDistributionSummary actual_hot_future_access;
-    HpDistributionSummary actual_cold_future_access;
-    HpDistributionSummary actual_hot_future_heat;
-    HpDistributionSummary actual_cold_future_heat;
-    double hot_threshold;
-    double hot_quantile_threshold;
-    uint64_t hot_threshold_method;
+    uint64_t hot_labeled_sample_future_access_count_sum;
+    uint64_t cold_labeled_sample_future_access_count_sum;
+    // Exported as the hot/cold labeled-sample average future added heat.
+    double hot_labeled_sample_future_added_heat_sum;
+    double cold_labeled_sample_future_added_heat_sum;
+    double hot_labeled_sample_predicted_hot_probability_sum;
+    double cold_labeled_sample_predicted_hot_probability_sum;
+    HpDistributionSummary hot_labeled_sample_future_access_count;
+    HpDistributionSummary cold_labeled_sample_future_access_count;
+    HpDistributionSummary hot_labeled_sample_future_added_heat;
+    HpDistributionSummary cold_labeled_sample_future_added_heat;
+    double heat_label_threshold;
+    double otsu_candidate_threshold;
     double otsu_separation;
+    double otsu_confidence;
+    double otsu_sharpness_confidence;
+    uint64_t hot_threshold_method;
     double hot_predict_threshold;
-    double pred_actual_hot_ratio;
-    double dynamic_hot_class_weight;
+    double hot_predict_threshold_target;
+    uint64_t predict_calibration_sample_count;
+    double predict_calibration_current_accuracy;
+    double predict_calibration_target_accuracy;
 };
 
 #endif

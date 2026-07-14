@@ -1,5 +1,5 @@
-#ifndef CEPH_HEATPREDICTOR_HP_QUANTILE_WINDOW_H
-#define CEPH_HEATPREDICTOR_HP_QUANTILE_WINDOW_H
+#ifndef CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
+#define CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 
 #include <cmath>
 #include <cstddef>
@@ -14,21 +14,21 @@
 #include "hp_config.h"
 #include "hp_types.h"
 
-class HpQuantileWindow {
+class HpIntegerQuantileWindow {
 public:
     typedef __gnu_pbds::tree<
-        std::pair<double, uint64_t>,
+        std::pair<uint64_t, uint64_t>,
         __gnu_pbds::null_type,
-        std::less<std::pair<double, uint64_t>>,
+        std::less<std::pair<uint64_t, uint64_t>>,
         __gnu_pbds::rb_tree_tag,
         __gnu_pbds::tree_order_statistics_node_update
     > pbds_set;
 
-    explicit HpQuantileWindow(
+    explicit HpIntegerQuantileWindow(
             size_t capacity = HP_REPORT_SAMPLE_WINDOW_CAPACITY) :
             capacity(capacity) {}
 
-    void insert(double value) {
+    void insert(uint64_t value) {
         if (capacity == 0) {
             return;
         }
@@ -55,7 +55,8 @@ public:
 
         return HpDistributionSummary{
             static_cast<uint64_t>(values.size()),
-            values.find_by_order(values.size() - 1)->first,
+            static_cast<double>(
+                values.find_by_order(values.size() - 1)->first),
             quantile(0.50),
             quantile(0.90),
             quantile(0.95),
@@ -66,20 +67,17 @@ public:
 private:
     size_t capacity;
     pbds_set values;
-    std::deque<std::pair<double, uint64_t>> order;
+    std::deque<std::pair<uint64_t, uint64_t>> order;
     uint64_t counter = 0;
 
     double quantile(double q) const {
-        if (values.empty()) {
-            return 0.0;
-        }
-        size_t idx = static_cast<size_t>(
+        size_t index = static_cast<size_t>(
             std::ceil(q * static_cast<double>(values.size())));
-        idx = idx == 0 ? 0 : idx - 1;
-        if (idx >= values.size()) {
-            idx = values.size() - 1;
+        index = index == 0 ? 0 : index - 1;
+        if (index >= values.size()) {
+            index = values.size() - 1;
         }
-        return values.find_by_order(idx)->first;
+        return static_cast<double>(values.find_by_order(index)->first);
     }
 };
 

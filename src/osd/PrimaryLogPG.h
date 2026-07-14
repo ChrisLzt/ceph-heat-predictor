@@ -17,6 +17,8 @@
 #ifndef CEPH_REPLICATEDPG_H
 #define CEPH_REPLICATEDPG_H
 
+#include <optional>
+
 #include <boost/tuple/tuple.hpp>
 #include "include/ceph_assert.h"
 #include "DynamicPerfStats.h"
@@ -1509,7 +1511,10 @@ public:
   void snap_trimmer(epoch_t e) override;
   void kick_snap_trim() override;
   void snap_trimmer_scrub_complete() override;
-  int do_osd_ops(OpContext *ctx, std::vector<OSDOp>& ops);
+  int do_osd_ops(
+    OpContext *ctx,
+    std::vector<OSDOp>& ops,
+    std::optional<uint16_t> hp_op_override = std::nullopt);
 
   int _get_tmap(OpContext *ctx, ceph::buffer::list *header, ceph::buffer::list *vals);
   int do_tmap2omap(OpContext *ctx, unsigned flags);

@@ -8,6 +8,7 @@
 # include <array>
 # include <cstdint>
 # include <memory>
+# include <stdexcept>
 
 // always with_std
 template <int num_features>
@@ -19,6 +20,9 @@ private:
 public:
     void learn_one(const std::vector<double>& x, int y) override {
         (void) y; // unused
+        if (x.size() != num_features) {
+            throw std::invalid_argument("invalid StandardScaler feature count");
+        }
         for (size_t i = 0; i < x.size(); i++) {
             counts[i] += 1;
             double delta = x[i] - means[i];
@@ -28,12 +32,21 @@ public:
         }
     }
     std::vector<double> transform_one(const std::vector<double>& x) override {
-        std::vector<double> res(x.size(), 0.0);
+        std::vector<double> res;
+        transform_one_into(x, res);
+        return res;
+    }
+    void transform_one_into(
+            const std::vector<double>& x,
+            std::vector<double>& res) override {
+        if (x.size() != num_features) {
+            throw std::invalid_argument("invalid StandardScaler feature count");
+        }
+        res.resize(num_features);
         for (size_t i = 0; i < x.size(); i++) {
             double var = counts[i] > 0 ? m2s[i] / static_cast<double>(counts[i]) : 0.0;
             res[i] = var > 0.0 ? (x[i] - means[i]) / std::sqrt(var) : 0.0;
         }
-        return res;
     }
     std::unique_ptr<Transformer> clone() const override {
         return std::unique_ptr<Transformer>(new StandardScaler(*this));

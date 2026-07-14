@@ -4,6 +4,22 @@
 #include <cstdint>
 #include <mutex>
 
+inline double hp_binary_balanced_accuracy(
+    uint64_t true_positive,
+    uint64_t false_positive,
+    uint64_t true_negative,
+    uint64_t false_negative) {
+    const uint64_t actual_hot = true_positive + false_negative;
+    const uint64_t actual_cold = true_negative + false_positive;
+    const double hot_recall = actual_hot > 0
+        ? static_cast<double>(true_positive) / actual_hot
+        : 0.0;
+    const double cold_recall = actual_cold > 0
+        ? static_cast<double>(true_negative) / actual_cold
+        : 0.0;
+    return 0.5 * (hot_recall + cold_recall);
+}
+
 template <int num_labels>
 class ConfusionMatrix {
 private:
@@ -45,7 +61,7 @@ public:
         // sum_row[y_true] += w;
         // sum_col[y_pred] += w;
     }
-    uint64_t total_true_positives() {
+    uint64_t total_true_positives() const {
         std::lock_guard<std::mutex> lock(mtx);
         uint64_t total = 0;
         for (int i = 0; i < num_labels; i++) {
@@ -53,15 +69,15 @@ public:
         }
         return total;
     }
-    uint64_t get(int row, int col) {
+    uint64_t get(int row, int col) const {
         std::lock_guard<std::mutex> lock(mtx);
         return data[row][col];
     }
-    uint64_t get_total_weight() {
+    uint64_t get_total_weight() const {
         std::lock_guard<std::mutex> lock(mtx);
         return total_weight;
     }
-    double get_accuracy() {
+    double get_accuracy() const {
         std::lock_guard<std::mutex> lock(mtx);
         if (total_weight == 0) return 0;
 
@@ -71,7 +87,7 @@ public:
         }
         return static_cast<double>(total) / total_weight;
     }
-    double get_balanced_accuracy() {
+    double get_balanced_accuracy() const {
         std::lock_guard<std::mutex> lock(mtx);
         if (total_weight == 0) return 0;
 
@@ -87,7 +103,7 @@ public:
         }
         return recall_sum / num_labels;
     }
-    double get_label_precision(int label) {
+    double get_label_precision(int label) const {
         std::lock_guard<std::mutex> lock(mtx);
         uint64_t predicted = 0;
         for (int i = 0; i < num_labels; i++) {
@@ -95,7 +111,7 @@ public:
         }
         return predicted > 0 ? static_cast<double>(data[label][label]) / predicted : 0;
     }
-    double get_label_recall(int label) {
+    double get_label_recall(int label) const {
         std::lock_guard<std::mutex> lock(mtx);
         uint64_t actual = 0;
         for (int i = 0; i < num_labels; i++) {
@@ -103,7 +119,7 @@ public:
         }
         return actual > 0 ? static_cast<double>(data[label][label]) / actual : 0;
     }
-    double get_label_prediction_percent(int label) {
+    double get_label_prediction_percent(int label) const {
         std::lock_guard<std::mutex> lock(mtx);
         if (total_weight == 0) return 0;
 
@@ -132,29 +148,29 @@ public:
     void update(int y_true, int y_pred, uint64_t w=1) {
         cm.update(y_true, y_pred, w);
     }
-    uint64_t get_total_weight() {
+    uint64_t get_total_weight() const {
         return cm.get_total_weight();
     }
-    double get_accuracy() {
+    double get_accuracy() const {
         return cm.get_accuracy();
     }
-    double get_balanced_accuracy() {
+    double get_balanced_accuracy() const {
         return cm.get_balanced_accuracy();
     }
     // label=1=hot, label=0=cold
     // TP: 预测热，实际热   TN: 预测冷，实际冷
     // FP: 预测热，实际冷   FN: 预测冷，实际热
-    uint64_t true_positives()  { return cm.get(1, 1); }
-    uint64_t true_negatives()  { return cm.get(0, 0); }
-    uint64_t false_positives() { return cm.get(0, 1); }
-    uint64_t false_negatives() { return cm.get(1, 0); }
-    double get_hot_precision() {
+    uint64_t true_positives() const  { return cm.get(1, 1); }
+    uint64_t true_negatives() const  { return cm.get(0, 0); }
+    uint64_t false_positives() const { return cm.get(0, 1); }
+    uint64_t false_negatives() const { return cm.get(1, 0); }
+    double get_hot_precision() const {
         return cm.get_label_precision(1);
     }
-    double get_hot_recall() {
+    double get_hot_recall() const {
         return cm.get_label_recall(1);
     }
-    double get_hot_prediction_percent() {
+    double get_hot_prediction_percent() const {
         return cm.get_label_prediction_percent(1);
     }
     void clear() {

@@ -1,14 +1,18 @@
 # ifndef TREE_BASE_H
 # define TREE_BASE_H
 
+# include <algorithm>
 # include <cmath>
+# include <cstddef>
 # include <limits>
 # include <numeric>
+# include <random>
 # include <stdexcept>
 # include <vector>
 # include <array>
 # include <unordered_map>
 # include <unordered_set>
+# include <utility>
 
 template <int num_features>
 constexpr std::array<int, num_features> feature_array() {
@@ -88,16 +92,35 @@ public:
 template <int num_features, int num_labels>
 class BranchFactory {
 public:
+    using PostSplitDistribution =
+        std::pair<std::vector<double>, std::vector<double>>;
+
     double merit = std::numeric_limits<double>::lowest();
     int feature = -1;
     double threshold = -1.0;
+    PostSplitDistribution post_split_distribution;
     BranchFactory(const double merit=std::numeric_limits<double>::lowest(),
-        const int feature=-1, const double threshold=-1.0)
-        : merit(merit), feature(feature), threshold(threshold) {}
+        const int feature=-1, const double threshold=-1.0,
+        PostSplitDistribution post_split_distribution={})
+        : merit(merit), feature(feature), threshold(threshold),
+          post_split_distribution(std::move(post_split_distribution)) {}
     bool operator<(const BranchFactory& rhs) const { return merit < rhs.merit; }
     bool operator==(const BranchFactory& rhs) const { return merit == rhs.merit; }
     NumericBinaryBranch<num_features, num_labels>* assemble(const std::unordered_map<int, double>& stats,
         int depth, BranchOrLeaf<num_features, num_labels>* children[2]) const {
+        const std::vector<double>* distributions[2] = {
+            &post_split_distribution.first,
+            &post_split_distribution.second
+        };
+        for (int branch = 0; branch < 2; ++branch) {
+            for (size_t label = 0;
+                 label < distributions[branch]->size(); ++label) {
+                const double weight = (*distributions[branch])[label];
+                if (weight > 0.0) {
+                    children[branch]->stats[static_cast<int>(label)] = weight;
+                }
+            }
+        }
         return new NumericBinaryBranch(feature, threshold, children[0], children[1], stats);
     }
 };
@@ -114,7 +137,8 @@ double sum(const std::unordered_map<int, double>& x);
 template <int num_features, int num_labels>
 class LeafNaiveBayesAdaptive : public BranchOrLeaf<num_features, num_labels> {
 protected:
-    std::vector<GaussianSplitter<num_features, num_labels>*> splitters = std::vector<GaussianSplitter<num_features, num_labels>*>(num_features, nullptr);
+    std::array<GaussianSplitter<num_features, num_labels>*, num_features>
+        splitters{};
     double _mc_correct_weight = 0.0;
     double _nb_correct_weight = 0.0;
     void copy_leaf_state_to(LeafNaiveBayesAdaptive *copy) const;
@@ -152,7 +176,8 @@ public:
     }
     void deactivate();
     BranchOrLeaf<num_features, num_labels>* clone_for_prediction() const override;
-    virtual void update_splitters(const std::vector<double>& x, int y, double w);
+    virtual void update_splitters(
+        const std::vector<double>& x, int y, double w);
     void prediction(std::vector<double>& proba, const std::vector<double>& x) override;
     void learn_one(const std::vector<double>& x, int y, double w=1.0) override;
 };
@@ -161,23 +186,28 @@ template <int num_features, int num_labels>
 class RandomLeafNaiveBayesAdaptive : public LeafNaiveBayesAdaptive<num_features, num_labels> {
 protected:
     int max_features;
-    std::vector<int> feature_indices;
-    std::default_random_engine rng = std::default_random_engine(std::random_device()());
-    void _sample_features(std::vector<int> &feature_indices, int max_features) {
-        feature_indices.clear();
-        feature_indices.resize(max_features);
+    std::array<int, num_features> feature_indices{};
+    size_t feature_count = 0;
+    std::default_random_engine rng;
+    void _sample_features() {
+        feature_count = static_cast<size_t>(max_features);
         std::array<int, num_features> features = feature_array<num_features>();
         if (num_features > max_features) {
-            std::sample(features.begin(), features.end(), feature_indices.begin(), max_features, rng);
+            std::sample(
+                features.begin(), features.end(), feature_indices.begin(),
+                max_features, rng);
             return;
         }
-        feature_indices.assign(features.begin(), features.end());
+        std::copy(features.begin(), features.end(), feature_indices.begin());
     }
 public:
-    RandomLeafNaiveBayesAdaptive(int depth, int max_features)
-        : LeafNaiveBayesAdaptive<num_features, num_labels>(depth), max_features(max_features) {}
+    RandomLeafNaiveBayesAdaptive(int depth, int max_features, int seed=0)
+        : LeafNaiveBayesAdaptive<num_features, num_labels>(depth),
+          max_features(max_features),
+          rng(seed) {}
     BranchOrLeaf<num_features, num_labels>* clone_for_prediction() const override;
-    virtual void update_splitters(const std::vector<double>& x, int y, double w);
+    void update_splitters(
+        const std::vector<double>& x, int y, double w) override;
 };
 
 class InfoGainSplitCriterion {
@@ -242,10 +272,12 @@ public:
 };
 
 template <int num_features, int num_labels>
-constexpr int estimate_branch_memory_bytes();
+constexpr size_t estimate_branch_memory_bytes();
 template <int num_features, int num_labels>
-constexpr int estimate_leaf_memory_bytes();
+constexpr size_t estimate_leaf_memory_bytes();
 template <int num_features, int num_labels>
-int estimate_tree_memory_bytes(HoeffdingTree<num_features, num_labels>* tree);
+constexpr size_t estimate_inactive_leaf_memory_bytes();
+template <int num_features, int num_labels>
+size_t estimate_tree_memory_bytes(HoeffdingTree<num_features, num_labels>* tree);
 
 # endif

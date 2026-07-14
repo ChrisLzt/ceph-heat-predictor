@@ -2716,6 +2716,8 @@ void OSD::asok_command(
     f->close_section();
   } else if (prefix == "object_hp reset") {
     hp_reset_osd_object_heat_predictor(cct, f);
+  } else if (prefix == "object_hp status") {
+    hp_dump_osd_object_heat_predictor_status(cct, f);
   } else if (prefix == "object_hp enable") {
     hp_set_osd_object_heat_predictor_enabled(cct, f, true);
   } else if (prefix == "object_hp disable") {
@@ -4016,6 +4018,9 @@ void OSD::final_init()
   ceph_assert(r == 0);
   r = admin_socket->register_command("object_hp reset", asok_hook,
 				     "reset object heat predictor state");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("object_hp status", asok_hook,
+				     "show live object heat predictor state");
   ceph_assert(r == 0);
   r = admin_socket->register_command("object_hp enable", asok_hook,
 				     "enable and reset object heat predictor");
