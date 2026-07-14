@@ -41,6 +41,7 @@
 #include "messages/MOSDForceRecovery.h"
 #include "common/errno.h"
 #include "common/pick_address.h"
+#include "heatpredictor/include/Metrics.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_mgr
@@ -85,6 +86,8 @@ namespace {
     {"hp_io_count", ObjectHpAggregate::sum},
     {"hp_labeled_io_total", ObjectHpAggregate::sum},
     {"hp_pending_io_count", ObjectHpAggregate::sum},
+    {"hp_awaiting_prediction_count", ObjectHpAggregate::sum},
+    {"hp_eval_drop_count", ObjectHpAggregate::sum},
     {"hp_heat_state_count", ObjectHpAggregate::sum},
     {"hp_lru_count", ObjectHpAggregate::sum},
     {"hp_otsu_histogram_bin_count", ObjectHpAggregate::sum},
@@ -93,24 +96,36 @@ namespace {
     {"hp_false_positive_count", ObjectHpAggregate::sum},
     {"hp_true_negative_count", ObjectHpAggregate::sum},
     {"hp_false_negative_count", ObjectHpAggregate::sum},
-    {"hp_actual_hot_object_avg_future_access_count",
+    {"hp_hot_labeled_sample_avg_future_access_count",
      ObjectHpAggregate::hot_weighted},
-    {"hp_actual_cold_object_avg_future_access_count",
+    {"hp_cold_labeled_sample_avg_future_access_count",
      ObjectHpAggregate::cold_weighted},
-    {"hp_actual_hot_object_avg_heat", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_cold_object_avg_heat", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_hot_future_access_p99", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_hot_future_access_p95", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_hot_future_access_p50", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_cold_future_access_p99", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_cold_future_access_p95", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_cold_future_access_p50", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_hot_future_heat_p99", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_hot_future_heat_p95", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_hot_future_heat_p50", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_cold_future_heat_p99", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_cold_future_heat_p95", ObjectHpAggregate::cold_weighted},
-    {"hp_actual_cold_future_heat_p50", ObjectHpAggregate::cold_weighted},
+    {"hp_hot_labeled_sample_avg_future_added_heat", ObjectHpAggregate::hot_weighted},
+    {"hp_cold_labeled_sample_avg_future_added_heat", ObjectHpAggregate::cold_weighted},
+    {"hp_hot_labeled_sample_future_access_count_p99", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_access_count_osd_p99_weighted_avg"},
+    {"hp_hot_labeled_sample_future_access_count_p95", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_access_count_osd_p95_weighted_avg"},
+    {"hp_hot_labeled_sample_future_access_count_p50", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_access_count_osd_p50_weighted_avg"},
+    {"hp_cold_labeled_sample_future_access_count_p99", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_access_count_osd_p99_weighted_avg"},
+    {"hp_cold_labeled_sample_future_access_count_p95", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_access_count_osd_p95_weighted_avg"},
+    {"hp_cold_labeled_sample_future_access_count_p50", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_access_count_osd_p50_weighted_avg"},
+    {"hp_hot_labeled_sample_future_added_heat_p99", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_added_heat_osd_p99_weighted_avg"},
+    {"hp_hot_labeled_sample_future_added_heat_p95", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_added_heat_osd_p95_weighted_avg"},
+    {"hp_hot_labeled_sample_future_added_heat_p50", ObjectHpAggregate::hot_weighted,
+     "hp_hot_labeled_sample_future_added_heat_osd_p50_weighted_avg"},
+    {"hp_cold_labeled_sample_future_added_heat_p99", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_added_heat_osd_p99_weighted_avg"},
+    {"hp_cold_labeled_sample_future_added_heat_p95", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_added_heat_osd_p95_weighted_avg"},
+    {"hp_cold_labeled_sample_future_added_heat_p50", ObjectHpAggregate::cold_weighted,
+     "hp_cold_labeled_sample_future_added_heat_osd_p50_weighted_avg"},
     {"hp_actual_hot_avg_pred_hot_percent", ObjectHpAggregate::hot_weighted},
     {"hp_actual_cold_avg_pred_hot_percent", ObjectHpAggregate::cold_weighted},
     {"hp_hot_predict_threshold", ObjectHpAggregate::osd_average,
@@ -125,6 +140,7 @@ namespace {
     {"hp_predict_calibration_target_accuracy",
      ObjectHpAggregate::calibration_weighted,
      "hp_predict_calibration_target_accuracy_avg"},
+    {"hp_predict_error_count", ObjectHpAggregate::sum},
     {"hp_hot_threshold", ObjectHpAggregate::osd_average,
      "hp_hot_threshold_avg"},
     {"hp_otsu_candidate_threshold", ObjectHpAggregate::otsu_weighted,
@@ -1862,6 +1878,9 @@ bool DaemonServer::_handle_command(
     f->dump_unsigned("hp_io_count", summary["hp_io_count"]);
     f->dump_unsigned("hp_labeled_io_total", summary["hp_labeled_io_total"]);
     f->dump_unsigned("hp_pending_io_count", summary["hp_pending_io_count"]);
+    f->dump_unsigned("hp_awaiting_prediction_count",
+                     summary["hp_awaiting_prediction_count"]);
+    f->dump_unsigned("hp_eval_drop_count", summary["hp_eval_drop_count"]);
     f->close_section();
 
     f->open_object_section("heat_state");
@@ -1928,75 +1947,87 @@ bool DaemonServer::_handle_command(
     };
     {
       uint64_t weight =
-        weighted_count["hp_actual_hot_object_avg_future_access_count"];
+        weighted_count["hp_hot_labeled_sample_avg_future_access_count"];
       hp_dump_float(
         f.get(),
-        "hp_actual_hot_object_avg_future_access_count",
+        "hp_hot_labeled_sample_avg_future_access_count",
         weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_actual_hot_object_avg_future_access_count"] /
+          weighted_sum["hp_hot_labeled_sample_avg_future_access_count"] /
           weight) : 0.0);
     }
     {
       uint64_t weight =
-        weighted_count["hp_actual_cold_object_avg_future_access_count"];
+        weighted_count["hp_cold_labeled_sample_avg_future_access_count"];
       hp_dump_float(
         f.get(),
-        "hp_actual_cold_object_avg_future_access_count",
+        "hp_cold_labeled_sample_avg_future_access_count",
         weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_actual_cold_object_avg_future_access_count"] /
+          weighted_sum["hp_cold_labeled_sample_avg_future_access_count"] /
           weight) : 0.0);
     }
     {
       double cold_avg =
-        weighted_x10000_value("hp_actual_cold_object_avg_future_access_count");
+        weighted_x10000_value("hp_cold_labeled_sample_avg_future_access_count");
       hp_dump_float(
         f.get(),
-        "hp_future_access_hot_cold_ratio",
+        "hp_future_access_count_hot_cold_ratio",
         cold_avg > 0
           ? weighted_x10000_value(
-              "hp_actual_hot_object_avg_future_access_count") / cold_avg
+              "hp_hot_labeled_sample_avg_future_access_count") / cold_avg
           : 0.0);
     }
     {
       uint64_t weight =
-        weighted_count["hp_actual_hot_object_avg_heat"];
+        weighted_count["hp_hot_labeled_sample_avg_future_added_heat"];
       hp_dump_float(
         f.get(),
-        "hp_actual_hot_object_avg_heat",
+        "hp_hot_labeled_sample_avg_future_added_heat",
         weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_actual_hot_object_avg_heat"] / weight) : 0.0);
+          weighted_sum["hp_hot_labeled_sample_avg_future_added_heat"] / weight) : 0.0);
     }
     {
       uint64_t weight =
-        weighted_count["hp_actual_cold_object_avg_heat"];
+        weighted_count["hp_cold_labeled_sample_avg_future_added_heat"];
       hp_dump_float(
         f.get(),
-        "hp_actual_cold_object_avg_heat",
+        "hp_cold_labeled_sample_avg_future_added_heat",
         weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_actual_cold_object_avg_heat"] / weight) : 0.0);
+          weighted_sum["hp_cold_labeled_sample_avg_future_added_heat"] / weight) : 0.0);
     }
     {
       double cold_avg =
-        weighted_x10000_value("hp_actual_cold_object_avg_heat");
+        weighted_x10000_value("hp_cold_labeled_sample_avg_future_added_heat");
       hp_dump_float(
         f.get(),
-        "hp_future_heat_hot_cold_ratio",
+        "hp_future_added_heat_hot_cold_ratio",
         cold_avg > 0
-          ? weighted_x10000_value("hp_actual_hot_object_avg_heat") / cold_avg
+          ? weighted_x10000_value("hp_hot_labeled_sample_avg_future_added_heat") / cold_avg
           : 0.0);
     }
-    dump_weighted_x10000("hp_actual_hot_future_access_p99");
-    dump_weighted_x10000("hp_actual_hot_future_access_p95");
-    dump_weighted_x10000("hp_actual_hot_future_access_p50");
-    dump_weighted_x10000("hp_actual_cold_future_access_p99");
-    dump_weighted_x10000("hp_actual_cold_future_access_p95");
-    dump_weighted_x10000("hp_actual_cold_future_access_p50");
-    dump_weighted_x10000("hp_actual_hot_future_heat_p99");
-    dump_weighted_x10000("hp_actual_hot_future_heat_p95");
-    dump_weighted_x10000("hp_actual_hot_future_heat_p50");
-    dump_weighted_x10000("hp_actual_cold_future_heat_p99");
-    dump_weighted_x10000("hp_actual_cold_future_heat_p95");
-    dump_weighted_x10000("hp_actual_cold_future_heat_p50");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_access_count_osd_p99_weighted_avg");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_access_count_osd_p95_weighted_avg");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_access_count_osd_p50_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_access_count_osd_p99_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_access_count_osd_p95_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_access_count_osd_p50_weighted_avg");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_added_heat_osd_p99_weighted_avg");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_added_heat_osd_p95_weighted_avg");
+    dump_weighted_x10000(
+      "hp_hot_labeled_sample_future_added_heat_osd_p50_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_added_heat_osd_p99_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_added_heat_osd_p95_weighted_avg");
+    dump_weighted_x10000(
+      "hp_cold_labeled_sample_future_added_heat_osd_p50_weighted_avg");
     f->close_section();
 
     f->open_object_section("prediction");
@@ -2006,10 +2037,15 @@ bool DaemonServer::_handle_command(
     const uint64_t fn = summary["hp_false_negative_count"];
     const uint64_t labeled_total = tp + fp + tn + fn;
     hp_dump_float(f.get(), "hp_hot_accuracy", hp_percent(tp + tn, labeled_total));
+    hp_dump_float(
+      f.get(), "hp_hot_balanced_accuracy",
+      100.0 * hp_binary_balanced_accuracy(tp, fp, tn, fn));
     hp_dump_float(f.get(), "hp_hot_precision", hp_percent(tp, tp + fp));
     hp_dump_float(f.get(), "hp_hot_recall", hp_percent(tp, tp + fn));
     hp_dump_float(f.get(), "hp_eval_pred_hot_percent", hp_percent(tp + fp, labeled_total));
     hp_dump_float(f.get(), "hp_eval_actual_hot_percent", hp_percent(tp + fn, labeled_total));
+    f->dump_unsigned("hp_predict_error_count",
+                     summary["hp_predict_error_count"]);
     {
       uint64_t weight = weighted_count["hp_hot_predict_threshold_avg"];
       hp_dump_float(f.get(), "hp_hot_predict_threshold_avg",

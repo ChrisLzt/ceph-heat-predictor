@@ -5,7 +5,7 @@
 - hostname：`s52`
 - MON IP：`192.168.1.52`
 - 数据盘：WD Green SN350 `/dev/nvme1n1`，序列号 `223447804020`
-- OSD：两个 400GiB 分区，对应 `osd.0/1`
+- OSD：两个 450GiB 分区，对应 `osd.0/1`
 - 副本：`size=1`、`min_size=1`
 
 两个 OSD 位于同一块物理 SSD，仅用于测试。不要操作系统盘 `/dev/nvme0n1`。
@@ -131,8 +131,8 @@ test "$(cat /sys/block/$(basename "$OSD_DISK")/device/serial)" = "$OSD_DISK_SERI
 sudo ceph-volume lvm zap "$OSD_DISK" --destroy
 sudo wipefs -a "$OSD_DISK"
 sudo sgdisk -o \
-  -n 1:1MiB:+400GiB -t 1:8e00 -c 1:ceph-osd-0 \
-  -n 2:0:+400GiB -t 2:8e00 -c 2:ceph-osd-1 \
+  -n 1:1MiB:+450GiB -t 1:8e00 -c 1:ceph-osd-0 \
+  -n 2:0:+450GiB -t 2:8e00 -c 2:ceph-osd-1 \
   "$OSD_DISK"
 sudo partprobe "$OSD_DISK"
 sudo udevadm settle

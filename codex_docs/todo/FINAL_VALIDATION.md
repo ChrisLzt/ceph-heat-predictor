@@ -12,7 +12,7 @@
 | H1P1 | `0.50 * confidence` | 监督直方图动态阈值 |
 
 每个 profile 依次运行 MapReduce、GraphChi、AI training、AI inference，各一次，共
-`4 × 4 = 16` 项正式负载。H0P0 是最简单的固定基线；H1P1 是当前完整动态方案。
+`4 × 4 = 16` 项正式负载。H0P0 是当前固定基线；H1P1 是历史完整动态方案。
 
 ## 执行与报告
 

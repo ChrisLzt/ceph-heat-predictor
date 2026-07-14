@@ -1,61 +1,62 @@
 #ifndef CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 #define CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <limits>
-#include <stdexcept>
-#include <vector>
+#include <functional>
+#include <utility>
+
+#include <ext/pb_ds/assoc_container.hpp>
+#include <ext/pb_ds/tree_policy.hpp>
 
 #include "hp_config.h"
 #include "hp_types.h"
 
 class HpIntegerQuantileWindow {
 public:
+    typedef __gnu_pbds::tree<
+        std::pair<uint64_t, uint64_t>,
+        __gnu_pbds::null_type,
+        std::less<std::pair<uint64_t, uint64_t>>,
+        __gnu_pbds::rb_tree_tag,
+        __gnu_pbds::tree_order_statistics_node_update
+    > pbds_set;
+
     explicit HpIntegerQuantileWindow(
-            size_t capacity = HP_REPORT_STATS_WINDOW_CAPACITY,
-            uint64_t max_value = HP_EVALUATION_WINDOW) :
-            capacity(capacity), max_value(max_value) {
-        if (max_value > std::numeric_limits<uint32_t>::max()) {
-            throw std::invalid_argument(
-                "integer quantile domain exceeds uint32_t");
-        }
-        fenwick.resize(static_cast<size_t>(max_value) + 2, 0);
-    }
+            size_t capacity = HP_REPORT_SAMPLE_WINDOW_CAPACITY) :
+            capacity(capacity) {}
 
     void insert(uint64_t value) {
-        if (value > max_value) {
-            throw std::invalid_argument(
-                "integer quantile value exceeds configured domain");
-        }
         if (capacity == 0) {
             return;
         }
 
-        add(static_cast<uint32_t>(value));
-        order.push_back(static_cast<uint32_t>(value));
-        if (order.size() > capacity) {
-            remove(order.front());
+        auto entry = std::make_pair(value, ++counter);
+        values.insert(entry);
+        order.push_back(entry);
+        if (values.size() > capacity) {
+            values.erase(order.front());
             order.pop_front();
         }
     }
 
     void clear() {
-        std::fill(fenwick.begin(), fenwick.end(), 0);
+        values.clear();
         order.clear();
+        counter = 0;
     }
 
     HpDistributionSummary summary() const {
-        if (order.empty()) {
+        if (values.empty()) {
             return {};
         }
 
         return HpDistributionSummary{
-            static_cast<uint64_t>(order.size()),
-            select_rank(static_cast<uint64_t>(order.size())),
+            static_cast<uint64_t>(values.size()),
+            static_cast<double>(
+                values.find_by_order(values.size() - 1)->first),
             quantile(0.50),
             quantile(0.90),
             quantile(0.95),
@@ -65,50 +66,18 @@ public:
 
 private:
     size_t capacity;
-    uint64_t max_value;
-    std::vector<uint64_t> fenwick;
-    std::deque<uint32_t> order;
-
-    void add(uint32_t value) {
-        for (size_t i = static_cast<size_t>(value) + 1;
-             i < fenwick.size(); i += i & (~i + 1)) {
-            fenwick[i]++;
-        }
-    }
-
-    void remove(uint32_t value) {
-        for (size_t i = static_cast<size_t>(value) + 1;
-             i < fenwick.size(); i += i & (~i + 1)) {
-            if (fenwick[i] == 0) {
-                throw std::logic_error("integer quantile count underflow");
-            }
-            fenwick[i]--;
-        }
-    }
+    pbds_set values;
+    std::deque<std::pair<uint64_t, uint64_t>> order;
+    uint64_t counter = 0;
 
     double quantile(double q) const {
-        uint64_t rank = static_cast<uint64_t>(
-            std::ceil(q * static_cast<double>(order.size())));
-        return select_rank(std::max<uint64_t>(rank, 1));
-    }
-
-    double select_rank(uint64_t rank) const {
-        size_t index = 0;
-        uint64_t prefix = 0;
-        size_t step = 1;
-        while ((step << 1) < fenwick.size()) {
-            step <<= 1;
+        size_t index = static_cast<size_t>(
+            std::ceil(q * static_cast<double>(values.size())));
+        index = index == 0 ? 0 : index - 1;
+        if (index >= values.size()) {
+            index = values.size() - 1;
         }
-
-        for (; step > 0; step >>= 1) {
-            size_t next = index + step;
-            if (next < fenwick.size() &&
-                prefix + fenwick[next] < rank) {
-                index = next;
-                prefix += fenwick[next];
-            }
-        }
-        return static_cast<double>(index);
+        return static_cast<double>(values.find_by_order(index)->first);
     }
 };
 

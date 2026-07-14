@@ -25,7 +25,7 @@ public:
     > pbds_set;
 
     explicit HpQuantileWindow(
-            size_t capacity = HP_REPORT_STATS_WINDOW_CAPACITY) :
+            size_t capacity = HP_REPORT_SAMPLE_WINDOW_CAPACITY) :
             capacity(capacity) {}
 
     void insert(double value) {

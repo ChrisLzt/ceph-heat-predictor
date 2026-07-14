@@ -109,19 +109,17 @@ src/oss/ObjectHeatPredictor.cc
 
 ## HeatPredictor 同步要求
 
-ICFS 的 `src/heatpredictor/` 应与 Ceph 当前实现保持同步，重点包括：
+ICFS 的 `src/heatpredictor/` 应与 Ceph 当前 object 级实现保持同步，重点包括：
 
-- 64KB bucket：`HP_BUCKET_SHIFT = 16`
-- 每 I/O 评估窗口：`HP_EVALUATION_WINDOW = 20000`
-- 阈值历史容量：`HP_THRESHOLD_HISTORY_CAPACITY = 400000`
-- 无 pending bucket LRU：`HP_LRU_CAPACITY = 20000`
-- 每次访问增加热度：`HP_HEAT_INCREMENT = 100`
-- hot quantile：`HP_HOT_QUANTILE = 0.80`
-- 热样本训练权重：`HP_HOT_CLASS_WEIGHT = 1.2`
+- object 级 key，不再使用 bucket offset。
+- 10秒 EQ 标签、5秒/10秒访问窗口和10秒热衰减均使用单调时间。
+- 每次访问增加热度 `HP_HEAT_INCREMENT = 100`，10秒无访问后保留 `1/10`。
+- H0 固定时间归一化 EMA、P0 固定预测阈值和冷热样本权重 `1.0`。
+- pending EQ、LRU 和 Otsu 最新 object 投票时间窗容量以 Ceph 当前 `hp_config.h` 为准。
 - `GaussianSplitter` 默认 `n_split = 5`
 - `lhs_dist/rhs_dist` 初始化为 `0`
 - active/shadow swap 的锁注释和锁顺序
-- `hot_accuracy`、precision、recall 等指标由 TP/FP/TN/FN 计算
+- `hot_accuracy`、balanced accuracy、precision、recall 等指标由 TP/FP/TN/FN 计算
 
 具体运行参数以 Ceph 当前 `src/heatpredictor/heat_predictor.h` 为准，移植和文档记录不能覆盖代码事实。
 

@@ -2,12 +2,12 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -51,10 +51,10 @@ std::vector<double> feature(double a, double b, double c, double d, double e)
   return result;
 }
 
-TraceItem trace_item(uint64_t index, uint64_t key)
+PredictionSample trace_item(uint64_t io_sequence, uint64_t object_key_hash)
 {
-  return TraceItem{
-      index, key, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, 0
+  return PredictionSample{
+      io_sequence, object_key_hash, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, 0
   };
 }
 
@@ -91,7 +91,7 @@ double benchmark_quantile_window(
   for (int i = 0; i < operation_count; ++i) {
     const uint64_t value =
         (static_cast<uint64_t>(i) * 2654435761ULL) %
-        (HP_EVALUATION_WINDOW + 1);
+        (HP_HEAT_DECAY_HORIZON_NS + 1);
     window.insert(value);
   }
   HpDistributionSummary summary = window.summary();
@@ -125,15 +125,16 @@ ConcurrentEqResult benchmark_serialized_prediction(
       for (int i = 0; i < operations_per_thread; ++i) {
         std::lock_guard<std::mutex> lock(eq_mutex);
         const uint64_t index = ++next_index;
-        TraceItem item = trace_item(index, index % 12000);
-        eq.prepare_features(item);
+        const uint64_t now_ns = index * 1000000ULL;
+        PredictionSample item = trace_item(index, index % 12000);
+        auto evaluated = eq.expire_before_prepare(item, now_ns);
         snapshot.predict_proba_one_into(HeatPredictor::to_feat(item), proba);
-        item.pred_hot_proba = proba.size() > 1 ? proba[1] : 0.0;
-        item.pred = item.pred_hot_proba >= eq.hot_predict_threshold();
-        auto evaluated = eq.enqueue(item);
-        checksums[static_cast<size_t>(thread_id)] += item.pred_hot_proba;
-        if (evaluated.has_value()) {
-          checksums[static_cast<size_t>(thread_id)] += evaluated->label;
+        item.predicted_hot_probability = proba.size() > 1 ? proba[1] : 0.0;
+        item.predicted_label = item.predicted_hot_probability >= eq.hot_predict_threshold();
+        eq.enqueue(item, now_ns);
+        checksums[static_cast<size_t>(thread_id)] += item.predicted_hot_probability;
+        for (const auto& sample : evaluated) {
+          checksums[static_cast<size_t>(thread_id)] += sample.label;
         }
       }
     });
@@ -164,7 +165,6 @@ ConcurrentEqResult benchmark_two_phase_prediction(
 {
   EvaluationQueue eq;
   std::mutex eq_mutex;
-  std::condition_variable ready_cv;
   uint64_t next_index = 0;
   std::atomic<bool> start{false};
   std::vector<std::thread> workers;
@@ -179,40 +179,35 @@ ConcurrentEqResult benchmark_two_phase_prediction(
         std::this_thread::yield();
       }
       for (int i = 0; i < operations_per_thread; ++i) {
-        EvaluationQueue::PendingSlot *slot = nullptr;
-        std::optional<EvaluatedItem> evaluated;
-        TraceItem item;
+        std::optional<EvaluationQueue::PendingIterator> position;
+        std::vector<EvaluatedSample> evaluated;
+        PredictionSample item;
         double predict_threshold = HP_HOT_PREDICT_THRESHOLD;
         {
-          std::unique_lock<std::mutex> lock(eq_mutex);
-          ready_cv.wait(lock, [&eq] {
-            return eq.can_reserve_prediction();
-          });
+          std::lock_guard<std::mutex> lock(eq_mutex);
           const uint64_t index = ++next_index;
+          const uint64_t now_ns = index * 1000000ULL;
           item = trace_item(index, index % 12000);
-          eq.prepare_features(item);
+          evaluated = eq.expire_before_prepare(item, now_ns);
           predict_threshold = eq.hot_predict_threshold();
-          auto reservation = eq.reserve_prediction(item);
-          slot = reservation.slot;
-          evaluated = std::move(reservation.evaluated);
+          auto reservation = eq.reserve_prediction(item, now_ns);
+          if (reservation.accepted) {
+            position = reservation.position;
+          }
         }
 
         snapshot.predict_proba_one_into(HeatPredictor::to_feat(item), proba);
-        item.pred_hot_proba = proba.size() > 1 ? proba[1] : 0.0;
-        item.pred = item.pred_hot_proba >= predict_threshold;
-        bool should_notify = false;
-        {
+        item.predicted_hot_probability = proba.size() > 1 ? proba[1] : 0.0;
+        item.predicted_label = item.predicted_hot_probability >= predict_threshold;
+        if (position.has_value()) {
           std::lock_guard<std::mutex> lock(eq_mutex);
-          should_notify =
-              eq.complete_prediction(slot, item.pred_hot_proba, item.pred);
-        }
-        if (should_notify) {
-          ready_cv.notify_all();
+          eq.complete_prediction(
+              *position, item.predicted_hot_probability, item.predicted_label);
         }
 
-        checksums[static_cast<size_t>(thread_id)] += item.pred_hot_proba;
-        if (evaluated.has_value()) {
-          checksums[static_cast<size_t>(thread_id)] += evaluated->label;
+        checksums[static_cast<size_t>(thread_id)] += item.predicted_hot_probability;
+        for (const auto& sample : evaluated) {
+          checksums[static_cast<size_t>(thread_id)] += sample.label;
         }
       }
     });
@@ -329,14 +324,15 @@ int main()
     const auto start = Clock::now();
     for (int i = 0; i < eq_ops_per_round; ++i) {
       const uint64_t index = static_cast<uint64_t>(i + 1);
-      TraceItem item = trace_item(index, index % 12000);
-      item.pred = static_cast<int>((index / 7) % 2);
-      eq.prepare_features(item);
-      auto evaluated = eq.enqueue(item);
-      eq_checksum += eq.hot_threshold * 0.000001;
-      if (evaluated.has_value()) {
-        eq_checksum += evaluated->label +
-            evaluated->future_access_count * 0.00001;
+      const uint64_t now_ns = index * 1000000ULL;
+      PredictionSample item = trace_item(index, index % 12000);
+      item.predicted_label = static_cast<int>((index / 7) % 2);
+      auto evaluated = eq.expire_before_prepare(item, now_ns);
+      eq.enqueue(item, now_ns);
+      eq_checksum += eq.heat_label_threshold * 0.000001;
+      for (const auto& sample : evaluated) {
+        eq_checksum += sample.label +
+            sample.future_window_access_count * 0.00001;
       }
     }
     const auto end = Clock::now();
@@ -371,13 +367,13 @@ int main()
   double pbds_quantile_checksum = 0.0;
   double integer_quantile_checksum = 0.0;
   for (int round = 0; round < quantile_rounds; ++round) {
-    HpQuantileWindow pbds_window(HP_REPORT_STATS_WINDOW_CAPACITY);
+    HpQuantileWindow pbds_window(HP_REPORT_SAMPLE_WINDOW_CAPACITY);
     pbds_quantile_ns[static_cast<size_t>(round)] =
         benchmark_quantile_window(
             pbds_window, quantile_operations, &pbds_quantile_checksum);
 
     HpIntegerQuantileWindow integer_window(
-        HP_REPORT_STATS_WINDOW_CAPACITY, HP_EVALUATION_WINDOW);
+        HP_REPORT_SAMPLE_WINDOW_CAPACITY);
     integer_quantile_ns[static_cast<size_t>(round)] =
         benchmark_quantile_window(
             integer_window, quantile_operations, &integer_quantile_checksum);

@@ -2,7 +2,7 @@ set(osdc_osd_srcs
   ${CMAKE_SOURCE_DIR}/src/osdc/Objecter.cc
   ${CMAKE_SOURCE_DIR}/src/osdc/Striper.cc)
 
-set(HP_ENABLE_PREDICTION_CALIBRATION "1" CACHE STRING
+set(HP_ENABLE_PREDICTION_CALIBRATION "0" CACHE STRING
   "Heat Predictor prediction calibration: 0=fixed 0.5, 1=supervised")
 set_property(CACHE HP_ENABLE_PREDICTION_CALIBRATION PROPERTY STRINGS 0 1)
 if(NOT HP_ENABLE_PREDICTION_CALIBRATION MATCHES "^[01]$")
@@ -16,7 +16,7 @@ if(NOT HP_PREDICTION_RANGE_PROFILE MATCHES "^[01]$")
   message(FATAL_ERROR "HP_PREDICTION_RANGE_PROFILE must be 0 or 1")
 endif()
 
-set(HP_OTSU_PROFILE "2" CACHE STRING
+set(HP_OTSU_PROFILE "1" CACHE STRING
   "Heat Predictor Otsu profile: 0=legacy, 1=fixed EMA, 2=confidence")
 set_property(CACHE HP_OTSU_PROFILE PROPERTY STRINGS 0 1 2)
 if(NOT HP_OTSU_PROFILE MATCHES "^[012]$")

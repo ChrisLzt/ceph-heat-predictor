@@ -4,6 +4,22 @@
 #include <cstdint>
 #include <mutex>
 
+inline double hp_binary_balanced_accuracy(
+    uint64_t true_positive,
+    uint64_t false_positive,
+    uint64_t true_negative,
+    uint64_t false_negative) {
+    const uint64_t actual_hot = true_positive + false_negative;
+    const uint64_t actual_cold = true_negative + false_positive;
+    const double hot_recall = actual_hot > 0
+        ? static_cast<double>(true_positive) / actual_hot
+        : 0.0;
+    const double cold_recall = actual_cold > 0
+        ? static_cast<double>(true_negative) / actual_cold
+        : 0.0;
+    return 0.5 * (hot_recall + cold_recall);
+}
+
 template <int num_labels>
 class ConfusionMatrix {
 private:
