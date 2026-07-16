@@ -71,7 +71,6 @@ namespace {
     osd_average,
     hot_weighted,
     cold_weighted,
-    calibration_weighted,
     otsu_weighted,
   };
 
@@ -130,16 +129,6 @@ namespace {
     {"hp_actual_cold_avg_pred_hot_percent", ObjectHpAggregate::cold_weighted},
     {"hp_hot_predict_threshold", ObjectHpAggregate::osd_average,
      "hp_hot_predict_threshold_avg"},
-    {"hp_hot_predict_threshold_target",
-     ObjectHpAggregate::calibration_weighted,
-     "hp_hot_predict_threshold_target_avg"},
-    {"hp_predict_calibration_sample_count", ObjectHpAggregate::sum},
-    {"hp_predict_calibration_current_accuracy",
-     ObjectHpAggregate::calibration_weighted,
-     "hp_predict_calibration_current_accuracy_avg"},
-    {"hp_predict_calibration_target_accuracy",
-     ObjectHpAggregate::calibration_weighted,
-     "hp_predict_calibration_target_accuracy_avg"},
     {"hp_predict_error_count", ObjectHpAggregate::sum},
     {"hp_hot_threshold", ObjectHpAggregate::osd_average,
      "hp_hot_threshold_avg"},
@@ -1789,8 +1778,6 @@ bool DaemonServer::_handle_command(
         values["hp_true_positive_count"] + values["hp_false_negative_count"];
       uint64_t actual_cold_count =
         values["hp_true_negative_count"] + values["hp_false_positive_count"];
-      uint64_t calibration_count =
-        values["hp_predict_calibration_sample_count"];
       uint64_t otsu_vote_count =
         values["hp_otsu_histogram_vote_count"];
       if (values["hp_enabled"] > 0) {
@@ -1836,13 +1823,6 @@ bool DaemonServer::_handle_command(
               weighted_sum[hp_aggregate_name(field)] +=
                 static_cast<long double>(value->second) * actual_cold_count;
               weighted_count[hp_aggregate_name(field)] += actual_cold_count;
-            }
-            break;
-          case ObjectHpAggregate::calibration_weighted:
-            if (calibration_count > 0) {
-              weighted_sum[hp_aggregate_name(field)] +=
-                static_cast<long double>(value->second) * calibration_count;
-              weighted_count[hp_aggregate_name(field)] += calibration_count;
             }
             break;
           case ObjectHpAggregate::otsu_weighted:
@@ -2052,40 +2032,6 @@ bool DaemonServer::_handle_command(
                     weight > 0 ? hp_from_x10000(
                       weighted_sum["hp_hot_predict_threshold_avg"] /
                       weight) : 0.0);
-    }
-    {
-      uint64_t weight =
-        weighted_count["hp_hot_predict_threshold_target_avg"];
-      uint64_t current_weight =
-        weighted_count["hp_hot_predict_threshold_avg"];
-      hp_dump_float(
-        f.get(), "hp_hot_predict_threshold_target_avg",
-        weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_hot_predict_threshold_target_avg"] / weight)
-          : (current_weight > 0 ? hp_from_x10000(
-              weighted_sum["hp_hot_predict_threshold_avg"] /
-              current_weight) : 0.0));
-    }
-    f->dump_unsigned(
-      "hp_predict_calibration_sample_count",
-      summary["hp_predict_calibration_sample_count"]);
-    {
-      uint64_t weight =
-        weighted_count["hp_predict_calibration_current_accuracy_avg"];
-      hp_dump_float(
-        f.get(), "hp_predict_calibration_current_accuracy_percent_avg",
-        weight > 0 ? hp_percent_from_x10000(
-          weighted_sum["hp_predict_calibration_current_accuracy_avg"] /
-          weight) : 0.0);
-    }
-    {
-      uint64_t weight =
-        weighted_count["hp_predict_calibration_target_accuracy_avg"];
-      hp_dump_float(
-        f.get(), "hp_predict_calibration_target_accuracy_percent_avg",
-        weight > 0 ? hp_percent_from_x10000(
-          weighted_sum["hp_predict_calibration_target_accuracy_avg"] /
-          weight) : 0.0);
     }
     {
       uint64_t weight =

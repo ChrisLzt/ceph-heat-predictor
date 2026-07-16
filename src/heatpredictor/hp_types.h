@@ -13,7 +13,6 @@ struct PredictionSample {
     uint64_t time_since_previous_access_ns;
     uint64_t long_window_access_count;
     uint64_t short_window_access_count;
-    double heat_percentile;
     double predicted_hot_probability;
     int predicted_label;
 };
@@ -31,7 +30,6 @@ struct ObjectHeatState {
 struct EvaluatedSample {
     PredictionSample item;
     int label;
-    double training_weight;
     uint64_t future_window_access_count;
     double future_window_added_heat;
 };
@@ -48,7 +46,6 @@ struct HpDistributionSummary {
 struct TrainingSample {
     PredictionSample item;
     int label;
-    double weight;
 };
 
 struct HeatPredictorStats {
@@ -84,10 +81,6 @@ struct HeatPredictorStats {
     double otsu_sharpness_confidence;
     uint64_t hot_threshold_method;
     double hot_predict_threshold;
-    double hot_predict_threshold_target;
-    uint64_t predict_calibration_sample_count;
-    double predict_calibration_current_accuracy;
-    double predict_calibration_target_accuracy;
 };
 
 #endif

@@ -63,12 +63,8 @@ public:
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
                     HP_ARF_MIN_BRANCH_FRACTION);
-#if HP_ENABLE_STANDARD_SCALER
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(), classifier);
-#else
-        return classifier;
-#endif
     }
 
     // reset_mutex gates full-state reset against foreground prediction and
@@ -247,7 +243,7 @@ public:
         for (auto& item : evaluated) {
             record_evaluated_locked(item);
             samples.push_back(TrainingSample{
-                std::move(item.item), item.label, item.training_weight});
+                std::move(item.item), item.label});
         }
         return samples;
     }
@@ -361,7 +357,7 @@ public:
                 {
                     std::lock_guard<std::mutex> lock(train_model_mutex);
                     train_model->learn_one(
-                        to_feat(sample.item), sample.label, sample.weight);
+                        to_feat(sample.item), sample.label);
                     if (record_model_update_batch(monotonic_now_ns())) {
                         next_snapshot = clone_train_model_for_prediction();
                     }
@@ -537,7 +533,6 @@ public:
             0,    // time_since_previous_access_ns
             0,    // long_window_access_count
             0,    // short_window_access_count
-            0.0,  // heat_percentile
             0.0,  // predicted_hot_probability
             0     // predicted_label
         };
@@ -545,7 +540,6 @@ public:
         int res;
         std::optional<EvaluationQueue::PendingIterator> pending_evaluation;
         std::shared_ptr<Classifier> snapshot;
-        double hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
         bool maintenance_schedule_changed = false;
         {
             std::lock_guard<std::mutex> eq_lock(eq_mutex);
@@ -563,7 +557,6 @@ public:
             expired_samples = training_samples_from_evaluated_locked(
                 eq->expire_before_prepare(item, now_ns));
             snapshot = get_prediction_snapshot();
-            hot_predict_threshold = eq->hot_predict_threshold();
             auto reservation = eq->reserve_prediction(
                 item, now_ns);
             if (reservation.accepted) {
@@ -591,7 +584,7 @@ public:
                 if (hot_probability.has_value()) {
                     item.predicted_hot_probability = *hot_probability;
                     res = item.predicted_hot_probability >=
-                        hot_predict_threshold ? 1 : 0;
+                        HP_HOT_PREDICT_THRESHOLD ? 1 : 0;
                 } else {
                     prediction_failed = true;
                 }
@@ -665,11 +658,7 @@ public:
             eq->otsu_confidence,
             eq->otsu_sharpness_confidence,
             eq->hot_threshold_method,
-            eq->hot_predict_threshold(),
-            eq->hot_predict_threshold_target(),
-            eq->prediction_calibration_size(),
-            eq->prediction_calibration_current_accuracy(),
-            eq->prediction_calibration_target_accuracy()
+            HP_HOT_PREDICT_THRESHOLD
         };
     }
 

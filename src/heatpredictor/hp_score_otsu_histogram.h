@@ -11,7 +11,13 @@
 
 #include "common/debug.h"
 #include "hp_config.h"
-#include "hp_otsu_histogram.h"
+
+struct HpOtsuResult {
+    double threshold_score;
+    double separation;
+    uint64_t ambiguous_vote_count;
+    uint64_t vote_count;
+};
 
 class HpScoreOtsuHistogram {
 public:

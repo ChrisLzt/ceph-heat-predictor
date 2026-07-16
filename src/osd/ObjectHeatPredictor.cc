@@ -66,10 +66,6 @@ enum {
   object_hp_actual_hot_avg_pred_hot_percent,
   object_hp_actual_cold_avg_pred_hot_percent,
   object_hp_hot_predict_threshold,
-  object_hp_hot_predict_threshold_target,
-  object_hp_predict_calibration_sample_count,
-  object_hp_predict_calibration_current_accuracy,
-  object_hp_predict_calibration_target_accuracy,
   object_hp_predict_error_count,
   object_hp_hot_threshold,
   object_hp_otsu_candidate_threshold,
@@ -259,18 +255,6 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_hot_predict_threshold,
             "hp_hot_predict_threshold",
             "hot prediction probability threshold (x10000)");
-  b.add_u64(object_hp_hot_predict_threshold_target,
-            "hp_hot_predict_threshold_target",
-            "accuracy-optimal calibration target threshold (x10000)");
-  b.add_u64(object_hp_predict_calibration_sample_count,
-            "hp_predict_calibration_sample_count",
-            "evaluated samples in prediction threshold calibration window");
-  b.add_u64(object_hp_predict_calibration_current_accuracy,
-            "hp_predict_calibration_current_accuracy",
-            "calibration-window accuracy at current threshold (x10000)");
-  b.add_u64(object_hp_predict_calibration_target_accuracy,
-            "hp_predict_calibration_target_accuracy",
-            "calibration-window accuracy at target threshold (x10000)");
   b.add_u64(object_hp_predict_error_count,
             "hp_predict_error_count",
             "prediction exceptions or invalid probability outputs");
@@ -410,14 +394,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               actual_cold_avg_pred_hot_percent);
   logger->set(object_hp_hot_predict_threshold,
               hp_mul10000(stats.hot_predict_threshold));
-  logger->set(object_hp_hot_predict_threshold_target,
-              hp_mul10000(stats.hot_predict_threshold_target));
-  logger->set(object_hp_predict_calibration_sample_count,
-              stats.predict_calibration_sample_count);
-  logger->set(object_hp_predict_calibration_current_accuracy,
-              hp_mul10000(stats.predict_calibration_current_accuracy));
-  logger->set(object_hp_predict_calibration_target_accuracy,
-              hp_mul10000(stats.predict_calibration_target_accuracy));
   logger->set(object_hp_predict_error_count,
               osd_object_heat_predictor.get_predict_error_count());
   logger->set(object_hp_hot_threshold, hp_mul10000(stats.heat_label_threshold));
@@ -528,11 +504,6 @@ static void hp_zero_object_logger()
   logger->set(object_hp_actual_cold_avg_pred_hot_percent, 0);
   logger->set(object_hp_hot_predict_threshold,
               hp_mul10000(HP_HOT_PREDICT_THRESHOLD));
-  logger->set(object_hp_hot_predict_threshold_target,
-              hp_mul10000(HP_HOT_PREDICT_THRESHOLD));
-  logger->set(object_hp_predict_calibration_sample_count, 0);
-  logger->set(object_hp_predict_calibration_current_accuracy, 0);
-  logger->set(object_hp_predict_calibration_target_accuracy, 0);
   logger->set(object_hp_predict_error_count, 0);
   logger->set(object_hp_hot_threshold, hp_mul10000(HP_HEAT_INCREMENT));
   logger->set(object_hp_otsu_candidate_threshold, 0);
