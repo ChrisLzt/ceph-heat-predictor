@@ -91,7 +91,7 @@ namespace {
     {"hp_heat_state_count", ObjectHpAggregate::sum},
     {"hp_lru_count", ObjectHpAggregate::sum},
     {"hp_otsu_histogram_bin_count", ObjectHpAggregate::sum},
-    {"hp_otsu_histogram_object_count", ObjectHpAggregate::sum},
+    {"hp_otsu_histogram_vote_count", ObjectHpAggregate::sum},
     {"hp_true_positive_count", ObjectHpAggregate::sum},
     {"hp_false_positive_count", ObjectHpAggregate::sum},
     {"hp_true_negative_count", ObjectHpAggregate::sum},
@@ -1791,8 +1791,8 @@ bool DaemonServer::_handle_command(
         values["hp_true_negative_count"] + values["hp_false_positive_count"];
       uint64_t calibration_count =
         values["hp_predict_calibration_sample_count"];
-      uint64_t otsu_object_count =
-        values["hp_otsu_histogram_object_count"];
+      uint64_t otsu_vote_count =
+        values["hp_otsu_histogram_vote_count"];
       if (values["hp_enabled"] > 0) {
         enabled_osds++;
       } else {
@@ -1846,10 +1846,10 @@ bool DaemonServer::_handle_command(
             }
             break;
           case ObjectHpAggregate::otsu_weighted:
-            if (otsu_object_count > 0) {
+            if (otsu_vote_count > 0) {
               weighted_sum[hp_aggregate_name(field)] +=
-                static_cast<long double>(value->second) * otsu_object_count;
-              weighted_count[hp_aggregate_name(field)] += otsu_object_count;
+                static_cast<long double>(value->second) * otsu_vote_count;
+              weighted_count[hp_aggregate_name(field)] += otsu_vote_count;
             }
             break;
           case ObjectHpAggregate::none:
@@ -1888,8 +1888,8 @@ bool DaemonServer::_handle_command(
     f->dump_unsigned("hp_lru_count", summary["hp_lru_count"]);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      summary["hp_otsu_histogram_bin_count"]);
-    f->dump_unsigned("hp_otsu_histogram_object_count",
-                     summary["hp_otsu_histogram_object_count"]);
+    f->dump_unsigned("hp_otsu_histogram_vote_count",
+                     summary["hp_otsu_histogram_vote_count"]);
     {
       uint64_t weight = weighted_count["hp_hot_threshold_avg"];
       hp_dump_float(f.get(), "hp_hot_threshold_avg",

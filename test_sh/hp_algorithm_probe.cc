@@ -110,6 +110,19 @@ std::vector<double> model_features(std::initializer_list<double> values)
   return result;
 }
 
+void record_active_otsu_heat(
+    EvaluationQueue& eq,
+    uint64_t object_key,
+    double heat,
+    uint64_t timestamp)
+{
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  eq.record_object_heat(object_key, heat, timestamp);
+#else
+  eq.record_future_added_heat(object_key, heat, timestamp, timestamp);
+#endif
+}
+
 void train_seed_probe_model(Classifier& model);
 
 void require_proba_close(
@@ -348,16 +361,35 @@ void test_final_feature_vector()
   require(feat.size() == NUM_FEATURES,
           "final feature vector should match NUM_FEATURES");
 
-  const double time_since_previous_access = hp_log2p1(3.0);
+  const double previous_access_interval_encoded = 1.0 + hp_log2p1(3.0);
   const double heat_after_current_access = hp_log2p1(1023.0);
   const double long_window_access_count = hp_log2p1(3.0);
   const double threshold_margin =
       hp_log2p1(1023.0) - hp_log2p1(255.0);
+  const double projected_heat = 1023.0 *
+      std::exp(hp_heat_decay_log_factor_per_ns(
+                   HP_HEAT_DECAY_HORIZON_NS) *
+               static_cast<double>(HP_FUTURE_LABEL_WINDOW_NS));
+  const double projected_heat_margin =
+      hp_log2p1(projected_heat) - hp_log2p1(255.0);
   const double heat_concentration = hp_log2p1(
       1023.0 / (HP_HEAT_INCREMENT * 4.0));
+#if HP_HEAT_MARGIN_PROFILE == 1
   const std::vector<double> expected = {
-      threshold_margin, time_since_previous_access, heat_after_current_access,
+      projected_heat_margin, previous_access_interval_encoded,
+      heat_after_current_access,
       long_window_access_count, heat_concentration};
+#elif HP_HEAT_MARGIN_PROFILE == 2
+  const std::vector<double> expected = {
+      threshold_margin, projected_heat_margin,
+      previous_access_interval_encoded, heat_after_current_access,
+      long_window_access_count, heat_concentration};
+#else
+  const std::vector<double> expected = {
+      threshold_margin, previous_access_interval_encoded,
+      heat_after_current_access,
+      long_window_access_count, heat_concentration};
+#endif
 
   require(feat.size() >= expected.size(),
           "final feature vector should retain all five base features");
@@ -365,6 +397,32 @@ void test_final_feature_vector()
     require_close(feat[i], expected[i],
                   "final feature vector should preserve feature order");
   }
+}
+
+void test_previous_access_interval_encoding()
+{
+  PredictionSample item = make_item(100, 42);
+#if HP_HEAT_MARGIN_PROFILE == HP_HEAT_MARGIN_BOTH
+  constexpr size_t feature_index = 2;
+#else
+  constexpr size_t feature_index = 1;
+#endif
+
+  item.tracked_access_count = 1;
+  item.time_since_previous_access_ns = 0;
+  require_close(
+      HeatPredictor::to_feat(item)[feature_index], 0.0,
+      "first observation should encode missing previous access as zero");
+
+  item.tracked_access_count = 2;
+  require_close(
+      HeatPredictor::to_feat(item)[feature_index], 1.0,
+      "a real zero interval should remain distinct from missing history");
+
+  item.time_since_previous_access_ns = 3ULL * 1000 * 1000 * 1000;
+  require_close(
+      HeatPredictor::to_feat(item)[feature_index], 1.0 + hp_log2p1(3.0),
+      "a real previous access interval should use the offset log2p1 encoding");
 }
 
 template <typename T, typename = void>
@@ -416,18 +474,18 @@ struct has_otsu_confidence_stats : std::false_type {};
 
 template <typename T>
 struct has_otsu_confidence_stats<T, std::void_t<
-    decltype(std::declval<T>().otsu_histogram_object_count),
+    decltype(std::declval<T>().otsu_histogram_vote_count),
     decltype(std::declval<T>().otsu_candidate_threshold),
     decltype(std::declval<T>().otsu_confidence),
     decltype(std::declval<T>().otsu_sharpness_confidence)>>
     : std::true_type {};
 
 template <typename T, typename = void>
-struct has_otsu_histogram_sample_count_stat : std::false_type {};
+struct has_otsu_histogram_object_count_stat : std::false_type {};
 
 template <typename T>
-struct has_otsu_histogram_sample_count_stat<
-    T, std::void_t<decltype(std::declval<T>().otsu_histogram_sample_count)>>
+struct has_otsu_histogram_object_count_stat<
+    T, std::void_t<decltype(std::declval<T>().otsu_histogram_object_count)>>
     : std::true_type {};
 
 template <typename T, typename = void>
@@ -478,14 +536,27 @@ void test_stats_export_otsu_histogram_bin_count()
           "HeatPredictorStats should expose Otsu histogram bin count");
   require(has_otsu_confidence_stats<HeatPredictorStats>::value,
           "HeatPredictorStats should expose Otsu confidence state");
-  require(!has_otsu_histogram_sample_count_stat<HeatPredictorStats>::value,
-          "HeatPredictorStats should not call object votes I/O samples");
+  require(!has_otsu_histogram_object_count_stat<HeatPredictorStats>::value,
+          "HeatPredictorStats should use a source-neutral Otsu vote count");
   require(!has_otsu_sample_confidence_stat<HeatPredictorStats>::value,
           "HeatPredictorStats should not expose removed sample confidence");
 }
 
 void test_otsu_update_cost_knobs()
 {
+  require(HP_OTSU_DATA_SOURCE_OBJECT_ADDED == 0,
+          "object-added-heat data source should use profile 0");
+  require(HP_OTSU_DATA_SOURCE_IO_ADDED == 1,
+          "per-I/O added-heat data source should use profile 1");
+  require(HP_OTSU_DATA_SOURCE_OBJECT_TOTAL == 2,
+          "object-total-heat data source should use profile 2");
+  require(HP_OTSU_DATA_SOURCE >= HP_OTSU_DATA_SOURCE_OBJECT_ADDED &&
+              HP_OTSU_DATA_SOURCE <= HP_OTSU_DATA_SOURCE_OBJECT_TOTAL,
+          "configured Otsu data source should be valid");
+  if (HP_OTSU_DATA_SOURCE_DEFAULTED) {
+    require(HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL,
+            "score-normalized object total heat should be the default source");
+  }
   require(HP_OTSU_EAGER_OBJECTS == 0,
           "Otsu eager updates should be disabled for fixed interval updates");
   require(HP_OTSU_UPDATE_INTERVAL == 100,
@@ -498,10 +569,10 @@ void test_otsu_update_cost_knobs()
                 "fixed-EMA profile should retain its 0.10 control gain");
   require_close(HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA, 0.50,
                 "confidence profile threshold gain should be capped at 0.50");
-  require(HP_OTSU_HISTOGRAM_BIN_COUNT == 10000,
-          "future-added-heat Otsu should use exactly 10000 fixed bins");
-  require_close(HP_OTSU_LOG1P_HEAT_BIN_WIDTH, 0.01,
-                "future-added-heat Otsu log1p bin width should be 0.01");
+  require(HP_SCORE_OTSU_HISTOGRAM_BIN_COUNT == 800,
+          "score total-heat Otsu should use exactly 800 fixed bins");
+  require_close(HP_SCORE_OTSU_LOG_HEAT_BIN_WIDTH, 0.01,
+                "score total-heat Otsu log bin width should be 0.01");
   require(HP_OTSU_HISTORY_SLOT_COUNT == 60,
           "future-added-heat Otsu should retain 60 one-second slots");
   require(HP_OTSU_HISTORY_SLOT_NS == 1000ULL * 1000 * 1000,
@@ -509,13 +580,168 @@ void test_otsu_update_cost_knobs()
   require(HP_OTSU_HISTORY_WINDOW_NS == 60ULL * 1000 * 1000 * 1000,
           "future-added-heat Otsu history should span 60 seconds");
 
-  // These constants are retained only for the pending total-heat control.
-  require_close(HP_OTSU_HEAT_MIN, 1.0,
-                "total-heat control lower bound should remain 1.0");
-  require_close(HP_OTSU_HEAT_MAX, 3000.0,
-                "total-heat control upper bound should remain 3000.0");
-  require_close(HP_OTSU_LOG_HEAT_BIN_WIDTH, 0.05,
-                "total-heat control log-heat bin width should remain 0.05");
+  require_close(HP_OTSU_TOTAL_HEAT_MIN, 10.0,
+                "total-heat control lower bound should be 10.0");
+  require_close(
+      HP_OTSU_TOTAL_HEAT_MAX,
+      HP_OTSU_TOTAL_HEAT_MIN * std::exp(
+          HP_SCORE_OTSU_HISTOGRAM_BIN_COUNT *
+          HP_SCORE_OTSU_LOG_HEAT_BIN_WIDTH),
+      "score total-heat upper bound should span 800 logarithmic bins");
+}
+
+void test_score_total_heat_histogram_moves_with_time()
+{
+  constexpr uint64_t second_ns = 1000ULL * 1000 * 1000;
+  const double decay_log_factor = hp_heat_decay_log_factor_per_ns(
+      HP_HEAT_DECAY_HORIZON_NS);
+  HpScoreOtsuHistogram histogram;
+
+  require(histogram.bin_capacity() == 800,
+          "score total-heat histogram should have a fixed 800-bin capacity");
+  const double cold_score = HpScoreOtsuHistogram::score_for_heat_at(
+      10.0, 0, decay_log_factor);
+  const double hot_score = HpScoreOtsuHistogram::score_for_heat_at(
+      1000.0, 0, decay_log_factor);
+  require_close(
+      HpScoreOtsuHistogram::heat_for_score_at(
+          hot_score, 0, decay_log_factor),
+      1000.0,
+      "score conversion should round-trip total heat at the same time");
+
+  histogram.advance_lower_bound(cold_score);
+  const auto cold_bin = histogram.insert(cold_score);
+  const auto hot_bin = histogram.insert(hot_score);
+  require(histogram.size() == 2 && histogram.bin_count() == 2,
+          "two total-heat populations should occupy two score bins");
+
+  const double later_min_score = HpScoreOtsuHistogram::score_for_heat_at(
+      10.0, HP_HEAT_DECAY_HORIZON_NS, decay_log_factor);
+  histogram.advance_lower_bound(later_min_score);
+  require(histogram.size() == 2,
+          "moving the lower score bound should merge rather than discard votes");
+  histogram.erase(cold_bin);
+  histogram.erase(hot_bin);
+  require(histogram.empty(),
+          "stored absolute bins should remain erasable after lower-bound movement");
+
+  const double decayed_heat = HpScoreOtsuHistogram::heat_for_score_at(
+      hot_score, HP_HEAT_DECAY_HORIZON_NS, decay_log_factor);
+  require_close(decayed_heat, 100.0,
+                "normalized score should preserve configured time decay");
+  (void)second_ns;
+}
+
+void test_score_total_heat_label_uses_deadline_threshold()
+{
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  return;
+#else
+  EvaluationQueue eq(
+    HP_HEAT_DECAY_HORIZON_NS,
+    8,
+    50.0,   // heat_label_threshold
+    100.0,  // heat_increment
+    HP_SHORT_ACCESS_WINDOW_NS,
+    0,      // future_label_window_ns
+    8);
+
+  PredictionSample item = make_item(1, 42);
+  eq.prepare_features(item, 0);
+  require(eq.enqueue(item, 0),
+          "deadline-total-heat probe should enter the evaluation queue");
+  auto evaluated = eq.expire_due_evaluations(0);
+  require(evaluated.size() == 1,
+          "zero-length deadline-total-heat probe should complete immediately");
+  require(evaluated.front().label == 1,
+          "total heat 100 should be hot against total-heat threshold 50");
+  require_close(evaluated.front().future_window_added_heat, 0.0,
+                "the total-heat label must not require future-added heat");
+#endif
+}
+
+void test_score_total_heat_label_ignores_later_threshold_updates()
+{
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  return;
+#else
+  constexpr uint64_t deadline = 100;
+  constexpr uint64_t later_time = 200;
+  EvaluationQueue eq(
+    1000,   // heat_decay_horizon_ns
+    100,
+    50.0,   // heat_label_threshold
+    100.0,  // heat_increment
+    HP_SHORT_ACCESS_WINDOW_NS,
+    deadline,
+    100);
+
+  PredictionSample item = make_item(1, 42);
+  eq.prepare_features(item, 0);
+  require(eq.enqueue(item, 0),
+          "threshold-history probe should enter the evaluation queue");
+  const double deadline_threshold = eq.heat_label_threshold_for_label(deadline);
+
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    eq.record_object_heat(
+        1000 + i,
+        i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0,
+        later_time);
+  }
+  eq.update_hot_threshold(later_time);
+  require_close(eq.heat_label_threshold_for_label(deadline),
+                deadline_threshold,
+                "an Otsu update after the deadline must not rewrite its label threshold");
+  auto evaluated = eq.expire_due_evaluations(later_time);
+  require(evaluated.size() == 1 && evaluated.front().label == 1,
+          "late label completion should use the threshold version active at its deadline");
+  require(eq.threshold_heat_history.size() == 1,
+          "threshold history should retain only its newest version without pending labels");
+#endif
+}
+
+void test_score_total_heat_ema_uses_current_heat_threshold()
+{
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  return;
+#else
+  constexpr uint64_t horizon_ns = 1000;
+  constexpr uint64_t update_time_ns = 2 * horizon_ns;
+  EvaluationQueue eq(
+    horizon_ns,
+    100,
+    100.0,  // heat_label_threshold
+    100.0);
+  PredictionSample item = make_item(1, 42);
+  eq.prepare_features(item, 0);
+
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    eq.record_object_heat(
+        1000 + i,
+        i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0,
+        update_time_ns);
+  }
+  auto candidate = eq.score_otsu_histogram.otsu_result();
+  require(candidate.has_value(),
+          "long-idle recovery probe should produce an Otsu candidate");
+  const double current_threshold_score = HpScoreOtsuHistogram::score_for_heat_at(
+      100.0,
+      update_time_ns,
+      eq.heat_decay_log_factor_per_ns);
+  const double expected_score = current_threshold_score +
+      HP_OTSU_FIXED_EMA_ALPHA *
+          (candidate->threshold_score - current_threshold_score);
+  const double expected_heat = HpScoreOtsuHistogram::heat_for_score_at(
+      expected_score,
+      update_time_ns,
+      eq.heat_decay_log_factor_per_ns);
+  eq.update_hot_threshold(update_time_ns);
+  require(eq.otsu_candidate_threshold > HP_OTSU_TOTAL_HEAT_MIN,
+          "reported total-heat Otsu candidate should be available after tracking");
+  require_close(eq.heat_label_threshold,
+                expected_heat,
+                "EMA should compare the current heat threshold and candidate at one timestamp");
+#endif
 }
 
 void test_learning_lag_knobs()
@@ -616,6 +842,9 @@ void train_seed_probe_model(Classifier& model)
 void test_model_parameters_are_configured()
 {
   constexpr int expected_features = 5
+#if HP_HEAT_MARGIN_PROFILE == 2
+      + 1
+#endif
 #if HP_ENABLE_ACCESS_RATE_CHANGE
       + 1
 #endif
@@ -1036,8 +1265,13 @@ void test_future_added_heat_label_excludes_entry_heat()
           "item should have no future accesses");
   require_close(evaluated.front().future_window_added_heat, 0.0,
                 "future added heat must exclude entry heat and history");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require(evaluated.front().label == 1,
+          "deadline total heat above the total-heat threshold should be hot");
+#else
   require(evaluated.front().label == 0,
           "an item without future heat should be labeled cold");
+#endif
 }
 
 void test_future_added_heat_label_includes_later_access()
@@ -1778,10 +2012,10 @@ void test_optional_features_follow_base_feature_order()
 #endif
 
   const auto& feat = HeatPredictor::to_feat(item);
-  size_t next = 5;
+  size_t next = HP_BASE_FEATURE_COUNT;
 #if HP_ENABLE_ACCESS_RATE_CHANGE
   require_close(feat[next++], 0.0,
-                "access-rate change should follow the five base features");
+                "access-rate change should follow the configured base features");
 #endif
 #if HP_ENABLE_HEAT_PERCENTILE
   require_close(feat[next++], 0.75,
@@ -1901,10 +2135,17 @@ void test_future_added_heat_otsu_keeps_latest_vote_per_object()
 
   require(histogram.observe(1, 1000.0, 0, 0),
           "newer completed vote should replace the same object's old vote");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_IO_ADDED
+  require(histogram.size() == 3,
+          "per-I/O Otsu must retain repeated votes for the same object");
+  require(histogram.bin_count() == 2,
+          "per-I/O Otsu must retain the repeated object's previous bin");
+#else
   require(histogram.size() == 2,
           "repeated I/O for one object must not add another Otsu vote");
   require(histogram.bin_count() == 1,
           "replacing an object vote must remove its old occupied bin");
+#endif
 }
 
 void test_future_added_heat_otsu_expires_latest_object_vote()
@@ -1934,14 +2175,24 @@ void test_future_added_heat_otsu_rejects_older_object_update()
           "latest object vote should enter Otsu history");
   require(histogram.observe(2, 1000.0, 10 * second_ns, 10 * second_ns),
           "comparison object should share the same high-heat bin");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_IO_ADDED
+  require(histogram.observe(1, 10.0, 9 * second_ns, 10 * second_ns),
+          "per-I/O Otsu should retain an in-window delayed completion");
+  require(histogram.size() == 3 && histogram.bin_count() == 2,
+          "per-I/O delayed completion should add an independent vote");
+#else
   require(!histogram.observe(1, 10.0, 9 * second_ns, 10 * second_ns),
           "an older delayed result must not replace the latest object vote");
   require(histogram.size() == 2 && histogram.bin_count() == 1,
           "rejected older result must leave the latest distribution unchanged");
+#endif
 }
 
 void test_future_added_heat_label_precedes_otsu_observation()
 {
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  return;
+#else
   EvaluationQueue eq(
     HP_HEAT_DECAY_HORIZON_NS,
     8,
@@ -1972,8 +2223,37 @@ void test_future_added_heat_label_precedes_otsu_observation()
                 "later same-time access should add one heat increment");
   require(evaluated.front().label == 0,
           "the 100th sample must be labeled by the preceding threshold");
-  require(eq.heat_label_threshold < 700.0,
+  require(std::abs(eq.heat_label_threshold - 1000.0) > 1e-9,
           "the 100th sample should update the threshold only after labeling");
+#endif
+}
+
+void test_otsu_data_source_selects_added_or_total_heat()
+{
+  EvaluationQueue eq;
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    const double total_heat = i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0;
+    eq.record_object_heat(i, total_heat, 0);
+  }
+  auto result = eq.score_otsu_histogram.otsu_result();
+  require(result.has_value(),
+          "D2 should split distinct current total-heat populations");
+  require(HpScoreOtsuHistogram::heat_for_score_at(
+              result->threshold_score,
+              0,
+              eq.heat_decay_log_factor_per_ns) > HP_OTSU_TOTAL_HEAT_MIN,
+          "D2 candidate should separate the low and high total heat");
+#else
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    const double total_heat = i < HP_OTSU_MIN_VOTES / 2 ? 1.0 : 1000.0;
+    eq.record_completed_heat(i, 5.0, total_heat, 0, 0);
+  }
+
+  auto result = eq.otsu_histogram.otsu_result();
+  require(!result.has_value(),
+          "added-heat profiles should ignore a total-heat-only split");
+#endif
 }
 
 void test_otsu_histogram_reports_distribution_shape()
@@ -1988,18 +2268,18 @@ void test_otsu_histogram_reports_distribution_shape()
 
   auto result = histogram.otsu_result();
   require(result.has_value(), "clear bimodal samples should produce Otsu result");
-  require(result->object_count == 1000,
-          "Otsu result should report retained object-vote count");
+  require(result->vote_count == 1000,
+          "Otsu result should report retained vote count");
   require(result->separation > 0.99,
           "clear bimodal samples should have high separation confidence");
-  require(result->ambiguous_object_count == 0,
+  require(result->ambiguous_vote_count == 0,
           "an empty gap between two peaks should not make objects ambiguous");
 }
 
 void test_otsu_histogram_rejects_insufficient_and_constant_samples()
 {
   HpOtsuHistogram insufficient;
-  for (size_t i = 0; i + 1 < HP_OTSU_MIN_OBJECTS; ++i) {
+  for (size_t i = 0; i + 1 < HP_OTSU_MIN_VOTES; ++i) {
     insufficient.observe(i, i % 2 == 0 ? 0.0 : 10.0, 0, 0);
   }
   require(!insufficient.otsu_result().has_value(),
@@ -2041,10 +2321,10 @@ void test_otsu_histogram_handles_monotonic_distribution()
           "monotonic nonconstant heat should still produce a candidate");
   require(std::isfinite(result->threshold_score),
           "monotonic candidate score should remain finite");
-  require(result->ambiguous_object_count > 0,
+  require(result->ambiguous_vote_count > 0,
           "multiple near-optimal partitions should report ambiguous objects");
-  require(result->ambiguous_object_count <= result->object_count,
-          "ambiguous objects must stay within the histogram population");
+  require(result->ambiguous_vote_count <= result->vote_count,
+          "ambiguous votes must stay within the histogram population");
 }
 
 void test_otsu_histogram_clamps_upper_scores()
@@ -2070,8 +2350,13 @@ void test_object_heat_window_is_independent_from_otsu_history()
   eq.record_object_heat(3, 40.0, 3);
   require(eq.threshold_order_stats.size() == 2,
           "threshold tree should evict to its configured capacity");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require(eq.score_otsu_histogram.size() == 2,
+          "D2 should keep one total-heat Otsu vote per retained object");
+#else
   require(eq.otsu_histogram.empty(),
           "object current heat must not feed future-added-heat Otsu");
+#endif
 }
 
 void test_otsu_confidence_formula()
@@ -2104,6 +2389,16 @@ void test_future_added_heat_threshold_holds_during_idle_time()
 {
   EvaluationQueue eq;
   constexpr uint64_t start_ns = 123;
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  PredictionSample item = make_item(1, 1);
+  eq.prepare_features(item, start_ns);
+  require_close(eq.heat_label_threshold_at(start_ns), HP_HEAT_INCREMENT,
+                "total-heat threshold should initialize at current time");
+  require_close(
+      eq.heat_label_threshold_at(start_ns + HP_HEAT_DECAY_HORIZON_NS),
+      HP_HEAT_INCREMENT,
+      "score-normalized total-heat threshold should remain fixed between updates");
+#else
   require_close(
       eq.heat_label_threshold_at(start_ns + HP_HEAT_DECAY_HORIZON_NS),
       HP_HEAT_INCREMENT,
@@ -2112,16 +2407,17 @@ void test_future_added_heat_threshold_holds_during_idle_time()
       eq.heat_label_threshold_at(start_ns + HP_HEAT_DECAY_HORIZON_NS),
       HP_HEAT_INCREMENT,
       "completed future-added-heat threshold should not decay while idle");
+#endif
 }
 
 void test_otsu_recomputes_after_wall_clock_interval()
 {
   EvaluationQueue eq;
   constexpr uint64_t second_ns = 1000ULL * 1000 * 1000;
-  for (uint64_t i = 0; i < HP_OTSU_MIN_OBJECTS; ++i) {
-    const double heat = i < HP_OTSU_MIN_OBJECTS / 2 ? 10.0 : 1000.0;
-    const uint64_t timestamp = i * second_ns / (HP_OTSU_MIN_OBJECTS - 1);
-    eq.record_future_added_heat(i, heat, timestamp, timestamp);
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0;
+    const uint64_t timestamp = i * second_ns / (HP_OTSU_MIN_VOTES - 1);
+    record_active_otsu_heat(eq, i, heat, timestamp);
   }
   require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_TRACKING,
           "new observations should recompute Otsu after one wall-clock second");
@@ -2133,19 +2429,15 @@ void test_otsu_ema_time_never_moves_backward_for_late_sample()
   constexpr uint64_t current_time = 61 * second_ns;
   EvaluationQueue eq;
 
-  for (uint64_t i = 0; i < HP_OTSU_MIN_OBJECTS; ++i) {
-    const double heat = i < HP_OTSU_MIN_OBJECTS / 2 ? 10.0 : 1000.0;
-    require(eq.otsu_histogram.observe(
-                i, heat, current_time, current_time),
-            "EMA monotonicity probe should populate the Otsu histogram");
+  for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
+    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0;
+    record_active_otsu_heat(eq, i, heat, current_time);
   }
   eq.update_hot_threshold(current_time);
   require(eq.last_otsu_ema_update_time_ns == current_time,
           "initial Otsu update should establish the current EMA time");
 
-  eq.threshold_observation_count = HP_OTSU_UPDATE_INTERVAL - 1;
-  eq.record_future_added_heat(
-      1000, 500.0, current_time - 2 * second_ns, current_time);
+  eq.update_hot_threshold(current_time - 2 * second_ns);
   require(eq.last_otsu_ema_update_time_ns == current_time,
           "a late observation must not move the Otsu EMA clock backward");
 }
@@ -2153,9 +2445,9 @@ void test_otsu_ema_time_never_moves_backward_for_late_sample()
 void test_otsu_threshold_state_machine()
 {
   EvaluationQueue initializing;
-  for (uint64_t i = 0; i + 1 < HP_OTSU_MIN_OBJECTS; ++i) {
-    initializing.record_future_added_heat(
-        i, i % 2 == 0 ? 10.0 : 1000.0, 1, 1);
+  for (uint64_t i = 0; i + 1 < HP_OTSU_MIN_VOTES; ++i) {
+    record_active_otsu_heat(
+        initializing, i, i % 2 == 0 ? 10.0 : 1000.0, 1);
   }
   initializing.update_hot_threshold(1);
 #if HP_OTSU_PROFILE != HP_OTSU_PROFILE_LEGACY
@@ -2174,7 +2466,7 @@ void test_otsu_threshold_state_machine()
 
   EvaluationQueue holding;
   for (uint64_t i = 0; i < 1000; ++i) {
-    holding.record_future_added_heat(i, 10.0, 1, 1);
+    record_active_otsu_heat(holding, i, 10.0, 1);
   }
   holding.update_hot_threshold(1);
   require(holding.hot_threshold_method == HP_THRESHOLD_METHOD_HOLDING,
@@ -2190,49 +2482,96 @@ void test_otsu_threshold_state_machine()
   EvaluationQueue tracking(
       HP_HEAT_DECAY_HORIZON_NS, 2000, 20.0, 100.0);
   for (uint64_t i = 0; i < 500; ++i) {
-    tracking.otsu_histogram.observe(2 * i, 10.0, 1, 1);
-    tracking.otsu_histogram.observe(2 * i + 1, 1000.0, 1, 1);
+    record_active_otsu_heat(tracking, 2 * i, 10.0, 1);
+    record_active_otsu_heat(tracking, 2 * i + 1, 1000.0, 1);
   }
   const uint64_t update_time = 1 + HP_OTSU_EMA_REFERENCE_INTERVAL_NS;
   const double threshold_before_update = tracking.heat_label_threshold;
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  const double threshold_score_before_update =
+      HpScoreOtsuHistogram::score_for_heat_at(
+          threshold_before_update,
+          update_time,
+          tracking.heat_decay_log_factor_per_ns);
+#endif
   tracking.update_hot_threshold(update_time);
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  const double initial_score = threshold_score_before_update;
+  const double candidate_score = tracking.otsu_candidate_threshold_score;
+#else
   const double initial_score =
       HpOtsuHistogram::score_for_heat(threshold_before_update);
   const double candidate_score =
       HpOtsuHistogram::score_for_heat(tracking.otsu_candidate_threshold);
+#endif
   const double expected_score = initial_score +
       HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA * tracking.otsu_confidence *
       (candidate_score - initial_score);
   require(tracking.hot_threshold_method == HP_THRESHOLD_METHOD_TRACKING,
           "clear bimodal samples should track the Otsu candidate");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require_close(
+      tracking.otsu_candidate_threshold_at(
+          update_time + HP_HEAT_DECAY_HORIZON_NS),
+      tracking.otsu_candidate_threshold,
+      "score total-heat candidate should remain fixed between updates");
+#else
   require_close(
       tracking.otsu_candidate_threshold_at(
           update_time + HP_HEAT_DECAY_HORIZON_NS),
       tracking.otsu_candidate_threshold,
       "completed-sample Otsu candidate should remain fixed while idle");
+#endif
 #if HP_OTSU_PROFILE == HP_OTSU_PROFILE_CONFIDENCE
   require(std::abs(tracking.heat_label_threshold - tracking.otsu_candidate_threshold) <=
               std::abs(threshold_before_update -
                        tracking.otsu_candidate_threshold),
           "confidence gain should not move the effective threshold away from its candidate");
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require_close(tracking.heat_label_threshold,
+                HpScoreOtsuHistogram::heat_for_score_at(
+                    expected_score,
+                    update_time,
+                    tracking.heat_decay_log_factor_per_ns),
+                "effective total-heat threshold should apply confidence score gain");
+#else
   require_close(HpOtsuHistogram::score_for_heat(
                     tracking.heat_label_threshold),
                 expected_score,
                 "effective threshold should apply confidence-scaled score gain");
+#endif
 #elif HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA
   const double fixed_ema_expected_score = initial_score +
       HP_OTSU_FIXED_EMA_ALPHA * (candidate_score - initial_score);
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require_close(tracking.heat_label_threshold,
+                HpScoreOtsuHistogram::heat_for_score_at(
+                    fixed_ema_expected_score,
+                    update_time,
+                    tracking.heat_decay_log_factor_per_ns),
+                "fixed-EMA total-heat threshold should use score-space gain");
+#else
   require_close(HpOtsuHistogram::score_for_heat(
                     tracking.heat_label_threshold),
                 fixed_ema_expected_score,
                 "fixed-EMA profile should use the maximum score-space gain");
+#endif
 #else
   const double legacy_expected_score = initial_score +
       HP_LEGACY_OTSU_EMA_ALPHA * (candidate_score - initial_score);
+#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
+  require_close(tracking.heat_label_threshold,
+                HpScoreOtsuHistogram::heat_for_score_at(
+                    legacy_expected_score,
+                    update_time,
+                    tracking.heat_decay_log_factor_per_ns),
+                "legacy total-heat policy should use score-space EMA gain");
+#else
   require_close(HpOtsuHistogram::score_for_heat(
                     tracking.heat_label_threshold),
                 legacy_expected_score,
                 "legacy policy should use a fixed score-space EMA gain");
+#endif
 #endif
 }
 
@@ -2246,12 +2585,12 @@ void test_otsu_threshold_updates_every_100_observations()
 
   for (uint64_t i = 0; i < 99; ++i) {
     const double heat = 1000.0 * static_cast<double>(i) / 99.0;
-    eq.record_future_added_heat(i, heat, 1, 1);
+    record_active_otsu_heat(eq, i, heat, 1);
   }
   require_close(eq.heat_label_threshold, 100.0,
                 "Otsu threshold should not update before 100 observations");
 
-  eq.record_future_added_heat(99, 1000.0, 1, 1);
+  record_active_otsu_heat(eq, 99, 1000.0, 1);
   require(eq.hot_threshold_method == HP_THRESHOLD_METHOD_TRACKING,
           "Otsu threshold should update on the 100th observation");
 }
@@ -2398,6 +2737,9 @@ void test_supervised_threshold_maximizes_window_accuracy()
 
 void test_experiment_profile_parameters()
 {
+  require(HP_ENABLE_STANDARD_SCALER == 0 ||
+          HP_ENABLE_STANDARD_SCALER == 1,
+          "standard scaler experiment profile should be boolean");
   require(HP_ENABLE_PREDICTION_CALIBRATION == 0,
           "the baseline should use a fixed 0.50 prediction threshold");
   require(HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA,
@@ -2473,11 +2815,16 @@ int main()
   test_model_parameter_and_feature_bounds();
   test_adwin_bucket_count_and_numeric_state();
   test_final_feature_vector();
+  test_previous_access_interval_encoding();
   test_stats_drop_online_prediction_ratio_source();
   test_predictor_drops_unused_actual_label_counters();
   test_stats_export_hot_predict_threshold();
   test_stats_export_otsu_histogram_bin_count();
   test_otsu_update_cost_knobs();
+  test_score_total_heat_histogram_moves_with_time();
+  test_score_total_heat_label_uses_deadline_threshold();
+  test_score_total_heat_label_ignores_later_threshold_updates();
+  test_score_total_heat_ema_uses_current_heat_threshold();
   test_learning_lag_knobs();
   test_snapshot_publish_uses_sample_or_time_trigger();
   test_training_batch_is_bounded_and_fifo();
@@ -2536,6 +2883,7 @@ int main()
   test_future_added_heat_otsu_expires_latest_object_vote();
   test_future_added_heat_otsu_rejects_older_object_update();
   test_future_added_heat_label_precedes_otsu_observation();
+  test_otsu_data_source_selects_added_or_total_heat();
   test_otsu_histogram_reports_distribution_shape();
   test_otsu_histogram_rejects_insufficient_and_constant_samples();
   test_otsu_histogram_keeps_weak_candidate();

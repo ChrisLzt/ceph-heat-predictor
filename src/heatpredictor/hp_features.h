@@ -17,6 +17,23 @@ inline double hp_nanoseconds_to_seconds(uint64_t nanoseconds) {
     return static_cast<double>(nanoseconds) / nanoseconds_per_second;
 }
 
+inline double hp_previous_access_interval_encoded(
+        uint64_t tracked_access_count,
+        uint64_t time_since_previous_access_ns) {
+    if (tracked_access_count <= 1) {
+        return 0.0;
+    }
+    return 1.0 + hp_log2p1(
+        hp_nanoseconds_to_seconds(time_since_previous_access_ns));
+}
+
+inline double hp_project_heat_without_future_access(
+        double heat_after_current_access) {
+    return heat_after_current_access * std::exp(
+        hp_heat_decay_log_factor_per_ns(HP_HEAT_DECAY_HORIZON_NS) *
+        static_cast<double>(HP_FUTURE_LABEL_WINDOW_NS));
+}
+
 inline double hp_access_rate_change_log2p1(
         uint64_t short_window_access_count,
         uint64_t long_window_access_count) {
@@ -39,15 +56,28 @@ inline double hp_access_rate_change_log2p1(
 inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
     thread_local std::vector<double> features(NUM_FEATURES);
     const double threshold = std::max(item.heat_label_threshold_at_prediction, 1.0);
+    const double threshold_log2p1 = hp_log2p1(threshold);
     const double heat_after_current_access = hp_log2p1(item.heat_after_current_access);
     const double long_window_access_count = hp_log2p1(
         static_cast<double>(
             item.long_window_access_count));
 
     size_t next = 0;
-    features[next++] = heat_after_current_access - hp_log2p1(threshold);
-    features[next++] = hp_log2p1(hp_nanoseconds_to_seconds(
-        item.time_since_previous_access_ns));
+#if HP_HEAT_MARGIN_PROFILE == HP_HEAT_MARGIN_CURRENT
+    features[next++] = heat_after_current_access - threshold_log2p1;
+#elif HP_HEAT_MARGIN_PROFILE == HP_HEAT_MARGIN_PROJECTED
+    features[next++] = hp_log2p1(hp_project_heat_without_future_access(
+        item.heat_after_current_access)) - threshold_log2p1;
+#elif HP_HEAT_MARGIN_PROFILE == HP_HEAT_MARGIN_BOTH
+    features[next++] = heat_after_current_access - threshold_log2p1;
+    features[next++] = hp_log2p1(hp_project_heat_without_future_access(
+        item.heat_after_current_access)) - threshold_log2p1;
+#else
+#error "invalid HP_HEAT_MARGIN_PROFILE"
+#endif
+    features[next++] = hp_previous_access_interval_encoded(
+        item.tracked_access_count,
+        item.time_since_previous_access_ns);
     features[next++] = heat_after_current_access;
     features[next++] = long_window_access_count;
     features[next++] = hp_log2p1(

@@ -61,7 +61,7 @@ struct HeatPredictorStats {
     uint64_t heat_state_count;
     uint64_t lru_count;
     uint64_t otsu_histogram_bin_count;
-    uint64_t otsu_histogram_object_count;
+    uint64_t otsu_histogram_vote_count;
     uint64_t true_positive;
     uint64_t false_positive;
     uint64_t true_negative;
