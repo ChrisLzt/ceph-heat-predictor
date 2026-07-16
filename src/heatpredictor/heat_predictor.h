@@ -51,9 +51,7 @@ public:
     }
 
     static Classifier* make_model() {
-        return new PipelineClassifier(
-            new StandardScaler<NUM_FEATURES>(),
-            new ARFClassifier<NUM_FEATURES, 2,
+        auto* classifier = new ARFClassifier<NUM_FEATURES, 2,
                 DetectorFactory<ADWIN<5>, 10>,
                 DetectorFactory<ADWIN<5>, 1>>(
                     HP_ARF_N_MODELS,
@@ -64,8 +62,13 @@ public:
                     HP_ARF_DELTA,
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
-                    HP_ARF_MIN_BRANCH_FRACTION)
-        );
+                    HP_ARF_MIN_BRANCH_FRACTION);
+#if HP_ENABLE_STANDARD_SCALER
+        return new PipelineClassifier(
+            new StandardScaler<NUM_FEATURES>(), classifier);
+#else
+        return classifier;
+#endif
     }
 
     // reset_mutex gates full-state reset against foreground prediction and
@@ -641,7 +644,7 @@ public:
             eq->heat_state_size(),
             eq->lru_size(),
             eq->otsu_histogram_bin_count(),
-            eq->otsu_histogram_object_count(),
+            eq->otsu_histogram_vote_count(),
             accu.true_positives(),
             accu.false_positives(),
             accu.true_negatives(),
@@ -712,11 +715,11 @@ public:
         eq->advance_otsu_history(monotonic_now_ns());
         return eq->otsu_histogram_bin_count();
     }
-    uint64_t get_otsu_histogram_object_count() {
+    uint64_t get_otsu_histogram_vote_count() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> lock(eq_mutex);
         eq->advance_otsu_history(monotonic_now_ns());
-        return eq->otsu_histogram_object_count();
+        return eq->otsu_histogram_vote_count();
     }
     uint64_t get_train_drop_count() { return train_drop_count.load(); }
     uint64_t get_predict_error_count() {

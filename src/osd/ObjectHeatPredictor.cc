@@ -36,7 +36,7 @@ enum {
   object_hp_heat_state_count,
   object_hp_lru_count,
   object_hp_otsu_histogram_bin_count,
-  object_hp_otsu_histogram_object_count,
+  object_hp_otsu_histogram_vote_count,
   object_hp_true_positive_count,
   object_hp_false_positive_count,
   object_hp_true_negative_count,
@@ -177,9 +177,9 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_otsu_histogram_bin_count,
             "hp_otsu_histogram_bin_count",
             "occupied Otsu histogram bin count");
-  b.add_u64(object_hp_otsu_histogram_object_count,
-            "hp_otsu_histogram_object_count",
-            "objects with a latest completed vote retained in the Otsu histogram");
+  b.add_u64(object_hp_otsu_histogram_vote_count,
+            "hp_otsu_histogram_vote_count",
+            "retained votes in the Otsu histogram");
   b.add_u64(object_hp_true_positive_count, "hp_true_positive_count", "true positive count");
   b.add_u64(object_hp_false_positive_count, "hp_false_positive_count", "false positive count");
   b.add_u64(object_hp_true_negative_count, "hp_true_negative_count", "true negative count");
@@ -360,8 +360,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
   logger->set(object_hp_lru_count, stats.lru_count);
   logger->set(object_hp_otsu_histogram_bin_count,
               stats.otsu_histogram_bin_count);
-  logger->set(object_hp_otsu_histogram_object_count,
-              stats.otsu_histogram_object_count);
+  logger->set(object_hp_otsu_histogram_vote_count,
+              stats.otsu_histogram_vote_count);
   logger->set(object_hp_true_positive_count, true_positive);
   logger->set(object_hp_false_positive_count, false_positive);
   logger->set(object_hp_true_negative_count, true_negative);
@@ -485,7 +485,7 @@ static void hp_zero_object_logger()
   logger->set(object_hp_heat_state_count, 0);
   logger->set(object_hp_lru_count, 0);
   logger->set(object_hp_otsu_histogram_bin_count, 0);
-  logger->set(object_hp_otsu_histogram_object_count, 0);
+  logger->set(object_hp_otsu_histogram_vote_count, 0);
   logger->set(object_hp_true_positive_count, 0);
   logger->set(object_hp_false_positive_count, 0);
   logger->set(object_hp_true_negative_count, 0);
@@ -666,8 +666,8 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
     f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      osd_object_heat_predictor.get_otsu_histogram_bin_count());
-    f->dump_unsigned("hp_otsu_histogram_object_count",
-                     osd_object_heat_predictor.get_otsu_histogram_object_count());
+    f->dump_unsigned("hp_otsu_histogram_vote_count",
+                     osd_object_heat_predictor.get_otsu_histogram_vote_count());
     f->dump_unsigned("hp_train_queue_length", osd_object_heat_predictor.get_train_queue_length());
     f->dump_unsigned("hp_train_drop_count", osd_object_heat_predictor.get_train_drop_count());
     f->dump_unsigned("hp_snapshot_publish_count",
@@ -712,8 +712,8 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
                      osd_object_heat_predictor.get_lru_count());
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      osd_object_heat_predictor.get_otsu_histogram_bin_count());
-    f->dump_unsigned("hp_otsu_histogram_object_count",
-                     osd_object_heat_predictor.get_otsu_histogram_object_count());
+    f->dump_unsigned("hp_otsu_histogram_vote_count",
+                     osd_object_heat_predictor.get_otsu_histogram_vote_count());
     f->dump_unsigned("hp_train_queue_length",
                      osd_object_heat_predictor.get_train_queue_length());
     f->dump_unsigned("hp_train_drop_count",

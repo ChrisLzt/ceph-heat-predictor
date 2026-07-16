@@ -176,6 +176,17 @@ sudo ceph -s
 sudo ceph osd pool ls detail
 ```
 
+单节点测试将 `.mgr` 固定为 1 PG，并关闭 autoscale，避免 autoscaler 按默认下限重新
+扩展到 32 PG：
+
+```bash
+sudo ceph osd pool set .mgr pg_autoscale_mode off
+sudo ceph osd pool set .mgr pg_num 1
+watch -n 2 'ceph osd pool get .mgr pg_num; ceph osd pool get .mgr pgp_num; ceph -s'
+```
+
+`pg_num` 会通过 PG merge 逐步下降，等待所有 PG 恢复 `active+clean` 后再运行负载。
+
 挂载：
 
 ```bash
@@ -207,6 +218,10 @@ sudo ceph osd hp reset
 
 OSD `object_hp status` 直接读取实时训练队列；测试结束后不要只用可能滞后的
 perf/MGR 队列字段判断训练是否完成。
+
+正式负载脚本在 reset 后先确认各 OSD 的实时状态和 perf 已清零，再等待 MGR 汇总收到
+同一轮零值；只有两层检查都成功后才启动负载和 MGR 周期采样，避免首个快照混入上一
+轮缓存。
 
 汇总包括 `samples`、`heat_state`、`confusion_matrix`、`actual_behavior`、
 `prediction`、`training`、`latency`、`read_ops` 和 `write_ops`。

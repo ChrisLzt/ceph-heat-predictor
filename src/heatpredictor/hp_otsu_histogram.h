@@ -19,8 +19,8 @@
 struct HpOtsuResult {
     double threshold_score;
     double separation;
-    uint64_t ambiguous_object_count;
-    uint64_t object_count;
+    uint64_t ambiguous_vote_count;
+    uint64_t vote_count;
 };
 
 class HpOtsuHistogram {
@@ -79,6 +79,7 @@ public:
         }
 
         prepare_slot(sample_epoch);
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_IO_ADDED
         auto previous = object_entries.find(object_key);
         if (previous != object_entries.end()) {
             if (sample_time_ns < previous->second.sample_time_ns) {
@@ -86,6 +87,7 @@ public:
             }
             erase_object_entry(previous);
         }
+#endif
 
         const size_t bin = bin_for_heat(added_heat);
         const size_t offset = slot_offset(sample_epoch) + bin;
@@ -98,6 +100,7 @@ public:
         ++(*aggregate_bins)[bin];
         ++total_count;
 
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_IO_ADDED
         const size_t slot = static_cast<size_t>(
             sample_epoch % HP_OTSU_HISTORY_SLOT_COUNT);
         slot_objects[slot].push_back(object_key);
@@ -107,6 +110,7 @@ public:
             ObjectEntry{bin, sample_epoch, sample_time_ns, object_position});
         ceph_assert(ok);
         (void)inserted;
+#endif
         return true;
     }
 
@@ -157,7 +161,7 @@ public:
     }
 
     std::optional<HpOtsuResult> otsu_result() const {
-        if (total_count < HP_OTSU_MIN_OBJECTS || occupied_bin_count < 2) {
+        if (total_count < HP_OTSU_MIN_VOTES || occupied_bin_count < 2) {
             return std::nullopt;
         }
 
@@ -323,6 +327,7 @@ private:
         const size_t offset = slot * HP_OTSU_HISTOGRAM_BIN_COUNT;
         bool changed = false;
         if (slot_epochs[slot] != invalid_epoch) {
+#if HP_OTSU_DATA_SOURCE != HP_OTSU_DATA_SOURCE_IO_ADDED
             for (uint64_t object_key : slot_objects[slot]) {
                 auto object = object_entries.find(object_key);
                 ceph_assert(object != object_entries.end());
@@ -330,6 +335,7 @@ private:
                 object_entries.erase(object);
             }
             slot_objects[slot].clear();
+#endif
             for (size_t bin = 0; bin < HP_OTSU_HISTOGRAM_BIN_COUNT; ++bin) {
                 const uint64_t expired = history_bins[offset + bin];
                 if (expired == 0) {
