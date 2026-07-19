@@ -26,7 +26,6 @@
 #include "hp_evaluation_queue.h"
 #include "hp_features.h"
 #include "hp_integer_quantile_window.h"
-#include "hp_quantile_window.h"
 #include "hp_types.h"
 
 class HeatPredictor {
@@ -50,10 +49,14 @@ public:
         return key;
     }
 
-    static Classifier* make_model() {
+    static Classifier* make_model(
+            std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+                nullptr) {
         auto* classifier = new ARFClassifier<NUM_FEATURES, 2,
-                DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_WARNING_DELTA_PERMILLE>,
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_DRIFT_DELTA_PERMILLE>>(
                     HP_ARF_N_MODELS,
                     HP_ARF_MAX_FEATURES,
                     HP_ARF_SEED,
@@ -62,7 +65,10 @@ public:
                     HP_ARF_DELTA,
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
-                    HP_ARF_MIN_BRANCH_FRACTION);
+                    HP_ARF_MIN_BRANCH_FRACTION,
+                    std::move(adaptation_telemetry),
+                    HP_ARF_FAST_MODEL_COUNT,
+                    HP_ARF_FAST_MODEL_LIFETIME_SAMPLES);
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(), classifier);
     }
@@ -75,6 +81,8 @@ public:
     // train_model 只由后台训练线程更新；prediction_snapshot 是前台预测
     // 使用的只读快照。训练线程定期 clone train_model 并发布新快照，
     // 避免前台预测长期等待 learn_one()。
+    std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+        std::make_shared<ArfAdaptationTelemetry>();
     std::shared_ptr<Classifier> train_model;
     mutable std::mutex train_model_mutex;
     std::shared_ptr<Classifier> prediction_snapshot;
@@ -109,7 +117,6 @@ public:
     std::atomic<bool> expiry_running{false};
     std::atomic<uint64_t> expiry_wake_sequence{0};
     std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
-
     static const std::vector<double>& to_feat(const PredictionSample& item) {
         return hp_to_features(item);
     }
@@ -213,25 +220,17 @@ public:
         if (evaluated.label) {
             hot_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            hot_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             hot_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             hot_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            hot_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         } else {
             cold_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            cold_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             cold_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             cold_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            cold_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         }
         accu.update(evaluated.label, evaluated.item.predicted_label);
     }
@@ -373,17 +372,13 @@ public:
     std::atomic<uint64_t> processed_io_count{0};
     uint64_t hot_labeled_sample_future_access_count_sum{0};
     uint64_t cold_labeled_sample_future_access_count_sum{0};
-    double hot_labeled_sample_future_added_heat_sum{0};
-    double cold_labeled_sample_future_added_heat_sum{0};
     double hot_labeled_sample_predicted_hot_probability_sum{0};
     double cold_labeled_sample_predicted_hot_probability_sum{0};
     HpIntegerQuantileWindow hot_labeled_sample_future_access_count_window;
     HpIntegerQuantileWindow cold_labeled_sample_future_access_count_window;
-    HpQuantileWindow hot_labeled_sample_future_added_heat_window;
-    HpQuantileWindow cold_labeled_sample_future_added_heat_window;
 
     HeatPredictor() {
-        train_model.reset(make_model());
+        train_model.reset(make_model(adaptation_telemetry));
         prediction_snapshot = clone_train_model_for_prediction();
         eq = std::make_unique<EvaluationQueue>();
         last_snapshot_publish_time_ns = monotonic_now_ns();
@@ -445,7 +440,8 @@ public:
         std::shared_ptr<Classifier> next_snapshot;
         {
             std::lock_guard<std::mutex> lock(train_model_mutex);
-            train_model.reset(make_model());
+            adaptation_telemetry->reset();
+            train_model.reset(make_model(adaptation_telemetry));
             next_snapshot = clone_train_model_for_prediction();
         }
         publish_prediction_snapshot(std::move(next_snapshot));
@@ -463,14 +459,10 @@ public:
         processed_io_count.store(0);
         hot_labeled_sample_future_access_count_sum = 0;
         cold_labeled_sample_future_access_count_sum = 0;
-        hot_labeled_sample_future_added_heat_sum = 0;
-        cold_labeled_sample_future_added_heat_sum = 0;
         hot_labeled_sample_predicted_hot_probability_sum = 0;
         cold_labeled_sample_predicted_hot_probability_sum = 0;
         hot_labeled_sample_future_access_count_window.clear();
         cold_labeled_sample_future_access_count_window.clear();
-        hot_labeled_sample_future_added_heat_window.clear();
-        cold_labeled_sample_future_added_heat_window.clear();
         train_drop_count.store(0);
         predict_error_count.store(0);
         notify_expiry_worker();
@@ -531,8 +523,6 @@ public:
             0.0,              // heat_label_threshold_at_prediction
             0,    // tracked_access_count
             0,    // time_since_previous_access_ns
-            0,    // long_window_access_count
-            0,    // short_window_access_count
             0.0,  // predicted_hot_probability
             0     // predicted_label
         };
@@ -576,10 +566,13 @@ public:
         enqueue_training_samples(std::move(expired_samples));
 
         bool prediction_failed = false;
+        bool cold_start_fallback = false;
         if (snapshot) {
             try {
                 thread_local std::vector<double> proba;
                 snapshot->predict_proba_one_into(to_feat(item), proba);
+                cold_start_fallback = proba.size() == 2 &&
+                    proba[0] == 0.0 && proba[1] == 0.0;
                 auto hot_probability = validated_hot_probability(proba);
                 if (hot_probability.has_value()) {
                     item.predicted_hot_probability = *hot_probability;
@@ -601,8 +594,10 @@ public:
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
                 eq->cancel_prediction(*pending_evaluation);
             }
-        } else if (pending_evaluation.has_value()) {
+        } else {
             item.predicted_label = res;
+        }
+        if (!prediction_failed && pending_evaluation.has_value()) {
             std::vector<TrainingSample> completed_samples;
             {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
@@ -610,7 +605,8 @@ public:
                     eq->complete_prediction(
                         *pending_evaluation,
                         item.predicted_hot_probability,
-                        item.predicted_label));
+                        item.predicted_label,
+                        cold_start_fallback));
             }
             enqueue_training_samples(std::move(completed_samples));
         }
@@ -644,21 +640,13 @@ public:
             accu.false_negatives(),
             hot_labeled_sample_future_access_count_sum,
             cold_labeled_sample_future_access_count_sum,
-            hot_labeled_sample_future_added_heat_sum,
-            cold_labeled_sample_future_added_heat_sum,
             hot_labeled_sample_predicted_hot_probability_sum,
             cold_labeled_sample_predicted_hot_probability_sum,
             hot_labeled_sample_future_access_count_window.summary(),
             cold_labeled_sample_future_access_count_window.summary(),
-            hot_labeled_sample_future_added_heat_window.summary(),
-            cold_labeled_sample_future_added_heat_window.summary(),
             current_heat_label_threshold,
             current_otsu_candidate_threshold,
-            eq->otsu_separation,
-            eq->otsu_confidence,
-            eq->otsu_sharpness_confidence,
-            eq->hot_threshold_method,
-            HP_HOT_PREDICT_THRESHOLD
+            eq->hot_threshold_method
         };
     }
 
@@ -670,6 +658,9 @@ public:
     }
     uint64_t get_snapshot_publish_count() {
         return snapshot_publish_count.load();
+    }
+    ArfAdaptationStats get_arf_adaptation_stats() const {
+        return adaptation_telemetry->snapshot();
     }
     uint64_t get_pending_io_count() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
@@ -717,6 +708,7 @@ public:
     void record_predict_error() {
         predict_error_count.fetch_add(1, std::memory_order_relaxed);
     }
+
 };
 
 #endif

@@ -99,8 +99,6 @@ namespace {
      ObjectHpAggregate::hot_weighted},
     {"hp_cold_labeled_sample_avg_future_access_count",
      ObjectHpAggregate::cold_weighted},
-    {"hp_hot_labeled_sample_avg_future_added_heat", ObjectHpAggregate::hot_weighted},
-    {"hp_cold_labeled_sample_avg_future_added_heat", ObjectHpAggregate::cold_weighted},
     {"hp_hot_labeled_sample_future_access_count_p99", ObjectHpAggregate::hot_weighted,
      "hp_hot_labeled_sample_future_access_count_osd_p99_weighted_avg"},
     {"hp_hot_labeled_sample_future_access_count_p95", ObjectHpAggregate::hot_weighted,
@@ -113,37 +111,23 @@ namespace {
      "hp_cold_labeled_sample_future_access_count_osd_p95_weighted_avg"},
     {"hp_cold_labeled_sample_future_access_count_p50", ObjectHpAggregate::cold_weighted,
      "hp_cold_labeled_sample_future_access_count_osd_p50_weighted_avg"},
-    {"hp_hot_labeled_sample_future_added_heat_p99", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_added_heat_osd_p99_weighted_avg"},
-    {"hp_hot_labeled_sample_future_added_heat_p95", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_added_heat_osd_p95_weighted_avg"},
-    {"hp_hot_labeled_sample_future_added_heat_p50", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_added_heat_osd_p50_weighted_avg"},
-    {"hp_cold_labeled_sample_future_added_heat_p99", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_added_heat_osd_p99_weighted_avg"},
-    {"hp_cold_labeled_sample_future_added_heat_p95", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_added_heat_osd_p95_weighted_avg"},
-    {"hp_cold_labeled_sample_future_added_heat_p50", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_added_heat_osd_p50_weighted_avg"},
     {"hp_actual_hot_avg_pred_hot_percent", ObjectHpAggregate::hot_weighted},
     {"hp_actual_cold_avg_pred_hot_percent", ObjectHpAggregate::cold_weighted},
-    {"hp_hot_predict_threshold", ObjectHpAggregate::osd_average,
-     "hp_hot_predict_threshold_avg"},
     {"hp_predict_error_count", ObjectHpAggregate::sum},
     {"hp_hot_threshold", ObjectHpAggregate::osd_average,
      "hp_hot_threshold_avg"},
     {"hp_otsu_candidate_threshold", ObjectHpAggregate::otsu_weighted,
      "hp_otsu_candidate_threshold_avg"},
-    {"hp_otsu_separation", ObjectHpAggregate::otsu_weighted,
-     "hp_otsu_separation_avg"},
-    {"hp_otsu_confidence", ObjectHpAggregate::otsu_weighted,
-     "hp_otsu_confidence_avg"},
-    {"hp_otsu_sharpness_confidence", ObjectHpAggregate::otsu_weighted,
-     "hp_otsu_sharpness_confidence_avg"},
     {"hp_hot_threshold_method", ObjectHpAggregate::none},
     {"hp_train_queue_length", ObjectHpAggregate::sum},
     {"hp_train_drop_count", ObjectHpAggregate::sum},
     {"hp_snapshot_publish_count", ObjectHpAggregate::sum},
+    {"hp_arf_warning_count", ObjectHpAggregate::sum},
+    {"hp_arf_drift_count", ObjectHpAggregate::sum},
+    {"hp_arf_background_promotion_count", ObjectHpAggregate::sum},
+    {"hp_arf_background_discard_count", ObjectHpAggregate::sum},
+    {"hp_arf_background_training_update_count", ObjectHpAggregate::sum},
+    {"hp_arf_active_background_count", ObjectHpAggregate::sum},
     {"hp_op_read_count", ObjectHpAggregate::sum},
     {"hp_op_sync_read_count", ObjectHpAggregate::sum},
     {"hp_op_sparse_read_count", ObjectHpAggregate::sum},
@@ -1883,24 +1867,6 @@ bool DaemonServer::_handle_command(
                       weighted_sum["hp_otsu_candidate_threshold_avg"] /
                       weight) : 0.0);
     }
-    {
-      uint64_t weight = weighted_count["hp_otsu_separation_avg"];
-      hp_dump_float(f.get(), "hp_otsu_separation_percent_avg",
-                    weight > 0 ? hp_percent_from_x10000(
-                      weighted_sum["hp_otsu_separation_avg"] / weight) : 0.0);
-    }
-    auto dump_otsu_confidence = [&](const std::string& aggregate_name,
-                                    const char *output_name) {
-      uint64_t weight = weighted_count[aggregate_name];
-      hp_dump_float(f.get(), output_name,
-                    weight > 0 ? hp_percent_from_x10000(
-                      weighted_sum[aggregate_name] / weight) : 0.0);
-    };
-    dump_otsu_confidence(
-      "hp_otsu_confidence_avg", "hp_otsu_confidence_percent_avg");
-    dump_otsu_confidence(
-      "hp_otsu_sharpness_confidence_avg",
-      "hp_otsu_sharpness_confidence_percent_avg");
     f->open_object_section("hp_hot_threshold_method_osds");
     f->dump_unsigned("initializing", threshold_method_initializing_osds);
     f->dump_unsigned("tracking", threshold_method_tracking_osds);
@@ -1956,34 +1922,6 @@ bool DaemonServer::_handle_command(
               "hp_hot_labeled_sample_avg_future_access_count") / cold_avg
           : 0.0);
     }
-    {
-      uint64_t weight =
-        weighted_count["hp_hot_labeled_sample_avg_future_added_heat"];
-      hp_dump_float(
-        f.get(),
-        "hp_hot_labeled_sample_avg_future_added_heat",
-        weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_hot_labeled_sample_avg_future_added_heat"] / weight) : 0.0);
-    }
-    {
-      uint64_t weight =
-        weighted_count["hp_cold_labeled_sample_avg_future_added_heat"];
-      hp_dump_float(
-        f.get(),
-        "hp_cold_labeled_sample_avg_future_added_heat",
-        weight > 0 ? hp_from_x10000(
-          weighted_sum["hp_cold_labeled_sample_avg_future_added_heat"] / weight) : 0.0);
-    }
-    {
-      double cold_avg =
-        weighted_x10000_value("hp_cold_labeled_sample_avg_future_added_heat");
-      hp_dump_float(
-        f.get(),
-        "hp_future_added_heat_hot_cold_ratio",
-        cold_avg > 0
-          ? weighted_x10000_value("hp_hot_labeled_sample_avg_future_added_heat") / cold_avg
-          : 0.0);
-    }
     dump_weighted_x10000(
       "hp_hot_labeled_sample_future_access_count_osd_p99_weighted_avg");
     dump_weighted_x10000(
@@ -1996,18 +1934,6 @@ bool DaemonServer::_handle_command(
       "hp_cold_labeled_sample_future_access_count_osd_p95_weighted_avg");
     dump_weighted_x10000(
       "hp_cold_labeled_sample_future_access_count_osd_p50_weighted_avg");
-    dump_weighted_x10000(
-      "hp_hot_labeled_sample_future_added_heat_osd_p99_weighted_avg");
-    dump_weighted_x10000(
-      "hp_hot_labeled_sample_future_added_heat_osd_p95_weighted_avg");
-    dump_weighted_x10000(
-      "hp_hot_labeled_sample_future_added_heat_osd_p50_weighted_avg");
-    dump_weighted_x10000(
-      "hp_cold_labeled_sample_future_added_heat_osd_p99_weighted_avg");
-    dump_weighted_x10000(
-      "hp_cold_labeled_sample_future_added_heat_osd_p95_weighted_avg");
-    dump_weighted_x10000(
-      "hp_cold_labeled_sample_future_added_heat_osd_p50_weighted_avg");
     f->close_section();
 
     f->open_object_section("prediction");
@@ -2026,13 +1952,6 @@ bool DaemonServer::_handle_command(
     hp_dump_float(f.get(), "hp_eval_actual_hot_percent", hp_percent(tp + fn, labeled_total));
     f->dump_unsigned("hp_predict_error_count",
                      summary["hp_predict_error_count"]);
-    {
-      uint64_t weight = weighted_count["hp_hot_predict_threshold_avg"];
-      hp_dump_float(f.get(), "hp_hot_predict_threshold_avg",
-                    weight > 0 ? hp_from_x10000(
-                      weighted_sum["hp_hot_predict_threshold_avg"] /
-                      weight) : 0.0);
-    }
     {
       uint64_t weight =
         weighted_count["hp_actual_hot_avg_pred_hot_percent"];
@@ -2057,6 +1976,21 @@ bool DaemonServer::_handle_command(
     f->dump_unsigned("hp_train_queue_length", summary["hp_train_queue_length"]);
     f->dump_unsigned("hp_train_drop_count", summary["hp_train_drop_count"]);
     f->dump_unsigned("hp_snapshot_publish_count", summary["hp_snapshot_publish_count"]);
+    f->close_section();
+
+    f->open_object_section("model_adaptation");
+    f->dump_unsigned("hp_arf_warning_count",
+                     summary["hp_arf_warning_count"]);
+    f->dump_unsigned("hp_arf_drift_count",
+                     summary["hp_arf_drift_count"]);
+    f->dump_unsigned("hp_arf_background_promotion_count",
+                     summary["hp_arf_background_promotion_count"]);
+    f->dump_unsigned("hp_arf_background_discard_count",
+                     summary["hp_arf_background_discard_count"]);
+    f->dump_unsigned("hp_arf_background_training_update_count",
+                     summary["hp_arf_background_training_update_count"]);
+    f->dump_unsigned("hp_arf_active_background_count",
+                     summary["hp_arf_active_background_count"]);
     f->close_section();
 
     f->open_object_section("latency");
@@ -2105,7 +2039,13 @@ bool DaemonServer::_handle_command(
 
     std::vector<int32_t> sent_osds;
     std::vector<int32_t> missing_osds;
-    const std::string hp_cmd = "{\"prefix\":\"" + osd_prefix + "\"}";
+    std::ostringstream hp_cmd_stream;
+    JSONFormatter hp_cmd_formatter;
+    hp_cmd_formatter.open_object_section("command");
+    hp_cmd_formatter.dump_string("prefix", osd_prefix);
+    hp_cmd_formatter.close_section();
+    hp_cmd_formatter.flush(hp_cmd_stream);
+    const std::string hp_cmd = hp_cmd_stream.str();
     for (auto osd : up_osds) {
       auto p = osd_cons.find(osd);
       if (p == osd_cons.end() || p->second.empty()) {
