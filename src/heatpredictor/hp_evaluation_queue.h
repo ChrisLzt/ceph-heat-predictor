@@ -15,13 +15,9 @@
 #include <utility>
 #include <vector>
 
-#include <ext/pb_ds/assoc_container.hpp>
-#include <ext/pb_ds/tree_policy.hpp>
-
 #include "common/debug.h"
 #include "hp_config.h"
-#include "hp_otsu_histogram.h"
-#include "hp_prediction_threshold.h"
+#include "hp_features.h"
 #include "hp_score_otsu_histogram.h"
 #include "hp_types.h"
 
@@ -44,9 +40,12 @@ public:
         bool label_complete;
         uint64_t enqueue_time_ns;
         int actual_label;
-        double training_weight;
         uint64_t future_window_access_count;
-        double future_window_added_heat;
+        uint64_t label_deadline_ns;
+        uint64_t label_completion_time_ns;
+        double label_heat;
+        double label_heat_threshold;
+        bool cold_start_fallback;
 
         PendingEvaluation(PredictionSample item, bool prediction_complete, uint64_t enqueue_time_ns = 0) :
                 item(std::move(item)),
@@ -54,9 +53,12 @@ public:
                 label_complete(false),
                 enqueue_time_ns(enqueue_time_ns),
                 actual_label(0),
-                training_weight(1.0),
                 future_window_access_count(0),
-                future_window_added_heat(0.0) {}
+                label_deadline_ns(0),
+                label_completion_time_ns(0),
+                label_heat(0.0),
+                label_heat_threshold(HP_HEAT_INCREMENT),
+                cold_start_fallback(false) {}
         PendingEvaluation(const PendingEvaluation&) = delete;
         PendingEvaluation& operator=(const PendingEvaluation&) = delete;
     };
@@ -83,9 +85,6 @@ public:
     double otsu_candidate_threshold_score = 0.0;
     bool otsu_candidate_available = false;
     uint64_t hot_threshold_method;
-    double otsu_separation;
-    double otsu_confidence;
-    double otsu_sharpness_confidence;
     bool otsu_ema_time_initialized = false;
     uint64_t last_otsu_ema_update_time_ns = 0;
     bool otsu_recompute_time_initialized = false;
@@ -96,103 +95,46 @@ public:
     uint64_t future_label_window_ns;
     size_t pending_evaluation_capacity;
     uint64_t evaluation_drop_count_value = 0;
-    uint64_t short_access_window_ns;
     size_t lru_capacity;
-    HpPredictionThresholdCalibrator prediction_calibrator;
 
     std::list<PendingEvaluation> pending_evaluations;
     std::list<PendingEvaluation>::iterator next_deadline;
     size_t pending_deadline_count = 0;
-    std::deque<AccessWindowEntry> short_access_window_entries;
     std::deque<AccessWindowEntry> long_access_window_entries;
     std::deque<ThresholdHeatVersion> threshold_heat_history;
     std::unordered_map<uint64_t, ObjectHeatState> heat_map;
     std::list<uint64_t> lru_list;
 
     size_t heat_label_threshold_object_capacity;
-    typedef __gnu_pbds::tree<
-        std::pair<double, uint64_t>,
-        __gnu_pbds::null_type,
-        std::less<std::pair<double, uint64_t>>,
-        __gnu_pbds::rb_tree_tag,
-        __gnu_pbds::tree_order_statistics_node_update
-    > pbds_set;
-    pbds_set threshold_order_stats;
     struct ThresholdWindowEntry {
-        std::pair<double, uint64_t> score;
         HpScoreOtsuHistogram::AbsoluteBin otsu_bin;
         std::list<uint64_t>::iterator order_position;
     };
     std::list<uint64_t> threshold_order;
     std::unordered_map<uint64_t, ThresholdWindowEntry> threshold_entries_by_key;
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
     HpScoreOtsuHistogram score_otsu_histogram;
-#else
-    HpOtsuHistogram otsu_histogram;
-#endif
-    uint64_t pbds_counter = 0;
     uint64_t threshold_observation_count = 0;
-    bool legacy_otsu_ema_initialized = false;
-    double legacy_otsu_score_ema = 0.0;
 
     EvaluationQueue(
             uint64_t heat_decay_horizon_ns = HP_HEAT_DECAY_HORIZON_NS,
             size_t lru_capacity = HP_LRU_CAPACITY,
             double heat_label_threshold = HP_HEAT_INCREMENT,
             double heat_increment = HP_HEAT_INCREMENT,
-            uint64_t short_access_window_ns =
-                HP_SHORT_ACCESS_WINDOW_NS,
             uint64_t future_label_window_ns = HP_FUTURE_LABEL_WINDOW_NS,
             size_t pending_evaluation_capacity = HP_PENDING_EVALUATION_CAPACITY) :
             heat_label_threshold(heat_label_threshold),
             otsu_candidate_threshold(0.0),
             hot_threshold_method(HP_THRESHOLD_METHOD_INITIALIZING),
-            otsu_separation(0.0),
-            otsu_confidence(0.0),
-            otsu_sharpness_confidence(0.0),
             heat_decay_log_factor_per_ns(
                 hp_heat_decay_log_factor_per_ns(heat_decay_horizon_ns)),
             heat_increment(heat_increment),
             heat_decay_horizon_ns(heat_decay_horizon_ns),
             future_label_window_ns(future_label_window_ns),
             pending_evaluation_capacity(pending_evaluation_capacity),
-            short_access_window_ns(short_access_window_ns),
             lru_capacity(lru_capacity),
             next_deadline(pending_evaluations.end()),
             heat_label_threshold_object_capacity(
-                HP_HEAT_LABEL_THRESHOLD_OBJECT_CAPACITY) {
-#if HP_ENABLE_ACCESS_RATE_CHANGE
-        ceph_assert(short_access_window_ns > 0);
-#endif
-    }
-
-    double hot_predict_threshold() const {
-#if HP_ENABLE_PREDICTION_CALIBRATION
-        return prediction_calibrator.threshold();
-#else
-        return HP_HOT_PREDICT_THRESHOLD;
-#endif
-    }
-
-    double hot_predict_threshold_target() const {
-#if HP_ENABLE_PREDICTION_CALIBRATION
-        return prediction_calibrator.target_threshold();
-#else
-        return HP_HOT_PREDICT_THRESHOLD;
-#endif
-    }
-
-    size_t prediction_calibration_size() const {
-        return prediction_calibrator.size();
-    }
-
-    double prediction_calibration_current_accuracy() const {
-        return prediction_calibrator.current_accuracy();
-    }
-
-    double prediction_calibration_target_accuracy() const {
-        return prediction_calibrator.target_accuracy();
-    }
+                HP_HEAT_LABEL_THRESHOLD_OBJECT_CAPACITY) {}
 
     double decay_heat(
             double last_heat, uint64_t last_ts, uint64_t cur_ts) const {
@@ -240,7 +182,6 @@ public:
     }
 
     double heat_label_threshold_for_label(uint64_t deadline_ns) const {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         if (threshold_heat_history.empty()) {
             return heat_label_threshold_at(deadline_ns);
         }
@@ -256,43 +197,6 @@ public:
         }
         --upper;
         return upper->heat;
-#else
-        return heat_label_threshold_at(deadline_ns);
-#endif
-    }
-
-    static double otsu_sharpness_confidence_for(
-            const HpOtsuResult& result) {
-        if (result.vote_count == 0) {
-            return 0.0;
-        }
-        const double ambiguous_ratio =
-            static_cast<double>(result.ambiguous_vote_count) /
-            static_cast<double>(result.vote_count);
-        return std::clamp(
-            1.0 - ambiguous_ratio /
-                HP_OTSU_SHARPNESS_FULL_AMBIGUOUS_RATIO,
-            0.0,
-            1.0);
-    }
-
-    static double otsu_total_confidence_for(
-            double separation_confidence,
-            double sharpness_confidence) {
-        separation_confidence = std::clamp(
-            separation_confidence, 0.0, 1.0);
-        sharpness_confidence = std::clamp(
-            sharpness_confidence, 0.0, 1.0);
-        if (separation_confidence == 0.0 ||
-            sharpness_confidence == 0.0) {
-            return 0.0;
-        }
-        return std::pow(
-                separation_confidence,
-                HP_OTSU_SEPARATION_CONFIDENCE_WEIGHT) *
-            std::pow(
-                sharpness_confidence,
-                HP_OTSU_SHARPNESS_CONFIDENCE_WEIGHT);
     }
 
     static double ema_gain_for_elapsed(
@@ -311,7 +215,6 @@ public:
     }
 
     void update_hot_threshold(uint64_t timestamp) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         initialize_heat_threshold(timestamp);
         maintain_score_otsu_lower_bound(timestamp);
         const size_t vote_count = score_otsu_histogram.size();
@@ -323,19 +226,8 @@ public:
         }
 
         auto result = score_otsu_histogram.otsu_result();
-        if (!result.has_value()
-#if HP_OTSU_PROFILE == HP_OTSU_PROFILE_LEGACY
-            || result->separation < HP_LEGACY_OTSU_MIN_SEPARATION
-#endif
-        ) {
+        if (!result.has_value()) {
             clear_otsu_candidate_state();
-#if HP_OTSU_PROFILE == HP_OTSU_PROFILE_LEGACY
-            if (!threshold_order_stats.empty()) {
-                heat_label_threshold = legacy_quantile_threshold(timestamp);
-                publish_heat_label_threshold(
-                    heat_label_threshold, timestamp);
-            }
-#endif
             hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
             return;
         }
@@ -347,19 +239,6 @@ public:
                 otsu_candidate_threshold_score,
                 timestamp,
                 heat_decay_log_factor_per_ns);
-        otsu_separation = result->separation;
-        otsu_sharpness_confidence =
-            otsu_sharpness_confidence_for(*result);
-        otsu_confidence = otsu_total_confidence_for(
-            otsu_separation, otsu_sharpness_confidence);
-        const double reference_gain =
-#if HP_OTSU_PROFILE == HP_OTSU_PROFILE_LEGACY
-            HP_LEGACY_OTSU_EMA_ALPHA;
-#else
-            HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA
-            ? HP_OTSU_FIXED_EMA_ALPHA
-            : HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA * otsu_confidence;
-#endif
         const uint64_t effective_timestamp = otsu_ema_time_initialized
             ? std::max(timestamp, last_otsu_ema_update_time_ns)
             : timestamp;
@@ -367,7 +246,7 @@ public:
             ? effective_timestamp - last_otsu_ema_update_time_ns
             : HP_OTSU_EMA_REFERENCE_INTERVAL_NS;
         const double gain = ema_gain_for_elapsed(
-            reference_gain, elapsed_ns);
+            HP_OTSU_EMA_ALPHA, elapsed_ns);
         otsu_ema_time_initialized = true;
         last_otsu_ema_update_time_ns = effective_timestamp;
         if (gain > std::numeric_limits<double>::epsilon()) {
@@ -384,95 +263,6 @@ public:
                 effective_timestamp);
         }
         hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
-#else
-#if HP_OTSU_PROFILE != HP_OTSU_PROFILE_LEGACY
-        const size_t vote_count = otsu_histogram.size();
-        if (vote_count < HP_OTSU_MIN_VOTES) {
-            clear_otsu_candidate_state();
-            hot_threshold_method = HP_THRESHOLD_METHOD_INITIALIZING;
-            return;
-        }
-
-        auto result = otsu_histogram.otsu_result();
-        if (!result.has_value()) {
-            clear_otsu_candidate_state();
-            hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
-            return;
-        }
-
-        otsu_candidate_threshold =
-            HpOtsuHistogram::heat_for_score(result->threshold_score);
-        otsu_candidate_available = true;
-        otsu_separation = result->separation;
-        otsu_sharpness_confidence =
-            otsu_sharpness_confidence_for(*result);
-        otsu_confidence = otsu_total_confidence_for(
-            otsu_separation,
-            otsu_sharpness_confidence);
-        const double reference_gain =
-            HP_OTSU_PROFILE == HP_OTSU_PROFILE_FIXED_EMA
-            ? HP_OTSU_FIXED_EMA_ALPHA
-            : HP_OTSU_CONFIDENCE_MAX_UPDATE_ALPHA * otsu_confidence;
-        const uint64_t effective_timestamp = otsu_ema_time_initialized
-            ? std::max(timestamp, last_otsu_ema_update_time_ns)
-            : timestamp;
-        const uint64_t elapsed_ns = otsu_ema_time_initialized
-            ? effective_timestamp - last_otsu_ema_update_time_ns
-            : HP_OTSU_EMA_REFERENCE_INTERVAL_NS;
-        const double gain = ema_gain_for_elapsed(
-            reference_gain, elapsed_ns);
-        otsu_ema_time_initialized = true;
-        last_otsu_ema_update_time_ns = effective_timestamp;
-        if (gain <= std::numeric_limits<double>::epsilon()) {
-            hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
-            return;
-        }
-
-        const double effective_score =
-            HpOtsuHistogram::score_for_heat(heat_label_threshold);
-        const double next_effective_score = effective_score +
-            gain * (result->threshold_score - effective_score);
-        heat_label_threshold =
-            HpOtsuHistogram::heat_for_score(next_effective_score);
-        hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
-#else
-        if (otsu_histogram.size() < HP_OTSU_MIN_VOTES) {
-            clear_otsu_candidate_state();
-            hot_threshold_method = HP_THRESHOLD_METHOD_INITIALIZING;
-            return;
-        }
-
-        auto result = otsu_histogram.otsu_result();
-        if (!result.has_value() ||
-            result->separation < HP_LEGACY_OTSU_MIN_SEPARATION) {
-            clear_otsu_candidate_state();
-            if (!threshold_order_stats.empty()) {
-                heat_label_threshold = legacy_quantile_threshold(timestamp);
-            }
-            hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
-            return;
-        }
-
-        otsu_candidate_threshold =
-            HpOtsuHistogram::heat_for_score(result->threshold_score);
-        otsu_candidate_available = true;
-        otsu_separation = result->separation;
-        otsu_sharpness_confidence =
-            otsu_sharpness_confidence_for(*result);
-        otsu_confidence = 0.0;
-        if (!legacy_otsu_ema_initialized) {
-            legacy_otsu_score_ema = result->threshold_score;
-            legacy_otsu_ema_initialized = true;
-        } else {
-            legacy_otsu_score_ema =
-                HP_LEGACY_OTSU_EMA_ALPHA * result->threshold_score +
-                (1.0 - HP_LEGACY_OTSU_EMA_ALPHA) * legacy_otsu_score_ema;
-        }
-        heat_label_threshold =
-            HpOtsuHistogram::heat_for_score(legacy_otsu_score_ema);
-        hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
-#endif
-#endif
     }
 
     void record_object_heat(uint64_t key, double heat, uint64_t timestamp) {
@@ -480,29 +270,17 @@ public:
             return;
         }
 
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         initialize_heat_threshold(timestamp);
         maintain_score_otsu_lower_bound(timestamp);
-#endif
         auto old = threshold_entries_by_key.find(key);
         if (old != threshold_entries_by_key.end()) {
             erase_threshold_entry(old, timestamp);
         }
 
-        auto entry = std::make_pair(
-            threshold_score_for_heat(heat, timestamp),
-            ++pbds_counter);
-
-        threshold_order_stats.insert(entry);
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         const auto otsu_bin = score_otsu_histogram.insert(
             total_heat_score_for_otsu(heat, timestamp));
-#else
-        const HpScoreOtsuHistogram::AbsoluteBin otsu_bin = 0;
-#endif
         threshold_order.push_back(key);
         threshold_entries_by_key[key] = ThresholdWindowEntry{
-            entry,
             otsu_bin,
             std::prev(threshold_order.end())
         };
@@ -515,7 +293,6 @@ public:
             erase_threshold_entry(victim_it, timestamp);
         }
 
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         ++threshold_observation_count;
         if (!otsu_recompute_time_initialized) {
             otsu_recompute_time_initialized = true;
@@ -530,85 +307,9 @@ public:
             update_hot_threshold(timestamp);
             last_otsu_recompute_time_ns = timestamp;
         }
-#endif
-    }
-
-    void record_completed_heat(
-            uint64_t object_key,
-            double future_window_added_heat,
-            double deadline_total_heat,
-            uint64_t sample_time_ns,
-            uint64_t now_ns) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
-        (void)object_key;
-        (void)future_window_added_heat;
-        (void)deadline_total_heat;
-        (void)sample_time_ns;
-        (void)now_ns;
-        return;
-#else
-        const bool history_changed = otsu_histogram.advance_to(now_ns);
-        const double observed_heat = future_window_added_heat;
-        (void)deadline_total_heat;
-        if (!otsu_histogram.observe(
-                object_key,
-                observed_heat,
-                sample_time_ns,
-                now_ns)) {
-            if (history_changed) {
-                update_hot_threshold(now_ns);
-                otsu_recompute_time_initialized = true;
-                last_otsu_recompute_time_ns = now_ns;
-            }
-            return;
-        }
-        ++threshold_observation_count;
-        if (!otsu_recompute_time_initialized) {
-            otsu_recompute_time_initialized = true;
-            last_otsu_recompute_time_ns = now_ns;
-        }
-        const bool time_due = now_ns >= last_otsu_recompute_time_ns &&
-            now_ns - last_otsu_recompute_time_ns >=
-                HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS;
-        if (history_changed ||
-            otsu_histogram.size() <= HP_OTSU_EAGER_OBJECTS ||
-            threshold_observation_count % HP_OTSU_UPDATE_INTERVAL == 0 ||
-            time_due) {
-            update_hot_threshold(now_ns);
-            last_otsu_recompute_time_ns = now_ns;
-        }
-#endif
-    }
-
-    void record_future_added_heat(
-            uint64_t object_key,
-            double future_window_added_heat,
-            uint64_t sample_time_ns,
-            uint64_t now_ns) {
-        record_completed_heat(
-            object_key,
-            future_window_added_heat,
-            future_window_added_heat,
-            sample_time_ns,
-            now_ns);
-    }
-
-    double object_heat_percentile(uint64_t key) const {
-        auto entry = threshold_entries_by_key.find(key);
-        if (entry == threshold_entries_by_key.end() ||
-            threshold_order_stats.empty()) {
-            return 0.0;
-        }
-        const auto upper_bound = std::make_pair(
-            entry->second.score.first,
-            std::numeric_limits<uint64_t>::max());
-        const size_t rank = threshold_order_stats.order_of_key(upper_bound);
-        return static_cast<double>(rank) /
-            static_cast<double>(threshold_order_stats.size());
     }
 
     void advance_otsu_history(uint64_t now_ns) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         initialize_heat_threshold(now_ns);
         maintain_score_otsu_lower_bound(now_ns);
         const bool time_due = otsu_recompute_time_initialized &&
@@ -619,13 +320,6 @@ public:
             update_hot_threshold(now_ns);
             last_otsu_recompute_time_ns = now_ns;
         }
-#else
-        if (otsu_histogram.advance_to(now_ns)) {
-            update_hot_threshold(now_ns);
-            otsu_recompute_time_initialized = true;
-            last_otsu_recompute_time_ns = now_ns;
-        }
-#endif
     }
 
     void prepare_features(PredictionSample& item, uint64_t now_ns) {
@@ -641,7 +335,6 @@ public:
                     1,
                     0,
                     0,
-                    0,
                     lru_list.end()
                 });
             ceph_assert(ok);
@@ -654,7 +347,6 @@ public:
                 : 0;
             if (state.lru_position != lru_list.end()) {
                 ceph_assert(state.pending_evaluation_count == 0);
-                ceph_assert(state.short_window_access_count == 0);
                 ceph_assert(state.long_window_access_count == 0);
                 lru_list.erase(state.lru_position);
                 state.lru_position = lru_list.end();
@@ -669,25 +361,10 @@ public:
         const ObjectHeatState& state = it->second;
         item.heat_after_current_access = state.heat;
         item.tracked_access_count = state.tracked_access_count;
-        item.long_window_access_count = state.long_window_access_count;
-        item.short_window_access_count =
-            state.short_window_access_count;
-        item.heat_percentile = 0.0;
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL || \
-    HP_ENABLE_HEAT_PERCENTILE || HP_OTSU_PROFILE == HP_OTSU_PROFILE_LEGACY
         record_object_heat(item.object_key_hash, state.heat, now_ns);
-#endif
-#if HP_ENABLE_HEAT_PERCENTILE
-        item.heat_percentile = object_heat_percentile(item.object_key_hash);
-#endif
         item.heat_label_threshold_at_prediction =
             heat_label_threshold_at(now_ns);
 
-#if HP_ENABLE_ACCESS_RATE_CHANGE
-        it->second.short_window_access_count++;
-        short_access_window_entries.push_back(
-            AccessWindowEntry{item.object_key_hash, now_ns});
-#endif
         it->second.long_window_access_count++;
         long_access_window_entries.push_back(
             AccessWindowEntry{item.object_key_hash, now_ns});
@@ -712,9 +389,6 @@ public:
 
     void expire_due_access_windows(uint64_t now_ns) {
         expire_long_access_window(now_ns);
-#if HP_ENABLE_ACCESS_RATE_CHANGE
-        expire_short_access_window(now_ns);
-#endif
     }
 
     ExpirySchedule expiry_schedule(uint64_t now_ns) const {
@@ -735,13 +409,6 @@ public:
             include_deadline(
                 next_deadline->enqueue_time_ns, future_label_window_ns);
         }
-#if HP_ENABLE_ACCESS_RATE_CHANGE
-        if (!short_access_window_entries.empty()) {
-            include_deadline(
-                short_access_window_entries.front().access_time_ns,
-                short_access_window_ns);
-        }
-#endif
         if (!long_access_window_entries.empty()) {
             include_deadline(
                 long_access_window_entries.front().access_time_ns,
@@ -787,11 +454,13 @@ public:
     std::vector<EvaluatedSample> complete_prediction(
             PendingIterator position,
             double predicted_hot_probability,
-            int predicted_label) {
+            int predicted_label,
+            bool cold_start_fallback = false) {
         ceph_assert(position != pending_evaluations.end());
         ceph_assert(!position->prediction_complete);
         position->item.predicted_hot_probability = predicted_hot_probability;
         position->item.predicted_label = predicted_label;
+        position->cold_start_fallback = cold_start_fallback;
         position->prediction_complete = true;
         if (!position->label_complete) {
             return {};
@@ -830,18 +499,10 @@ public:
     size_t heat_state_size() const { return heat_map.size(); }
     size_t lru_size() const { return lru_list.size(); }
     size_t otsu_histogram_bin_count() const {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         return score_otsu_histogram.bin_count();
-#else
-        return otsu_histogram.bin_count();
-#endif
     }
     size_t otsu_histogram_vote_count() const {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         return score_otsu_histogram.size();
-#else
-        return otsu_histogram.size();
-#endif
     }
 
 private:
@@ -864,24 +525,6 @@ private:
         }
     }
 
-    void expire_short_access_window(uint64_t now_ns) {
-        while (!short_access_window_entries.empty()) {
-            const AccessWindowEntry& entry = short_access_window_entries.front();
-            if (now_ns < entry.access_time_ns ||
-                now_ns - entry.access_time_ns < short_access_window_ns) {
-                break;
-            }
-
-            const uint64_t expired_key = entry.object_key_hash;
-            short_access_window_entries.pop_front();
-            auto expired = heat_map.find(expired_key);
-            ceph_assert(expired != heat_map.end());
-            ceph_assert(expired->second.short_window_access_count > 0);
-            expired->second.short_window_access_count--;
-            make_idle_if_unprotected(expired_key, expired->second);
-        }
-    }
-
     void enforce_lru_capacity() {
         while (lru_list.size() > lru_capacity) {
             uint64_t victim = lru_list.front();
@@ -890,8 +533,6 @@ private:
             ceph_assert(victim_it != heat_map.end());
             ceph_assert(victim_it->second.pending_evaluation_count == 0);
             ceph_assert(
-                victim_it->second.short_window_access_count == 0);
-            ceph_assert(
                 victim_it->second.long_window_access_count == 0);
             heat_map.erase(victim_it);
         }
@@ -899,7 +540,6 @@ private:
 
     void make_idle_if_unprotected(uint64_t key, ObjectHeatState& state) {
         if (state.pending_evaluation_count != 0 ||
-            state.short_window_access_count != 0 ||
             state.long_window_access_count != 0) {
             return;
         }
@@ -928,24 +568,16 @@ private:
             : expired.enqueue_time_ns + future_label_window_ns;
         double expired_total_heat = decay_heat(
             expired_state.heat, expired_state.last_access_time_ns, deadline_ns);
-        const double expired_entry_heat = decay_heat(
-            expired.item.heat_after_current_access,
-            expired.enqueue_time_ns,
-            deadline_ns);
-        expired.future_window_added_heat = std::max(
-            0.0, expired_total_heat - expired_entry_heat);
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
-        expired.actual_label = expired_total_heat >
-            heat_label_threshold_for_label(deadline_ns) ? 1 : 0;
-#else
-        expired.actual_label = expired.future_window_added_heat >
-            heat_label_threshold_at(deadline_ns) ? 1 : 0;
-#endif
+        expired.label_heat = expired_total_heat;
+        expired.label_heat_threshold =
+            heat_label_threshold_for_label(deadline_ns);
+        expired.actual_label = expired.label_heat >
+            expired.label_heat_threshold ? 1 : 0;
+        expired.label_deadline_ns = deadline_ns;
+        expired.label_completion_time_ns = now_ns;
         expired.future_window_access_count =
             expired_state.tracked_access_count -
             expired.item.tracked_access_count;
-        expired.training_weight =
-            expired.actual_label == 1 ? HP_HOT_CLASS_WEIGHT : 1.0;
         expired.label_complete = true;
 
         expired_state.pending_evaluation_count--;
@@ -953,13 +585,6 @@ private:
         make_idle_if_unprotected(
             expired.item.object_key_hash, expired_state);
         prune_threshold_heat_history();
-
-        record_completed_heat(
-            expired.item.object_key_hash,
-            expired.future_window_added_heat,
-            expired_total_heat,
-            deadline_ns,
-            now_ns);
 
         if (!expired.prediction_complete) {
             return std::nullopt;
@@ -972,18 +597,17 @@ private:
         PendingEvaluation& completed = *position;
         ceph_assert(completed.prediction_complete);
         ceph_assert(completed.label_complete);
-#if HP_ENABLE_PREDICTION_CALIBRATION
-        prediction_calibrator.observe(
-            completed.item.predicted_hot_probability,
-            completed.actual_label);
-#endif
 
         EvaluatedSample evaluated{
             std::move(completed.item),
             completed.actual_label,
-            completed.training_weight,
             completed.future_window_access_count,
-            completed.future_window_added_heat
+            completed.enqueue_time_ns,
+            completed.label_deadline_ns,
+            completed.label_completion_time_ns,
+            completed.label_heat,
+            completed.label_heat_threshold,
+            completed.cold_start_fallback
         };
         pending_evaluations.erase(position);
         return evaluated;
@@ -1014,12 +638,6 @@ private:
         return inserted;
     }
 
-    double threshold_score_for_heat(
-            double heat,
-            uint64_t timestamp) const {
-        return to_heat_score(heat, timestamp);
-    }
-
     double total_heat_score_for_otsu(
             double heat,
             uint64_t timestamp) const {
@@ -1028,7 +646,6 @@ private:
     }
 
     void initialize_heat_threshold(uint64_t timestamp) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         if (!threshold_heat_history.empty()) {
             return;
         }
@@ -1037,15 +654,11 @@ private:
             HP_OTSU_TOTAL_HEAT_MIN,
             HP_OTSU_TOTAL_HEAT_MAX);
         publish_heat_label_threshold(heat_label_threshold, timestamp);
-#else
-        (void)timestamp;
-#endif
     }
 
     void publish_heat_label_threshold(
             double heat,
             uint64_t effective_time_ns) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         heat_label_threshold = std::clamp(
             heat, HP_OTSU_TOTAL_HEAT_MIN, HP_OTSU_TOTAL_HEAT_MAX);
         if (!threshold_heat_history.empty() &&
@@ -1059,14 +672,9 @@ private:
                         effective_time_ns);
         threshold_heat_history.push_back(
             ThresholdHeatVersion{effective_time_ns, heat_label_threshold});
-#else
-        (void)heat;
-        (void)effective_time_ns;
-#endif
     }
 
     void prune_threshold_heat_history() {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         if (threshold_heat_history.size() <= 1) {
             return;
         }
@@ -1087,28 +695,18 @@ private:
                    earliest_required_deadline) {
             threshold_heat_history.pop_front();
         }
-#endif
     }
 
     void maintain_score_otsu_lower_bound(uint64_t timestamp) {
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         score_otsu_histogram.advance_lower_bound(
             total_heat_score_for_otsu(HP_OTSU_TOTAL_HEAT_MIN, timestamp));
-#else
-        (void)timestamp;
-#endif
     }
 
     void erase_threshold_entry(
             std::unordered_map<uint64_t, ThresholdWindowEntry>::iterator it,
             uint64_t timestamp) {
-        threshold_order_stats.erase(it->second.score);
-#if HP_OTSU_DATA_SOURCE == HP_OTSU_DATA_SOURCE_OBJECT_TOTAL
         maintain_score_otsu_lower_bound(timestamp);
         score_otsu_histogram.erase(it->second.otsu_bin);
-#else
-        (void)timestamp;
-#endif
         threshold_order.erase(it->second.order_position);
         threshold_entries_by_key.erase(it);
     }
@@ -1117,28 +715,8 @@ private:
         otsu_candidate_threshold = 0.0;
         otsu_candidate_threshold_score = 0.0;
         otsu_candidate_available = false;
-        otsu_separation = 0.0;
-        otsu_confidence = 0.0;
-        otsu_sharpness_confidence = 0.0;
-        legacy_otsu_ema_initialized = false;
-        legacy_otsu_score_ema = 0.0;
         otsu_ema_time_initialized = false;
         last_otsu_ema_update_time_ns = 0;
-    }
-
-    double legacy_quantile_threshold(uint64_t timestamp) const {
-        ceph_assert(!threshold_order_stats.empty());
-        size_t index = static_cast<size_t>(
-            HP_LEGACY_HOT_QUANTILE * threshold_order_stats.size());
-        if (index >= threshold_order_stats.size()) {
-            index = threshold_order_stats.size() - 1;
-        }
-        const auto entry = threshold_order_stats.find_by_order(index);
-        ceph_assert(entry != threshold_order_stats.end());
-        return std::clamp(
-            from_heat_score(entry->first, timestamp),
-            HP_LEGACY_HEAT_MIN,
-            HP_LEGACY_HEAT_MAX);
     }
 };
 

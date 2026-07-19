@@ -11,7 +11,10 @@
 
 #include "common/debug.h"
 #include "hp_config.h"
-#include "hp_otsu_histogram.h"
+
+struct HpOtsuResult {
+    double threshold_score;
+};
 
 class HpScoreOtsuHistogram {
 public:
@@ -143,9 +146,7 @@ public:
         const size_t first_bin = next_occupied_bin(0);
         ceph_assert(first_bin < bins.size());
         const double origin_score = bin_center(first_bin);
-        const double count = static_cast<double>(total_count);
         double shifted_total_sum = 0.0;
-        double shifted_total_square_sum = 0.0;
         for (size_t bin = first_bin; bin < bins.size(); ++bin) {
             if (bins[bin] == 0) {
                 continue;
@@ -153,61 +154,27 @@ public:
             const double shifted_center = bin_center(bin) - origin_score;
             shifted_total_sum += shifted_center *
                 static_cast<double>(bins[bin]);
-            shifted_total_square_sum += shifted_center * shifted_center *
-                static_cast<double>(bins[bin]);
         }
 
-        const double total_mean = shifted_total_sum / count;
-        const double total_variance = shifted_total_square_sum / count -
-            total_mean * total_mean;
-        if (total_variance <= 0.0) {
-            return std::nullopt;
-        }
-
-        uint64_t best_lhs_count = 0;
         double best_between_variance = -1.0;
         double best_threshold_score = 0.0;
         for_each_partition(
             shifted_total_sum,
             [&](size_t lhs_bin,
                 size_t rhs_bin,
-                uint64_t lhs_count,
+                uint64_t,
                 double between_variance) {
                 if (between_variance > best_between_variance) {
                     best_between_variance = between_variance;
                     best_threshold_score =
                         (bin_center(lhs_bin) + bin_center(rhs_bin)) / 2.0;
-                    best_lhs_count = lhs_count;
                 }
             });
         if (best_between_variance < 0.0) {
             return std::nullopt;
         }
 
-        const double near_optimal_minimum =
-            HP_OTSU_NEAR_OPTIMAL_RATIO * best_between_variance;
-        uint64_t near_optimal_min_lhs_count = best_lhs_count;
-        uint64_t near_optimal_max_lhs_count = best_lhs_count;
-        for_each_partition(
-            shifted_total_sum,
-            [&](size_t,
-                size_t,
-                uint64_t lhs_count,
-                double between_variance) {
-                if (between_variance >= near_optimal_minimum) {
-                    near_optimal_min_lhs_count = std::min(
-                        near_optimal_min_lhs_count, lhs_count);
-                    near_optimal_max_lhs_count = std::max(
-                        near_optimal_max_lhs_count, lhs_count);
-                }
-            });
-
-        return HpOtsuResult{
-            best_threshold_score,
-            std::clamp(best_between_variance / total_variance, 0.0, 1.0),
-            near_optimal_max_lhs_count - near_optimal_min_lhs_count,
-            total_count
-        };
+        return HpOtsuResult{best_threshold_score};
     }
 
 private:

@@ -11,9 +11,6 @@ struct PredictionSample {
     double heat_label_threshold_at_prediction;
     uint64_t tracked_access_count;
     uint64_t time_since_previous_access_ns;
-    uint64_t long_window_access_count;
-    uint64_t short_window_access_count;
-    double heat_percentile;
     double predicted_hot_probability;
     int predicted_label;
 };
@@ -23,7 +20,6 @@ struct ObjectHeatState {
     uint64_t last_access_time_ns;
     uint64_t tracked_access_count;
     uint64_t pending_evaluation_count;
-    uint64_t short_window_access_count;
     uint64_t long_window_access_count;
     std::list<uint64_t>::iterator lru_position;
 };
@@ -31,9 +27,13 @@ struct ObjectHeatState {
 struct EvaluatedSample {
     PredictionSample item;
     int label;
-    double training_weight;
     uint64_t future_window_access_count;
-    double future_window_added_heat;
+    uint64_t prediction_time_ns;
+    uint64_t label_deadline_ns;
+    uint64_t label_completion_time_ns;
+    double label_heat;
+    double label_heat_threshold;
+    bool cold_start_fallback;
 };
 
 struct HpDistributionSummary {
@@ -48,7 +48,6 @@ struct HpDistributionSummary {
 struct TrainingSample {
     PredictionSample item;
     int label;
-    double weight;
 };
 
 struct HeatPredictorStats {
@@ -68,26 +67,13 @@ struct HeatPredictorStats {
     uint64_t false_negative;
     uint64_t hot_labeled_sample_future_access_count_sum;
     uint64_t cold_labeled_sample_future_access_count_sum;
-    // Exported as the hot/cold labeled-sample average future added heat.
-    double hot_labeled_sample_future_added_heat_sum;
-    double cold_labeled_sample_future_added_heat_sum;
     double hot_labeled_sample_predicted_hot_probability_sum;
     double cold_labeled_sample_predicted_hot_probability_sum;
     HpDistributionSummary hot_labeled_sample_future_access_count;
     HpDistributionSummary cold_labeled_sample_future_access_count;
-    HpDistributionSummary hot_labeled_sample_future_added_heat;
-    HpDistributionSummary cold_labeled_sample_future_added_heat;
     double heat_label_threshold;
     double otsu_candidate_threshold;
-    double otsu_separation;
-    double otsu_confidence;
-    double otsu_sharpness_confidence;
     uint64_t hot_threshold_method;
-    double hot_predict_threshold;
-    double hot_predict_threshold_target;
-    uint64_t predict_calibration_sample_count;
-    double predict_calibration_current_accuracy;
-    double predict_calibration_target_accuracy;
 };
 
 #endif
