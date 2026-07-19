@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "heatpredictor/heat_predictor.h"
+#include "heatpredictor/hp_quantile_window.h"
 
 namespace ceph {
 
@@ -42,19 +43,17 @@ using Clock = std::chrono::steady_clock;
 
 std::vector<double> feature(double a, double b, double c, double d, double e)
 {
+  const std::array<double, 5> values = {a, b, c, d, e};
   std::vector<double> result(NUM_FEATURES, 0.0);
-  result[0] = a;
-  result[1] = b;
-  result[2] = c;
-  result[3] = d;
-  result[4] = e;
+  std::copy_n(
+      values.begin(), std::min(values.size(), result.size()), result.begin());
   return result;
 }
 
 PredictionSample trace_item(uint64_t io_sequence, uint64_t object_key_hash)
 {
   return PredictionSample{
-      io_sequence, object_key_hash, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0.0, 0
+      io_sequence, object_key_hash, 0.0, 0.0, 0, 0, 0, 0, 0.0, 0
   };
 }
 
@@ -130,7 +129,8 @@ ConcurrentEqResult benchmark_serialized_prediction(
         auto evaluated = eq.expire_before_prepare(item, now_ns);
         snapshot.predict_proba_one_into(HeatPredictor::to_feat(item), proba);
         item.predicted_hot_probability = proba.size() > 1 ? proba[1] : 0.0;
-        item.predicted_label = item.predicted_hot_probability >= eq.hot_predict_threshold();
+        item.predicted_label =
+            item.predicted_hot_probability >= HP_HOT_PREDICT_THRESHOLD;
         eq.enqueue(item, now_ns);
         checksums[static_cast<size_t>(thread_id)] += item.predicted_hot_probability;
         for (const auto& sample : evaluated) {
@@ -189,7 +189,6 @@ ConcurrentEqResult benchmark_two_phase_prediction(
           const uint64_t now_ns = index * 1000000ULL;
           item = trace_item(index, index % 12000);
           evaluated = eq.expire_before_prepare(item, now_ns);
-          predict_threshold = eq.hot_predict_threshold();
           auto reservation = eq.reserve_prediction(item, now_ns);
           if (reservation.accepted) {
             position = reservation.position;

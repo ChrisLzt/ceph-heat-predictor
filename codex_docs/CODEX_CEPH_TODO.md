@@ -1,100 +1,55 @@
 # Heat Predictor TODO
 
-当前 baseline 为10秒结束时 object 总热度标签、H0 固定热阈值 EMA `0.10` 和 P0 固定预测阈值
-`0.50`。未来主要研究 D0/D1 新增热度对照以及 H1/P1 动态阈值；另保留一项模型管线
-正确性诊断，对比动态 `StandardScaler + ARF` 和直接 `ARF`。其他 feature、森林参数、
-训练权重、并发和一般性能优化不再列入 TODO，热、冷训练样本权重固定为 `1.0`。
+当前活动 TODO 只保留 baseline 验证和 P1 全 I/O 预测错误诊断。已完成记录在
+`CODEX_CEPH.md`、`TRACE_DATASET.md` 和 ceph-test 报告中，不再把已完成清单塞进 TODO。
+Trace 是 `dev` 的离线设计和工具参考，不是新的活动 TODO。
 
-当前热度、访问间隔、5秒/10秒访问窗口、Otsu score 原点和 EQ 标签均使用单调时间。H0 的
-`0.10` 是每1秒参考区间的 EMA gain；空闲窗口清理和 iterator reservation 已进入
-baseline，不再作为 TODO。`awaiting_prediction` 正常应为0，暂不增加超时或独立上限。
+## A. 冻结项/不再继续
 
-## 测试约束
+- 稳定算法基准固定为：object 总热度 Otsu 和标签、10秒标签窗口、时间归一化固定 EMA
+  `0.10`、固定预测阈值 `0.50`、冷热单位样本权重、25棵树。对应的新增热度、动态预测
+  阈值、动态 EMA 和类别权重实现已从活动源码删除。
+- 已有结论不再重跑：H1/P1 动态阈值、D0/D1、新/总热度数据源、去掉 StandardScaler、
+  减慢热度衰减、同 object 过去窗口/旧标签专用模型、类别权重、森林参数和一般性能调优。
+- 未来 oracle O1/O2 绝不能成为在线 feature；它们只用于离线后验依赖诊断。
+- 不复制已完成实验的详细公式、长结果或历史矩阵；只保留当前决策所需的结论。
+
+## B. Baseline 验证
+
+- 默认模型使用3个已选 feature；未通过 gate 的候选 feature 及其额外 object 状态已经
+  移除，`dev` 继续保留 Trace/replay。
+- [ ] 至少验证 replay/parity 和 L1；发布前必须通过 L2，若行为或指标可能变化再进行一次
+  L3；不得把未通过 gate 的候选发布到 `main`。
+- [x] 2026-07-18 已增加 ARF warning/drift/后台树生命周期遥测，并在三种 no-migration
+  Trace 上比较 R0、grace=50 和更敏感 ADWIN。后两者平均 C2H Recall 只提升
+  `0.49/0.13 pp`，未达到 `+10 pp` gate，因此默认 grace/warning/drift 参数保持 R0，
+  不运行组合参数。报告：
+  `/home/chris/ceph-test/new_workload/hp_runs/reports/20260718_075405_arf_adaptation/REPORT.md`。
+- [x] 2026-07-18 已验证20棵长期树+5棵轮换快速树。5000/10000训练样本生命周期分别
+  触发890/443次重建，但平均C2H Recall相对baseline下降`1.19/0.50 pp`，BAcc均下降
+  `0.10 pp`；默认快速树数量保持0，不再继续用更快ARF遗忘解决C2H。报告：
+  `/home/chris/ceph-test/new_workload/hp_runs/reports/20260718_084512_arf_fast_cohort/REPORT.md`。
+- feature 尚未最终冻结，因此暂不删除 margin、access-rate 和 scaler 的实验
+  profile；最终选择后再精简这些编译期入口。
+
+## C. P1：全 I/O 预测错误诊断
+
+- [x] 以每条 I/O 在预测时刻的结果和10秒后实际标签构造标准
+  `TN/FP/FN/TP`；这些结果不再命名为 C2C/C2H/H2C/H2H，也不解释为 object 状态迁移。
+- [x] 复用已有 MapReduce、GraphChi、HPC no-migration Trace，稳态主区间固定为
+  `[120s,600s)`，不重跑 Vdbench。
+- [x] 离线分析输出全程/稳态矩阵、0.1预测概率分箱、四类结果的 feature 精确分位数、
+  object macro Accuracy 与 Top 1/5/10% 错误集中度、30秒时序。
+- [ ] 根据稳态结果确认主要瓶颈属于概率边界、feature 不可分、少数 object 集中错误，
+  还是局部时间段退化；一次只选择一个证据最强的方向进入受控实验。
+- C2H/H2C 样本量较小，相关 oracle、OSD context、快速树和状态迁移统计暂时冻结；除非
+  全 I/O 证据重新指向该问题，否则不继续优化其 Recall。
+
+## D. 共同实验约束
 
 - 参数以 `src/heatpredictor/hp_config.h` 为准。
-- 五个正式负载为 MapReduce、GraphChi、HPC、AI training、AI inference；均使用
-  `4 MiB` 纯读，速率以各负载当前配置为准。
-- 每个对照实验只改变目标维度；feature、25 棵树、`max_features=NUM_FEATURES`、
-  EQ 10 秒和数据集必须保持一致。
-- 每个 profile 的每个负载只运行一次。巨大误差、计数异常或与历史冲突只写入中文
-  报告，是否复测由用户决定。
-- 每轮开始前 reset 并确认 `active+clean`；结束后等待各 OSD 训练队列清零，保存最终
-  MGR `hp_status.json`。需要阶段诊断的实验额外每10秒保存一次 MGR 快照。
-- `hp_train_drop_count` 必须为 0。报告保留 accuracy、balanced accuracy、precision、
-  recall、预测/实际热比例，并记录真实起止时间。
-- 报告放在 `/home/chris/ceph-test/new_workload/hp_runs/reports/` 的带日期目录中。
-
-## 当前 baseline 与候选
-
-| 维度 | 固定方案 | 动态方案 |
-| --- | --- | --- |
-| 热阈值 EMA | H0：固定 `0.10` | H1：`0.50 * confidence` |
-| 预测阈值 | P0：固定 `0.50` | P1：监督概率直方图动态阈值 |
-
-当前代码固定为 H0P0；H1/P1 只在明确发起后续实验时重新启用。
-
-## 模型管线诊断
-
-- [x] 对比 S0：当前 `StandardScaler + ARF` 与 S1：直接 `ARF`。
-- 动机：在线 scaler 的均值和方差持续变化，但已经写入决策树的历史分裂阈值不会同步
-  变换，可能在阶段切换后造成特征坐标漂移。当前特征已经使用 `log2p1` 压缩，树模型
-  本身也不要求统一量纲，因此直接 ARF 是合理对照。
-- 该实验只改变 scaler，保持特征、标签、Otsu、H0P0、25 棵树、随机种子、数据集和
-  负载配置不变。S0/S1 的五个正式负载各运行一次。
-- 除常规指标外，每10秒采集一次 MGR 累计混淆矩阵，相邻快照作差后按 Vdbench 的真实
-  `Starting RD=` 时间归段。归段时回退10秒标签窗口；报告分别汇总首阶段前30秒冷启动、
-  各阶段前30秒热点切换和其余稳定区间，防止最终累计值掩盖 scaler 对概念迁移的影响。
-- 验收优先级：balanced accuracy 和 accuracy 均不得下降；若差异小于 `0.2` 个百分点，
-  再以预测延迟和实现复杂度决定是否移除 scaler。
-- 2026-07-16 单轮五负载结果：S1 平均 accuracy/balanced accuracy 分别下降
-  `0.29/0.49` 个百分点，预测延迟仅降低 `0.10%`；冷启动 recall 下降 `12.35` 个百分点，
-  稳定阶段基本相当。保留 S0，详见
-  [StandardScaler 消融测试报告](../../ceph-test/new_workload/hp_runs/reports/20260716_063127_scaler_s0_s1/REPORT.md)。
-
-## Trace 数据集
-
-- [ ] 增加可显式开关的已完成评估 I/O trace，用于离线复现标签、特征消融和错误样本分析；
-  正式 baseline 默认关闭，避免改变延迟结果。
-- 每条记录至少包含匿名 object key、预测时单调时间、标签完成时间、预测时 feature、预测
-  热概率、预测阈值、预测类别、最终标签、标签热度、标签热阈值和所属负载阶段。
-- 明确记录 fallback、EQ drop、预测错误等未进入正常混淆矩阵的原因，正常样本与异常样本
-  不得混算。
-- OSD 前台只写有界内存队列，由后台线程批量落盘；队列满时计数并丢 trace，不得阻塞 I/O、
-  预测或训练。reset 时轮换 trace session，防止相邻实验混合。
-- 优先使用定长二进制或结构化批量格式，并提供离线转换脚本；报告记录 schema 版本、代码
-  commit、配置哈希、OSD id 和 trace drop 数。
-
-## Otsu 数据源
-
-当前 D2 baseline 使用每 object 最新总热度：feature、Otsu 和 deadline 标签统一为总热度。
-Otsu 使用800个固定 score bin、宽度 `0.01`，热度范围 `10` 至约 `29810`；每 object
-只保留一票。D0/D1 仅保留为编译期对照，不进入默认部署：
-
-- D0：每个 object 只保留最新的未来新增热度投票；
-- D1：每个已完成 EQ I/O 按未来新增热度投票。
-
-已完成同一组五负载单轮数据源对照：D2 的平均 accuracy/balanced accuracy 为
-`79.13%/78.69%`，优于 D0 的 `77.22%/73.91%` 和 D1 的 `76.70%/74.66%`。
-D2 总热度 feature/Otsu/label 对齐后的单轮五负载验证也已完成，平均
-accuracy/balanced accuracy 为 `81.11%/80.18%`，且没有 EQ、训练 drop 或预测错误。
-该结果改变了标签语义，不能与上一轮作为严格单变量对照；D0/D1 仅在明确要求时重跑。
-
-完整报告：
-[20260715 Otsu 数据源对照](../../ceph-test/new_workload/hp_runs/reports/20260715_074512_otsu_data_source_matrix/REPORT.md)。
-
-D2 对齐验证报告：
-[20260715 Score 总热度 Otsu](../../ceph-test/new_workload/hp_runs/reports/20260715_155808_score_total_heat_otsu/REPORT.md)。
-
-报告需保留 accuracy、balanced accuracy、precision、recall、预测/实际热比例、未来
-访问次数、新增热度、训练样本数、Otsu 保留 object 数以及 EQ/训练 drop。Otsu 数据源对照
-完成前不能把标签比例异常直接归因于模型。
-
-详细定义：
-
-- [OTSU_THRESHOLD.md](todo/OTSU_THRESHOLD.md)：H0/H1 热阈值跟踪。
-- [PREDICTION_THRESHOLD.md](todo/PREDICTION_THRESHOLD.md)：P0/P1 预测阈值。
-- [FINAL_VALIDATION.md](todo/FINAL_VALIDATION.md)：H0/H1 × P0/P1 的 2×2 测试矩阵。
-
-执行规范见 [EXPERIMENT_PROTOCOL.md](EXPERIMENT_PROTOCOL.md)，但实验器本身不再作为
-功能 TODO。H1/P1 的历史 2×2 已完成，重新启用动态方案或切换 Otsu 数据源前必须先通过 L1/L2，
-再按单轮 L3 规则生成中文报告。
+- 一轮一次；异常不自动复测。
+- 报告路径为 `/home/chris/ceph-test/new_workload/hp_runs/reports/` 的带日期目录。
+- 无未来泄漏；`hp_train_drop_count=0`。
+- P1 首轮只做离线分析；只有通过 gate 后才修改在线源码。异常结果不自动升级为复测或
+  新的活动方向。

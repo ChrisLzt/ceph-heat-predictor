@@ -58,9 +58,6 @@ inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
     const double threshold = std::max(item.heat_label_threshold_at_prediction, 1.0);
     const double threshold_log2p1 = hp_log2p1(threshold);
     const double heat_after_current_access = hp_log2p1(item.heat_after_current_access);
-    const double long_window_access_count = hp_log2p1(
-        static_cast<double>(
-            item.long_window_access_count));
 
     size_t next = 0;
 #if HP_HEAT_MARGIN_PROFILE == HP_HEAT_MARGIN_CURRENT
@@ -79,19 +76,10 @@ inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
         item.tracked_access_count,
         item.time_since_previous_access_ns);
     features[next++] = heat_after_current_access;
-    features[next++] = long_window_access_count;
-    features[next++] = hp_log2p1(
-        item.heat_after_current_access /
-        (HP_HEAT_INCREMENT *
-         static_cast<double>(
-             item.long_window_access_count + 1)));
 #if HP_ENABLE_ACCESS_RATE_CHANGE
     features[next++] = hp_access_rate_change_log2p1(
         item.short_window_access_count,
         item.long_window_access_count);
-#endif
-#if HP_ENABLE_HEAT_PERCENTILE
-    features[next++] = item.heat_percentile;
 #endif
     ceph_assert(next == features.size());
     return features;

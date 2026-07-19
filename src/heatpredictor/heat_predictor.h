@@ -7,6 +7,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -26,7 +27,7 @@
 #include "hp_evaluation_queue.h"
 #include "hp_features.h"
 #include "hp_integer_quantile_window.h"
-#include "hp_quantile_window.h"
+#include "hp_trace.h"
 #include "hp_types.h"
 
 class HeatPredictor {
@@ -50,10 +51,14 @@ public:
         return key;
     }
 
-    static Classifier* make_model() {
+    static Classifier* make_model(
+            std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+                nullptr) {
         auto* classifier = new ARFClassifier<NUM_FEATURES, 2,
-                DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_WARNING_DELTA_PERMILLE>,
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_DRIFT_DELTA_PERMILLE>>(
                     HP_ARF_N_MODELS,
                     HP_ARF_MAX_FEATURES,
                     HP_ARF_SEED,
@@ -62,7 +67,10 @@ public:
                     HP_ARF_DELTA,
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
-                    HP_ARF_MIN_BRANCH_FRACTION);
+                    HP_ARF_MIN_BRANCH_FRACTION,
+                    std::move(adaptation_telemetry),
+                    HP_ARF_FAST_MODEL_COUNT,
+                    HP_ARF_FAST_MODEL_LIFETIME_SAMPLES);
 #if HP_ENABLE_STANDARD_SCALER
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(), classifier);
@@ -79,6 +87,8 @@ public:
     // train_model 只由后台训练线程更新；prediction_snapshot 是前台预测
     // 使用的只读快照。训练线程定期 clone train_model 并发布新快照，
     // 避免前台预测长期等待 learn_one()。
+    std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+        std::make_shared<ArfAdaptationTelemetry>();
     std::shared_ptr<Classifier> train_model;
     mutable std::mutex train_model_mutex;
     std::shared_ptr<Classifier> prediction_snapshot;
@@ -113,9 +123,125 @@ public:
     std::atomic<bool> expiry_running{false};
     std::atomic<uint64_t> expiry_wake_sequence{0};
     std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
+    HpTraceWriter trace_writer;
 
     static const std::vector<double>& to_feat(const PredictionSample& item) {
         return hp_to_features(item);
+    }
+
+    template <typename T>
+    static void trace_hash_value(uint64_t& hash, const T& value) {
+        static_assert(std::is_trivially_copyable_v<T>);
+        const auto *bytes = reinterpret_cast<const unsigned char *>(&value);
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            hash ^= bytes[i];
+            hash *= 1099511628211ULL;
+        }
+    }
+
+    static uint64_t trace_config_hash() {
+        uint64_t hash = 1469598103934665603ULL;
+        const std::array<uint64_t, 13> integer_values = {
+            HP_FEATURE_SCHEMA_VERSION,
+            NUM_FEATURES,
+            HP_ARF_N_MODELS,
+            HP_ARF_MAX_FEATURES,
+            HP_ARF_SEED,
+            HP_FUTURE_LABEL_WINDOW_NS,
+            HP_SHORT_ACCESS_WINDOW_NS,
+            HP_PENDING_EVALUATION_CAPACITY,
+            HP_LRU_CAPACITY,
+            HP_HEAT_LABEL_THRESHOLD_OBJECT_CAPACITY,
+            HP_HEAT_MARGIN_PROFILE,
+            HP_ENABLE_STANDARD_SCALER,
+            HP_ENABLE_ACCESS_RATE_CHANGE,
+        };
+        const std::array<double, 7> floating_values = {
+            HP_HOT_PREDICT_THRESHOLD,
+            HP_HEAT_INCREMENT,
+            HP_HEAT_RETAINED_AFTER_DECAY_HORIZON,
+            HP_OTSU_EMA_ALPHA,
+            HP_OTSU_TOTAL_HEAT_MIN,
+            HP_SCORE_OTSU_LOG_HEAT_BIN_WIDTH,
+            HP_OTSU_TOTAL_HEAT_MAX,
+        };
+        for (const auto value : integer_values) {
+            trace_hash_value(hash, value);
+        }
+        for (const auto value : floating_values) {
+            trace_hash_value(hash, value);
+        }
+        return hash;
+    }
+
+    static void fill_trace_features(
+            HpTraceRecord& record,
+            const PredictionSample& item) {
+        const auto& features = to_feat(item);
+        const size_t count = std::min(
+            features.size(), static_cast<size_t>(HP_TRACE_MAX_FEATURES));
+        std::copy_n(features.begin(), count, record.features);
+    }
+
+    static HpTraceRecord trace_record_for_evaluated(
+            const EvaluatedSample& evaluated) {
+        HpTraceRecord record{};
+        const PredictionSample& item = evaluated.item;
+        record.io_sequence = item.io_sequence;
+        record.object_key_hash = item.object_key_hash;
+        record.prediction_time_ns = evaluated.prediction_time_ns;
+        record.label_deadline_ns = evaluated.label_deadline_ns;
+        record.label_completion_time_ns =
+            evaluated.label_completion_time_ns;
+        fill_trace_features(record, item);
+        record.heat_after_current_access = item.heat_after_current_access;
+        record.heat_label_threshold_at_prediction =
+            item.heat_label_threshold_at_prediction;
+        record.predicted_hot_probability = item.predicted_hot_probability;
+        record.hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
+        record.label_heat = evaluated.label_heat;
+        record.label_heat_threshold = evaluated.label_heat_threshold;
+        record.tracked_access_count = item.tracked_access_count;
+        record.time_since_previous_access_ns =
+            item.time_since_previous_access_ns;
+        record.long_window_access_count = item.long_window_access_count;
+        record.short_window_access_count = item.short_window_access_count;
+        record.future_window_access_count =
+            evaluated.future_window_access_count;
+        record.outcome = static_cast<uint8_t>(HpTraceOutcome::evaluated);
+        record.flags = evaluated.cold_start_fallback
+            ? HP_TRACE_FLAG_COLD_START_FALLBACK
+            : HP_TRACE_FLAG_NONE;
+        record.predicted_label = static_cast<int8_t>(item.predicted_label);
+        record.actual_label = static_cast<int8_t>(evaluated.label);
+        return record;
+    }
+
+    static HpTraceRecord trace_record_for_incomplete(
+            const PredictionSample& item,
+            uint64_t prediction_time_ns,
+            HpTraceOutcome outcome,
+            uint8_t flags) {
+        HpTraceRecord record{};
+        record.io_sequence = item.io_sequence;
+        record.object_key_hash = item.object_key_hash;
+        record.prediction_time_ns = prediction_time_ns;
+        fill_trace_features(record, item);
+        record.heat_after_current_access = item.heat_after_current_access;
+        record.heat_label_threshold_at_prediction =
+            item.heat_label_threshold_at_prediction;
+        record.predicted_hot_probability = item.predicted_hot_probability;
+        record.hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
+        record.tracked_access_count = item.tracked_access_count;
+        record.time_since_previous_access_ns =
+            item.time_since_previous_access_ns;
+        record.long_window_access_count = item.long_window_access_count;
+        record.short_window_access_count = item.short_window_access_count;
+        record.outcome = static_cast<uint8_t>(outcome);
+        record.flags = flags;
+        record.predicted_label = static_cast<int8_t>(item.predicted_label);
+        record.actual_label = -1;
+        return record;
     }
 
     static uint64_t monotonic_now_ns() {
@@ -217,25 +343,17 @@ public:
         if (evaluated.label) {
             hot_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            hot_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             hot_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             hot_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            hot_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         } else {
             cold_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            cold_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             cold_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             cold_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            cold_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         }
         accu.update(evaluated.label, evaluated.item.predicted_label);
     }
@@ -246,8 +364,11 @@ public:
         samples.reserve(evaluated.size());
         for (auto& item : evaluated) {
             record_evaluated_locked(item);
+            if (trace_writer.is_enabled()) {
+                trace_writer.try_submit(trace_record_for_evaluated(item));
+            }
             samples.push_back(TrainingSample{
-                std::move(item.item), item.label, item.training_weight});
+                std::move(item.item), item.label});
         }
         return samples;
     }
@@ -361,7 +482,7 @@ public:
                 {
                     std::lock_guard<std::mutex> lock(train_model_mutex);
                     train_model->learn_one(
-                        to_feat(sample.item), sample.label, sample.weight);
+                        to_feat(sample.item), sample.label);
                     if (record_model_update_batch(monotonic_now_ns())) {
                         next_snapshot = clone_train_model_for_prediction();
                     }
@@ -377,17 +498,13 @@ public:
     std::atomic<uint64_t> processed_io_count{0};
     uint64_t hot_labeled_sample_future_access_count_sum{0};
     uint64_t cold_labeled_sample_future_access_count_sum{0};
-    double hot_labeled_sample_future_added_heat_sum{0};
-    double cold_labeled_sample_future_added_heat_sum{0};
     double hot_labeled_sample_predicted_hot_probability_sum{0};
     double cold_labeled_sample_predicted_hot_probability_sum{0};
     HpIntegerQuantileWindow hot_labeled_sample_future_access_count_window;
     HpIntegerQuantileWindow cold_labeled_sample_future_access_count_window;
-    HpQuantileWindow hot_labeled_sample_future_added_heat_window;
-    HpQuantileWindow cold_labeled_sample_future_added_heat_window;
 
     HeatPredictor() {
-        train_model.reset(make_model());
+        train_model.reset(make_model(adaptation_telemetry));
         prediction_snapshot = clone_train_model_for_prediction();
         eq = std::make_unique<EvaluationQueue>();
         last_snapshot_publish_time_ns = monotonic_now_ns();
@@ -449,7 +566,8 @@ public:
         std::shared_ptr<Classifier> next_snapshot;
         {
             std::lock_guard<std::mutex> lock(train_model_mutex);
-            train_model.reset(make_model());
+            adaptation_telemetry->reset();
+            train_model.reset(make_model(adaptation_telemetry));
             next_snapshot = clone_train_model_for_prediction();
         }
         publish_prediction_snapshot(std::move(next_snapshot));
@@ -467,14 +585,10 @@ public:
         processed_io_count.store(0);
         hot_labeled_sample_future_access_count_sum = 0;
         cold_labeled_sample_future_access_count_sum = 0;
-        hot_labeled_sample_future_added_heat_sum = 0;
-        cold_labeled_sample_future_added_heat_sum = 0;
         hot_labeled_sample_predicted_hot_probability_sum = 0;
         cold_labeled_sample_predicted_hot_probability_sum = 0;
         hot_labeled_sample_future_access_count_window.clear();
         cold_labeled_sample_future_access_count_window.clear();
-        hot_labeled_sample_future_added_heat_window.clear();
-        cold_labeled_sample_future_added_heat_window.clear();
         train_drop_count.store(0);
         predict_error_count.store(0);
         notify_expiry_worker();
@@ -537,7 +651,6 @@ public:
             0,    // time_since_previous_access_ns
             0,    // long_window_access_count
             0,    // short_window_access_count
-            0.0,  // heat_percentile
             0.0,  // predicted_hot_probability
             0     // predicted_label
         };
@@ -545,11 +658,12 @@ public:
         int res;
         std::optional<EvaluationQueue::PendingIterator> pending_evaluation;
         std::shared_ptr<Classifier> snapshot;
-        double hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
         bool maintenance_schedule_changed = false;
+        uint64_t prediction_time_ns = 0;
         {
             std::lock_guard<std::mutex> eq_lock(eq_mutex);
             const uint64_t now_ns = monotonic_now_ns();
+            prediction_time_ns = now_ns;
             const auto schedule_before = eq->expiry_schedule(now_ns);
             // fetch_add() returns the previous sequence; the current I/O is +1.
             const uint64_t previous_io_sequence =
@@ -563,7 +677,6 @@ public:
             expired_samples = training_samples_from_evaluated_locked(
                 eq->expire_before_prepare(item, now_ns));
             snapshot = get_prediction_snapshot();
-            hot_predict_threshold = eq->hot_predict_threshold();
             auto reservation = eq->reserve_prediction(
                 item, now_ns);
             if (reservation.accepted) {
@@ -583,15 +696,18 @@ public:
         enqueue_training_samples(std::move(expired_samples));
 
         bool prediction_failed = false;
+        bool cold_start_fallback = false;
         if (snapshot) {
             try {
                 thread_local std::vector<double> proba;
                 snapshot->predict_proba_one_into(to_feat(item), proba);
+                cold_start_fallback = proba.size() == 2 &&
+                    proba[0] == 0.0 && proba[1] == 0.0;
                 auto hot_probability = validated_hot_probability(proba);
                 if (hot_probability.has_value()) {
                     item.predicted_hot_probability = *hot_probability;
                     res = item.predicted_hot_probability >=
-                        hot_predict_threshold ? 1 : 0;
+                        HP_HOT_PREDICT_THRESHOLD ? 1 : 0;
                 } else {
                     prediction_failed = true;
                 }
@@ -608,8 +724,20 @@ public:
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
                 eq->cancel_prediction(*pending_evaluation);
             }
-        } else if (pending_evaluation.has_value()) {
+            if (trace_writer.is_enabled()) {
+                uint8_t flags = pending_evaluation.has_value()
+                    ? HP_TRACE_FLAG_NONE
+                    : HP_TRACE_FLAG_EVALUATION_CAPACITY_DROP;
+                trace_writer.try_submit(trace_record_for_incomplete(
+                    item,
+                    prediction_time_ns,
+                    HpTraceOutcome::prediction_error,
+                    flags));
+            }
+        } else {
             item.predicted_label = res;
+        }
+        if (!prediction_failed && pending_evaluation.has_value()) {
             std::vector<TrainingSample> completed_samples;
             {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
@@ -617,9 +745,20 @@ public:
                     eq->complete_prediction(
                         *pending_evaluation,
                         item.predicted_hot_probability,
-                        item.predicted_label));
+                        item.predicted_label,
+                        cold_start_fallback));
             }
             enqueue_training_samples(std::move(completed_samples));
+        } else if (!prediction_failed && trace_writer.is_enabled()) {
+            uint8_t flags = HP_TRACE_FLAG_EVALUATION_CAPACITY_DROP;
+            if (cold_start_fallback) {
+                flags |= HP_TRACE_FLAG_COLD_START_FALLBACK;
+            }
+            trace_writer.try_submit(trace_record_for_incomplete(
+                item,
+                prediction_time_ns,
+                HpTraceOutcome::evaluation_capacity_drop,
+                flags));
         }
 
         return res;
@@ -651,25 +790,13 @@ public:
             accu.false_negatives(),
             hot_labeled_sample_future_access_count_sum,
             cold_labeled_sample_future_access_count_sum,
-            hot_labeled_sample_future_added_heat_sum,
-            cold_labeled_sample_future_added_heat_sum,
             hot_labeled_sample_predicted_hot_probability_sum,
             cold_labeled_sample_predicted_hot_probability_sum,
             hot_labeled_sample_future_access_count_window.summary(),
             cold_labeled_sample_future_access_count_window.summary(),
-            hot_labeled_sample_future_added_heat_window.summary(),
-            cold_labeled_sample_future_added_heat_window.summary(),
             current_heat_label_threshold,
             current_otsu_candidate_threshold,
-            eq->otsu_separation,
-            eq->otsu_confidence,
-            eq->otsu_sharpness_confidence,
-            eq->hot_threshold_method,
-            eq->hot_predict_threshold(),
-            eq->hot_predict_threshold_target(),
-            eq->prediction_calibration_size(),
-            eq->prediction_calibration_current_accuracy(),
-            eq->prediction_calibration_target_accuracy()
+            eq->hot_threshold_method
         };
     }
 
@@ -681,6 +808,9 @@ public:
     }
     uint64_t get_snapshot_publish_count() {
         return snapshot_publish_count.load();
+    }
+    ArfAdaptationStats get_arf_adaptation_stats() const {
+        return adaptation_telemetry->snapshot();
     }
     uint64_t get_pending_io_count() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
@@ -727,6 +857,28 @@ public:
     }
     void record_predict_error() {
         predict_error_count.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    bool start_trace(
+            const std::string& directory,
+            int32_t osd_id,
+            const std::string& phase,
+            const std::string& git_commit) {
+        return trace_writer.start(
+            directory,
+            osd_id,
+            phase,
+            git_commit,
+            trace_config_hash(),
+            NUM_FEATURES);
+    }
+
+    void stop_trace() {
+        trace_writer.stop();
+    }
+
+    HpTraceStatus get_trace_status() const {
+        return trace_writer.status();
     }
 };
 
