@@ -36,6 +36,9 @@ enum {
   object_hp_eval_drop_count,
   object_hp_heat_state_count,
   object_hp_lru_count,
+  object_hp_protected_heat_state_count,
+  object_hp_heat_state_peak_count,
+  object_hp_lru_eviction_count,
   object_hp_otsu_histogram_bin_count,
   object_hp_otsu_histogram_vote_count,
   object_hp_true_positive_count,
@@ -165,6 +168,15 @@ static void hp_ensure_object_logger(CephContext *cct)
             "I/O evaluations dropped by capacity or invalid prediction");
   b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked object heat state count");
   b.add_u64(object_hp_lru_count, "hp_lru_count", "object heat states in LRU");
+  b.add_u64(object_hp_protected_heat_state_count,
+            "hp_protected_heat_state_count",
+            "object heat states protected from LRU eviction");
+  b.add_u64(object_hp_heat_state_peak_count,
+            "hp_heat_state_peak_count",
+            "peak tracked object heat state count since reset");
+  b.add_u64(object_hp_lru_eviction_count,
+            "hp_lru_eviction_count",
+            "object heat states evicted by the LRU since reset");
   b.add_u64(object_hp_otsu_histogram_bin_count,
             "hp_otsu_histogram_bin_count",
             "occupied Otsu histogram bin count");
@@ -315,6 +327,11 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
   logger->set(object_hp_eval_drop_count, stats.eval_drop_count);
   logger->set(object_hp_heat_state_count, stats.heat_state_count);
   logger->set(object_hp_lru_count, stats.lru_count);
+  logger->set(object_hp_protected_heat_state_count,
+              stats.protected_heat_state_count);
+  logger->set(object_hp_heat_state_peak_count,
+              stats.heat_state_peak_count);
+  logger->set(object_hp_lru_eviction_count, stats.lru_eviction_count);
   logger->set(object_hp_otsu_histogram_bin_count,
               stats.otsu_histogram_bin_count);
   logger->set(object_hp_otsu_histogram_vote_count,
@@ -423,6 +440,9 @@ static void hp_zero_object_logger()
   logger->set(object_hp_eval_drop_count, 0);
   logger->set(object_hp_heat_state_count, 0);
   logger->set(object_hp_lru_count, 0);
+  logger->set(object_hp_protected_heat_state_count, 0);
+  logger->set(object_hp_heat_state_peak_count, 0);
+  logger->set(object_hp_lru_eviction_count, 0);
   logger->set(object_hp_otsu_histogram_bin_count, 0);
   logger->set(object_hp_otsu_histogram_vote_count, 0);
   logger->set(object_hp_true_positive_count, 0);
@@ -601,6 +621,15 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
                      osd_object_heat_predictor.get_eval_drop_count());
     f->dump_unsigned("hp_heat_state_count", osd_object_heat_predictor.get_heat_state_count());
     f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
+    f->dump_unsigned(
+      "hp_protected_heat_state_count",
+      osd_object_heat_predictor.get_protected_heat_state_count());
+    f->dump_unsigned(
+      "hp_heat_state_peak_count",
+      osd_object_heat_predictor.get_heat_state_peak_count());
+    f->dump_unsigned(
+      "hp_lru_eviction_count",
+      osd_object_heat_predictor.get_lru_eviction_count());
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      osd_object_heat_predictor.get_otsu_histogram_bin_count());
     f->dump_unsigned("hp_otsu_histogram_vote_count",
@@ -647,6 +676,15 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
                      osd_object_heat_predictor.get_heat_state_count());
     f->dump_unsigned("hp_lru_count",
                      osd_object_heat_predictor.get_lru_count());
+    f->dump_unsigned(
+      "hp_protected_heat_state_count",
+      osd_object_heat_predictor.get_protected_heat_state_count());
+    f->dump_unsigned(
+      "hp_heat_state_peak_count",
+      osd_object_heat_predictor.get_heat_state_peak_count());
+    f->dump_unsigned(
+      "hp_lru_eviction_count",
+      osd_object_heat_predictor.get_lru_eviction_count());
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      osd_object_heat_predictor.get_otsu_histogram_bin_count());
     f->dump_unsigned("hp_otsu_histogram_vote_count",

@@ -20,7 +20,6 @@ struct ObjectHeatState {
     uint64_t last_access_time_ns;
     uint64_t tracked_access_count;
     uint64_t pending_evaluation_count;
-    uint64_t long_window_access_count;
     std::list<uint64_t>::iterator lru_position;
 };
 
@@ -59,6 +58,9 @@ struct HeatPredictorStats {
     uint64_t eval_drop_count;
     uint64_t heat_state_count;
     uint64_t lru_count;
+    uint64_t protected_heat_state_count;
+    uint64_t heat_state_peak_count;
+    uint64_t lru_eviction_count;
     uint64_t otsu_histogram_bin_count;
     uint64_t otsu_histogram_vote_count;
     uint64_t true_positive;
