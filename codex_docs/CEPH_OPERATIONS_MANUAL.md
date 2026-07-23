@@ -182,19 +182,6 @@ sudo ceph osd hp enable -f json-pretty
 其他负载同样使用各目录的 `prepare_data.sh` 和 `run_test.sh`。容量和阶段定义以
 `/home/chris/ceph-test/new_workload/README.md`、`WORKLOAD_SUMMARY.md` 为准。
 
-```bash
-sudo ceph daemon osd.0 object_hp status
-sudo ceph daemon osd.1 object_hp status
-sudo ceph daemon osd.0 perf dump object_hp_status
-sudo ceph daemon osd.1 perf dump object_hp_status
-sudo ceph osd hp status -f json-pretty
-sudo ceph osd hp reset
-```
-
-OSD `object_hp status` 是实时状态；Perf/MGR 可能滞后。每轮 reset 后先确认每个 OSD
-实时状态和 PerfCounters 归零，再等待 MGR 汇总归零。结束后等待 pending、awaiting 和
-训练队列排空，再保存最终 MGR 状态。
-
-重点检查 accuracy、balanced accuracy、precision、recall、预测/实际热比例、
-TP/FP/TN/FN、drop、预测延迟和 OSD RSS。完整命令和归零判据见
-[MGR 操作说明](MGR_HP_OPERATIONS.md)。
+每轮测试前后的开关、reset、状态采集和归零判据统一见
+[MGR 操作说明](MGR_HP_OPERATIONS.md)。OSD `object_hp status` 是实时状态，
+Perf/MGR 汇总可能短暂滞后。
