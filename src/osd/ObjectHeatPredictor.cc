@@ -7,6 +7,7 @@
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
+#include <string>
 
 #include "common/ceph_context.h"
 #include "common/ceph_time.h"
@@ -15,8 +16,11 @@
 #include "common/perf_counters.h"
 #include "include/rados.h"
 #include "heatpredictor/heat_predictor.h"
+#include "heatpredictor/hp_telemetry.h"
 
 namespace {
+
+namespace hp_field = ceph::hp_telemetry::field;
 
 HeatPredictor osd_object_heat_predictor;
 PerfCounters *osd_object_hp_logger = nullptr;
@@ -35,6 +39,9 @@ enum {
   object_hp_eval_drop_count,
   object_hp_heat_state_count,
   object_hp_lru_count,
+  object_hp_protected_heat_state_count,
+  object_hp_heat_state_peak_count,
+  object_hp_lru_eviction_count,
   object_hp_otsu_histogram_bin_count,
   object_hp_otsu_histogram_vote_count,
   object_hp_true_positive_count,
@@ -43,20 +50,12 @@ enum {
   object_hp_false_negative_count,
   object_hp_hot_labeled_sample_avg_future_access_count,
   object_hp_cold_labeled_sample_avg_future_access_count,
-  object_hp_hot_labeled_sample_avg_future_added_heat,
-  object_hp_cold_labeled_sample_avg_future_added_heat,
   object_hp_hot_labeled_sample_future_access_count_p99,
   object_hp_hot_labeled_sample_future_access_count_p95,
   object_hp_hot_labeled_sample_future_access_count_p50,
   object_hp_cold_labeled_sample_future_access_count_p99,
   object_hp_cold_labeled_sample_future_access_count_p95,
   object_hp_cold_labeled_sample_future_access_count_p50,
-  object_hp_hot_labeled_sample_future_added_heat_p99,
-  object_hp_hot_labeled_sample_future_added_heat_p95,
-  object_hp_hot_labeled_sample_future_added_heat_p50,
-  object_hp_cold_labeled_sample_future_added_heat_p99,
-  object_hp_cold_labeled_sample_future_added_heat_p95,
-  object_hp_cold_labeled_sample_future_added_heat_p50,
   object_hp_hot_accuracy,
   object_hp_hot_balanced_accuracy,
   object_hp_hot_precision,
@@ -65,21 +64,19 @@ enum {
   object_hp_eval_actual_hot_percent,
   object_hp_actual_hot_avg_pred_hot_percent,
   object_hp_actual_cold_avg_pred_hot_percent,
-  object_hp_hot_predict_threshold,
-  object_hp_hot_predict_threshold_target,
-  object_hp_predict_calibration_sample_count,
-  object_hp_predict_calibration_current_accuracy,
-  object_hp_predict_calibration_target_accuracy,
   object_hp_predict_error_count,
   object_hp_hot_threshold,
   object_hp_otsu_candidate_threshold,
-  object_hp_otsu_separation,
-  object_hp_otsu_confidence,
-  object_hp_otsu_sharpness_confidence,
   object_hp_hot_threshold_method,
   object_hp_train_queue_length,
   object_hp_train_drop_count,
   object_hp_snapshot_publish_count,
+  object_hp_arf_warning_count,
+  object_hp_arf_drift_count,
+  object_hp_arf_background_promotion_count,
+  object_hp_arf_background_discard_count,
+  object_hp_arf_background_training_update_count,
+  object_hp_arf_active_background_count,
   object_hp_op_read_count,
   object_hp_op_sync_read_count,
   object_hp_op_sparse_read_count,
@@ -162,146 +159,125 @@ static void hp_ensure_object_logger(CephContext *cct)
 
   PerfCountersBuilder b(cct, "object_hp_status", object_hp_first, object_hp_last);
   b.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
-  b.add_u64(object_hp_enabled, "hp_enabled", "heat predictor enabled");
-  b.add_u64(object_hp_io_count, "hp_io_count", "predicted I/O total");
-  b.add_u64(object_hp_labeled_io_total, "hp_labeled_io_total", "evaluated I/O total");
-  b.add_u64(object_hp_pending_io_count, "hp_pending_io_count", "pending evaluation I/O count");
+  b.add_u64(object_hp_enabled, hp_field::enabled, "heat predictor enabled");
+  b.add_u64(object_hp_io_count, hp_field::io_count, "predicted I/O total");
+  b.add_u64(object_hp_labeled_io_total, hp_field::labeled_io_total, "evaluated I/O total");
+  b.add_u64(object_hp_pending_io_count, hp_field::pending_io_count, "pending evaluation I/O count");
   b.add_u64(object_hp_awaiting_prediction_count,
-            "hp_awaiting_prediction_count",
+            hp_field::awaiting_prediction_count,
             "label-complete samples awaiting prediction completion");
   b.add_u64(object_hp_eval_drop_count,
-            "hp_eval_drop_count",
+            hp_field::eval_drop_count,
             "I/O evaluations dropped by capacity or invalid prediction");
-  b.add_u64(object_hp_heat_state_count, "hp_heat_state_count", "tracked object heat state count");
-  b.add_u64(object_hp_lru_count, "hp_lru_count", "object heat states in LRU");
+  b.add_u64(object_hp_heat_state_count, hp_field::heat_state_count, "tracked object heat state count");
+  b.add_u64(object_hp_lru_count, hp_field::lru_count, "object heat states in LRU");
+  b.add_u64(object_hp_protected_heat_state_count,
+            hp_field::protected_heat_state_count,
+            "object heat states protected from LRU eviction");
+  b.add_u64(object_hp_heat_state_peak_count,
+            hp_field::heat_state_peak_count,
+            "peak tracked object heat state count since reset");
+  b.add_u64(object_hp_lru_eviction_count,
+            hp_field::lru_eviction_count,
+            "object heat states evicted by the LRU since reset");
   b.add_u64(object_hp_otsu_histogram_bin_count,
-            "hp_otsu_histogram_bin_count",
+            hp_field::otsu_histogram_bin_count,
             "occupied Otsu histogram bin count");
   b.add_u64(object_hp_otsu_histogram_vote_count,
-            "hp_otsu_histogram_vote_count",
+            hp_field::otsu_histogram_vote_count,
             "retained votes in the Otsu histogram");
-  b.add_u64(object_hp_true_positive_count, "hp_true_positive_count", "true positive count");
-  b.add_u64(object_hp_false_positive_count, "hp_false_positive_count", "false positive count");
-  b.add_u64(object_hp_true_negative_count, "hp_true_negative_count", "true negative count");
-  b.add_u64(object_hp_false_negative_count, "hp_false_negative_count", "false negative count");
+  b.add_u64(object_hp_true_positive_count, hp_field::true_positive_count, "true positive count");
+  b.add_u64(object_hp_false_positive_count, hp_field::false_positive_count, "false positive count");
+  b.add_u64(object_hp_true_negative_count, hp_field::true_negative_count, "true negative count");
+  b.add_u64(object_hp_false_negative_count, hp_field::false_negative_count, "false negative count");
   b.add_u64(object_hp_hot_labeled_sample_avg_future_access_count,
-            "hp_hot_labeled_sample_avg_future_access_count",
+            hp_field::hot_labeled_sample_avg_future_access_count,
             "average future-window access count of hot-labeled samples (x10000)");
   b.add_u64(object_hp_cold_labeled_sample_avg_future_access_count,
-            "hp_cold_labeled_sample_avg_future_access_count",
+            hp_field::cold_labeled_sample_avg_future_access_count,
             "average future-window access count of cold-labeled samples (x10000)");
-  b.add_u64(object_hp_hot_labeled_sample_avg_future_added_heat,
-            "hp_hot_labeled_sample_avg_future_added_heat",
-            "average future-window added heat of hot-labeled samples (x10000)");
-  b.add_u64(object_hp_cold_labeled_sample_avg_future_added_heat,
-            "hp_cold_labeled_sample_avg_future_added_heat",
-            "average future-window added heat of cold-labeled samples (x10000)");
   b.add_u64(object_hp_hot_labeled_sample_future_access_count_p99,
-            "hp_hot_labeled_sample_future_access_count_p99",
+            hp_field::hot_labeled_sample_future_access_count_p99,
             "p99 future-window access count of hot-labeled samples (x10000)");
   b.add_u64(object_hp_hot_labeled_sample_future_access_count_p95,
-            "hp_hot_labeled_sample_future_access_count_p95",
+            hp_field::hot_labeled_sample_future_access_count_p95,
             "p95 future-window access count of hot-labeled samples (x10000)");
   b.add_u64(object_hp_hot_labeled_sample_future_access_count_p50,
-            "hp_hot_labeled_sample_future_access_count_p50",
+            hp_field::hot_labeled_sample_future_access_count_p50,
             "p50 future-window access count of hot-labeled samples (x10000)");
   b.add_u64(object_hp_cold_labeled_sample_future_access_count_p99,
-            "hp_cold_labeled_sample_future_access_count_p99",
+            hp_field::cold_labeled_sample_future_access_count_p99,
             "p99 future-window access count of cold-labeled samples (x10000)");
   b.add_u64(object_hp_cold_labeled_sample_future_access_count_p95,
-            "hp_cold_labeled_sample_future_access_count_p95",
+            hp_field::cold_labeled_sample_future_access_count_p95,
             "p95 future-window access count of cold-labeled samples (x10000)");
   b.add_u64(object_hp_cold_labeled_sample_future_access_count_p50,
-            "hp_cold_labeled_sample_future_access_count_p50",
+            hp_field::cold_labeled_sample_future_access_count_p50,
             "p50 future-window access count of cold-labeled samples (x10000)");
-  b.add_u64(object_hp_hot_labeled_sample_future_added_heat_p99,
-            "hp_hot_labeled_sample_future_added_heat_p99",
-            "p99 future added heat of hot-labeled samples (x10000)");
-  b.add_u64(object_hp_hot_labeled_sample_future_added_heat_p95,
-            "hp_hot_labeled_sample_future_added_heat_p95",
-            "p95 future added heat of hot-labeled samples (x10000)");
-  b.add_u64(object_hp_hot_labeled_sample_future_added_heat_p50,
-            "hp_hot_labeled_sample_future_added_heat_p50",
-            "p50 future added heat of hot-labeled samples (x10000)");
-  b.add_u64(object_hp_cold_labeled_sample_future_added_heat_p99,
-            "hp_cold_labeled_sample_future_added_heat_p99",
-            "p99 future added heat of cold-labeled samples (x10000)");
-  b.add_u64(object_hp_cold_labeled_sample_future_added_heat_p95,
-            "hp_cold_labeled_sample_future_added_heat_p95",
-            "p95 future added heat of cold-labeled samples (x10000)");
-  b.add_u64(object_hp_cold_labeled_sample_future_added_heat_p50,
-            "hp_cold_labeled_sample_future_added_heat_p50",
-            "p50 future added heat of cold-labeled samples (x10000)");
   b.add_u64(object_hp_hot_accuracy,
-            "hp_hot_accuracy",
+            hp_field::hot_accuracy,
             "hot prediction accuracy (x10000)");
   b.add_u64(object_hp_hot_balanced_accuracy,
-            "hp_hot_balanced_accuracy",
+            hp_field::hot_balanced_accuracy,
             "balanced hot/cold prediction accuracy (x10000)");
   b.add_u64(object_hp_hot_precision,
-            "hp_hot_precision",
+            hp_field::hot_precision,
             "hot prediction precision (x10000)");
   b.add_u64(object_hp_hot_recall,
-            "hp_hot_recall",
+            hp_field::hot_recall,
             "hot prediction recall (x10000)");
   b.add_u64(object_hp_eval_pred_hot_percent,
-            "hp_eval_pred_hot_percent",
+            hp_field::eval_pred_hot_percent,
             "evaluated predicted-hot percentage (x10000)");
   b.add_u64(object_hp_eval_actual_hot_percent,
-            "hp_eval_actual_hot_percent",
+            hp_field::eval_actual_hot_percent,
             "evaluated actual-hot percentage (x10000)");
   b.add_u64(object_hp_actual_hot_avg_pred_hot_percent,
-            "hp_actual_hot_avg_pred_hot_percent",
+            hp_field::actual_hot_avg_pred_hot_percent,
             "average predicted hot probability of actual hot objects (x10000)");
   b.add_u64(object_hp_actual_cold_avg_pred_hot_percent,
-            "hp_actual_cold_avg_pred_hot_percent",
+            hp_field::actual_cold_avg_pred_hot_percent,
             "average predicted hot probability of actual cold objects (x10000)");
-  b.add_u64(object_hp_hot_predict_threshold,
-            "hp_hot_predict_threshold",
-            "hot prediction probability threshold (x10000)");
-  b.add_u64(object_hp_hot_predict_threshold_target,
-            "hp_hot_predict_threshold_target",
-            "accuracy-optimal calibration target threshold (x10000)");
-  b.add_u64(object_hp_predict_calibration_sample_count,
-            "hp_predict_calibration_sample_count",
-            "evaluated samples in prediction threshold calibration window");
-  b.add_u64(object_hp_predict_calibration_current_accuracy,
-            "hp_predict_calibration_current_accuracy",
-            "calibration-window accuracy at current threshold (x10000)");
-  b.add_u64(object_hp_predict_calibration_target_accuracy,
-            "hp_predict_calibration_target_accuracy",
-            "calibration-window accuracy at target threshold (x10000)");
   b.add_u64(object_hp_predict_error_count,
-            "hp_predict_error_count",
+            hp_field::predict_error_count,
             "prediction exceptions or invalid probability outputs");
   b.add_u64(object_hp_hot_threshold,
-            "hp_hot_threshold",
+            hp_field::hot_threshold,
             "effective heat threshold (x10000)");
   b.add_u64(object_hp_otsu_candidate_threshold,
-            "hp_otsu_candidate_threshold",
+            hp_field::otsu_candidate_threshold,
             "current Otsu candidate heat threshold (x10000)");
-  b.add_u64(object_hp_otsu_separation,
-            "hp_otsu_separation",
-            "Otsu between-class variance ratio (x10000)");
-  b.add_u64(object_hp_otsu_confidence,
-            "hp_otsu_confidence",
-            "weighted Otsu threshold confidence (x10000)");
-  b.add_u64(object_hp_otsu_sharpness_confidence,
-            "hp_otsu_sharpness_confidence",
-            "Otsu near-optimal ambiguous-sample confidence (x10000)");
   b.add_u64(object_hp_hot_threshold_method,
-            "hp_hot_threshold_method",
+            hp_field::hot_threshold_method,
             "threshold state: 0 initializing, 1 tracking, 2 holding");
-  b.add_u64(object_hp_train_queue_length, "hp_train_queue_length", "train queue length");
-  b.add_u64(object_hp_train_drop_count, "hp_train_drop_count", "dropped training sample count");
-  b.add_u64(object_hp_snapshot_publish_count, "hp_snapshot_publish_count", "prediction snapshot publish count");
-  b.add_u64(object_hp_op_read_count, "hp_op_read_count", "read op count");
-  b.add_u64(object_hp_op_sync_read_count, "hp_op_sync_read_count", "sync read op count");
-  b.add_u64(object_hp_op_sparse_read_count, "hp_op_sparse_read_count", "sparse read op count");
-  b.add_u64(object_hp_op_write_count, "hp_op_write_count", "write op count");
-  b.add_u64(object_hp_op_writefull_count, "hp_op_writefull_count", "writefull op count");
-  b.add_u64(object_hp_op_writesame_count, "hp_op_writesame_count", "writesame op count");
-  b.add_time_avg(object_hp_predict_latency, "hp_predict_latency", "predict latency");
+  b.add_u64(object_hp_train_queue_length, hp_field::train_queue_length, "train queue length");
+  b.add_u64(object_hp_train_drop_count, hp_field::train_drop_count, "dropped training sample count");
+  b.add_u64(object_hp_snapshot_publish_count, hp_field::snapshot_publish_count, "prediction snapshot publish count");
+  b.add_u64(object_hp_arf_warning_count,
+            hp_field::arf_warning_count,
+            "ARF warning detections");
+  b.add_u64(object_hp_arf_drift_count,
+            hp_field::arf_drift_count,
+            "ARF drift detections and current-tree replacements");
+  b.add_u64(object_hp_arf_background_promotion_count,
+            hp_field::arf_background_promotion_count,
+            "ARF background trees promoted after drift");
+  b.add_u64(object_hp_arf_background_discard_count,
+            hp_field::arf_background_discard_count,
+            "ARF background trees discarded by later warnings");
+  b.add_u64(object_hp_arf_background_training_update_count,
+            hp_field::arf_background_training_update_count,
+            "ARF training updates applied to background trees");
+  b.add_u64(object_hp_arf_active_background_count,
+            hp_field::arf_active_background_count,
+            "currently active ARF background trees");
+  b.add_u64(object_hp_op_read_count, hp_field::op_read_count, "read op count");
+  b.add_u64(object_hp_op_sync_read_count, hp_field::op_sync_read_count, "sync read op count");
+  b.add_u64(object_hp_op_sparse_read_count, hp_field::op_sparse_read_count, "sparse read op count");
+  b.add_u64(object_hp_op_write_count, hp_field::op_write_count, "write op count");
+  b.add_u64(object_hp_op_writefull_count, hp_field::op_writefull_count, "writefull op count");
+  b.add_u64(object_hp_op_writesame_count, hp_field::op_writesame_count, "writesame op count");
+  b.add_time_avg(object_hp_predict_latency, hp_field::predict_latency, "predict latency");
   osd_object_hp_logger = b.create_perf_counters();
   cct->get_perfcounters_collection()->add(osd_object_hp_logger);
 }
@@ -314,7 +290,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
     return;
   }
 
-  auto stats = osd_object_heat_predictor.get_evaluation_stats();
+  auto predictor_status = osd_object_heat_predictor.status();
+  const auto& stats = predictor_status.evaluation;
   uint64_t io_count = stats.io_count;
   uint64_t labeled_io_total = stats.labeled_io_total;
   uint64_t true_positive = stats.true_positive;
@@ -327,10 +304,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
     hp_ratio10000(stats.hot_labeled_sample_future_access_count_sum, actual_hot_count);
   uint64_t cold_labeled_sample_avg_future_access_count =
     hp_ratio10000(stats.cold_labeled_sample_future_access_count_sum, actual_cold_count);
-  uint64_t hot_labeled_sample_avg_future_added_heat =
-    hp_avg10000(stats.hot_labeled_sample_future_added_heat_sum, actual_hot_count);
-  uint64_t cold_labeled_sample_avg_future_added_heat =
-    hp_avg10000(stats.cold_labeled_sample_future_added_heat_sum, actual_cold_count);
   uint64_t hot_accuracy =
     hp_ratio10000(true_positive + true_negative, labeled_io_total);
   uint64_t hot_balanced_accuracy = hp_mul10000(
@@ -358,6 +331,11 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
   logger->set(object_hp_eval_drop_count, stats.eval_drop_count);
   logger->set(object_hp_heat_state_count, stats.heat_state_count);
   logger->set(object_hp_lru_count, stats.lru_count);
+  logger->set(object_hp_protected_heat_state_count,
+              stats.protected_heat_state_count);
+  logger->set(object_hp_heat_state_peak_count,
+              stats.heat_state_peak_count);
+  logger->set(object_hp_lru_eviction_count, stats.lru_eviction_count);
   logger->set(object_hp_otsu_histogram_bin_count,
               stats.otsu_histogram_bin_count);
   logger->set(object_hp_otsu_histogram_vote_count,
@@ -370,10 +348,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               hot_labeled_sample_avg_future_access_count);
   logger->set(object_hp_cold_labeled_sample_avg_future_access_count,
               cold_labeled_sample_avg_future_access_count);
-  logger->set(object_hp_hot_labeled_sample_avg_future_added_heat,
-              hot_labeled_sample_avg_future_added_heat);
-  logger->set(object_hp_cold_labeled_sample_avg_future_added_heat,
-              cold_labeled_sample_avg_future_added_heat);
   hp_set_distribution_summary(
     logger,
     object_hp_hot_labeled_sample_future_access_count_p99,
@@ -386,18 +360,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
     object_hp_cold_labeled_sample_future_access_count_p95,
     object_hp_cold_labeled_sample_future_access_count_p50,
     stats.cold_labeled_sample_future_access_count);
-  hp_set_distribution_summary(
-    logger,
-    object_hp_hot_labeled_sample_future_added_heat_p99,
-    object_hp_hot_labeled_sample_future_added_heat_p95,
-    object_hp_hot_labeled_sample_future_added_heat_p50,
-    stats.hot_labeled_sample_future_added_heat);
-  hp_set_distribution_summary(
-    logger,
-    object_hp_cold_labeled_sample_future_added_heat_p99,
-    object_hp_cold_labeled_sample_future_added_heat_p95,
-    object_hp_cold_labeled_sample_future_added_heat_p50,
-    stats.cold_labeled_sample_future_added_heat);
   logger->set(object_hp_hot_accuracy, hot_accuracy);
   logger->set(object_hp_hot_balanced_accuracy, hot_balanced_accuracy);
   logger->set(object_hp_hot_precision, hot_precision);
@@ -408,32 +370,32 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               actual_hot_avg_pred_hot_percent);
   logger->set(object_hp_actual_cold_avg_pred_hot_percent,
               actual_cold_avg_pred_hot_percent);
-  logger->set(object_hp_hot_predict_threshold,
-              hp_mul10000(stats.hot_predict_threshold));
-  logger->set(object_hp_hot_predict_threshold_target,
-              hp_mul10000(stats.hot_predict_threshold_target));
-  logger->set(object_hp_predict_calibration_sample_count,
-              stats.predict_calibration_sample_count);
-  logger->set(object_hp_predict_calibration_current_accuracy,
-              hp_mul10000(stats.predict_calibration_current_accuracy));
-  logger->set(object_hp_predict_calibration_target_accuracy,
-              hp_mul10000(stats.predict_calibration_target_accuracy));
   logger->set(object_hp_predict_error_count,
-              osd_object_heat_predictor.get_predict_error_count());
+              predictor_status.predict_error_count);
   logger->set(object_hp_hot_threshold, hp_mul10000(stats.heat_label_threshold));
   logger->set(object_hp_otsu_candidate_threshold,
               hp_mul10000(stats.otsu_candidate_threshold));
-  logger->set(object_hp_otsu_separation,
-              hp_mul10000(stats.otsu_separation));
-  logger->set(object_hp_otsu_confidence,
-              hp_mul10000(stats.otsu_confidence));
-  logger->set(object_hp_otsu_sharpness_confidence,
-              hp_mul10000(stats.otsu_sharpness_confidence));
   logger->set(object_hp_hot_threshold_method, stats.hot_threshold_method);
-  logger->set(object_hp_train_queue_length, osd_object_heat_predictor.get_train_queue_length());
-  logger->set(object_hp_train_drop_count, osd_object_heat_predictor.get_train_drop_count());
+  logger->set(object_hp_train_queue_length,
+              predictor_status.train_queue_length);
+  logger->set(object_hp_train_drop_count,
+              predictor_status.train_drop_count);
   logger->set(object_hp_snapshot_publish_count,
-              osd_object_heat_predictor.get_snapshot_publish_count());
+              predictor_status.snapshot_publish_count);
+  const ArfAdaptationStats adaptation_stats =
+    predictor_status.arf_adaptation;
+  logger->set(object_hp_arf_warning_count,
+              adaptation_stats.warning_count);
+  logger->set(object_hp_arf_drift_count,
+              adaptation_stats.drift_count);
+  logger->set(object_hp_arf_background_promotion_count,
+              adaptation_stats.background_promotion_count);
+  logger->set(object_hp_arf_background_discard_count,
+              adaptation_stats.background_discard_count);
+  logger->set(object_hp_arf_background_training_update_count,
+              adaptation_stats.background_training_update_count);
+  logger->set(object_hp_arf_active_background_count,
+              adaptation_stats.active_background_count);
   logger->set(object_hp_op_read_count, osd_object_hp_op_counters.read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sync_read_count, osd_object_hp_op_counters.sync_read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sparse_read_count, osd_object_hp_op_counters.sparse_read.load(std::memory_order_relaxed));
@@ -484,6 +446,9 @@ static void hp_zero_object_logger()
   logger->set(object_hp_eval_drop_count, 0);
   logger->set(object_hp_heat_state_count, 0);
   logger->set(object_hp_lru_count, 0);
+  logger->set(object_hp_protected_heat_state_count, 0);
+  logger->set(object_hp_heat_state_peak_count, 0);
+  logger->set(object_hp_lru_eviction_count, 0);
   logger->set(object_hp_otsu_histogram_bin_count, 0);
   logger->set(object_hp_otsu_histogram_vote_count, 0);
   logger->set(object_hp_true_positive_count, 0);
@@ -492,8 +457,6 @@ static void hp_zero_object_logger()
   logger->set(object_hp_false_negative_count, 0);
   logger->set(object_hp_hot_labeled_sample_avg_future_access_count, 0);
   logger->set(object_hp_cold_labeled_sample_avg_future_access_count, 0);
-  logger->set(object_hp_hot_labeled_sample_avg_future_added_heat, 0);
-  logger->set(object_hp_cold_labeled_sample_avg_future_added_heat, 0);
   hp_set_distribution_summary(
     logger,
     object_hp_hot_labeled_sample_future_access_count_p99,
@@ -506,18 +469,6 @@ static void hp_zero_object_logger()
     object_hp_cold_labeled_sample_future_access_count_p95,
     object_hp_cold_labeled_sample_future_access_count_p50,
     {});
-  hp_set_distribution_summary(
-    logger,
-    object_hp_hot_labeled_sample_future_added_heat_p99,
-    object_hp_hot_labeled_sample_future_added_heat_p95,
-    object_hp_hot_labeled_sample_future_added_heat_p50,
-    {});
-  hp_set_distribution_summary(
-    logger,
-    object_hp_cold_labeled_sample_future_added_heat_p99,
-    object_hp_cold_labeled_sample_future_added_heat_p95,
-    object_hp_cold_labeled_sample_future_added_heat_p50,
-    {});
   logger->set(object_hp_hot_accuracy, 0);
   logger->set(object_hp_hot_balanced_accuracy, 0);
   logger->set(object_hp_hot_precision, 0);
@@ -526,24 +477,20 @@ static void hp_zero_object_logger()
   logger->set(object_hp_eval_actual_hot_percent, 0);
   logger->set(object_hp_actual_hot_avg_pred_hot_percent, 0);
   logger->set(object_hp_actual_cold_avg_pred_hot_percent, 0);
-  logger->set(object_hp_hot_predict_threshold,
-              hp_mul10000(HP_HOT_PREDICT_THRESHOLD));
-  logger->set(object_hp_hot_predict_threshold_target,
-              hp_mul10000(HP_HOT_PREDICT_THRESHOLD));
-  logger->set(object_hp_predict_calibration_sample_count, 0);
-  logger->set(object_hp_predict_calibration_current_accuracy, 0);
-  logger->set(object_hp_predict_calibration_target_accuracy, 0);
   logger->set(object_hp_predict_error_count, 0);
   logger->set(object_hp_hot_threshold, hp_mul10000(HP_HEAT_INCREMENT));
   logger->set(object_hp_otsu_candidate_threshold, 0);
-  logger->set(object_hp_otsu_separation, 0);
-  logger->set(object_hp_otsu_confidence, 0);
-  logger->set(object_hp_otsu_sharpness_confidence, 0);
   logger->set(object_hp_hot_threshold_method,
               HP_THRESHOLD_METHOD_INITIALIZING);
   logger->set(object_hp_train_queue_length, 0);
   logger->set(object_hp_train_drop_count, 0);
   logger->set(object_hp_snapshot_publish_count, 0);
+  logger->set(object_hp_arf_warning_count, 0);
+  logger->set(object_hp_arf_drift_count, 0);
+  logger->set(object_hp_arf_background_promotion_count, 0);
+  logger->set(object_hp_arf_background_discard_count, 0);
+  logger->set(object_hp_arf_background_training_update_count, 0);
+  logger->set(object_hp_arf_active_background_count, 0);
   logger->set(object_hp_op_read_count, 0);
   logger->set(object_hp_op_sync_read_count, 0);
   logger->set(object_hp_op_sparse_read_count, 0);
@@ -615,27 +562,41 @@ void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
 
   hp_ensure_object_logger(cct);
   hp_update_object_logger(ceph::timespan::zero(), false);
+  const auto predictor_status = osd_object_heat_predictor.status();
+  const auto& stats = predictor_status.evaluation;
   f->open_object_section("object_hp_status");
-  f->dump_bool("enabled", osd_object_heat_predictor.is_enabled());
-  f->dump_unsigned(
-    "hp_io_count", osd_object_heat_predictor.processed_io_count.load());
-  f->dump_unsigned("hp_labeled_io_total",
-                   osd_object_heat_predictor.get_total_weight());
-  f->dump_unsigned("hp_pending_io_count",
-                   osd_object_heat_predictor.get_pending_io_count());
+  f->dump_bool("enabled", stats.enabled);
+  f->dump_unsigned("hp_io_count", stats.io_count);
+  f->dump_unsigned("hp_labeled_io_total", stats.labeled_io_total);
+  f->dump_unsigned("hp_pending_io_count", stats.pending_io_count);
   f->dump_unsigned(
     "hp_awaiting_prediction_count",
-    osd_object_heat_predictor.get_awaiting_prediction_count());
-  f->dump_unsigned("hp_eval_drop_count",
-                   osd_object_heat_predictor.get_eval_drop_count());
+    stats.awaiting_prediction_count);
+  f->dump_unsigned("hp_eval_drop_count", stats.eval_drop_count);
   f->dump_unsigned("hp_train_queue_length",
-                   osd_object_heat_predictor.get_train_queue_length());
+                   predictor_status.train_queue_length);
   f->dump_unsigned("hp_train_drop_count",
-                   osd_object_heat_predictor.get_train_drop_count());
+                   predictor_status.train_drop_count);
   f->dump_unsigned("hp_snapshot_publish_count",
-                   osd_object_heat_predictor.get_snapshot_publish_count());
+                   predictor_status.snapshot_publish_count);
+  const ArfAdaptationStats adaptation_stats =
+    predictor_status.arf_adaptation;
+  f->open_object_section("model_adaptation");
+  f->dump_unsigned("hp_arf_warning_count",
+                   adaptation_stats.warning_count);
+  f->dump_unsigned("hp_arf_drift_count",
+                   adaptation_stats.drift_count);
+  f->dump_unsigned("hp_arf_background_promotion_count",
+                   adaptation_stats.background_promotion_count);
+  f->dump_unsigned("hp_arf_background_discard_count",
+                   adaptation_stats.background_discard_count);
+  f->dump_unsigned("hp_arf_background_training_update_count",
+                   adaptation_stats.background_training_update_count);
+  f->dump_unsigned("hp_arf_active_background_count",
+                   adaptation_stats.active_background_count);
+  f->close_section();
   f->dump_unsigned("hp_predict_error_count",
-                   osd_object_heat_predictor.get_predict_error_count());
+                   predictor_status.predict_error_count);
   f->close_section();
 }
 
@@ -649,31 +610,42 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
   hp_zero_object_logger();
 
   if (f != nullptr) {
+    const auto predictor_status = osd_object_heat_predictor.status();
+    const auto& stats = predictor_status.evaluation;
     f->open_object_section("object_hp_reset");
     f->dump_bool("ok", true);
-    f->dump_bool("enabled", osd_object_heat_predictor.is_enabled());
+    f->dump_bool("enabled", stats.enabled);
     f->dump_unsigned("discarded_pending_io", discarded_pending_io);
-    f->dump_unsigned(
-      "hp_io_count", osd_object_heat_predictor.processed_io_count.load());
-    f->dump_unsigned("hp_labeled_io_total", osd_object_heat_predictor.get_total_weight());
-    f->dump_unsigned("hp_pending_io_count", osd_object_heat_predictor.get_pending_io_count());
+    f->dump_unsigned("hp_io_count", stats.io_count);
+    f->dump_unsigned("hp_labeled_io_total", stats.labeled_io_total);
+    f->dump_unsigned("hp_pending_io_count", stats.pending_io_count);
     f->dump_unsigned(
       "hp_awaiting_prediction_count",
-      osd_object_heat_predictor.get_awaiting_prediction_count());
-    f->dump_unsigned("hp_eval_drop_count",
-                     osd_object_heat_predictor.get_eval_drop_count());
-    f->dump_unsigned("hp_heat_state_count", osd_object_heat_predictor.get_heat_state_count());
-    f->dump_unsigned("hp_lru_count", osd_object_heat_predictor.get_lru_count());
+      stats.awaiting_prediction_count);
+    f->dump_unsigned("hp_eval_drop_count", stats.eval_drop_count);
+    f->dump_unsigned("hp_heat_state_count", stats.heat_state_count);
+    f->dump_unsigned("hp_lru_count", stats.lru_count);
+    f->dump_unsigned(
+      "hp_protected_heat_state_count",
+      stats.protected_heat_state_count);
+    f->dump_unsigned(
+      "hp_heat_state_peak_count",
+      stats.heat_state_peak_count);
+    f->dump_unsigned(
+      "hp_lru_eviction_count",
+      stats.lru_eviction_count);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
-                     osd_object_heat_predictor.get_otsu_histogram_bin_count());
+                     stats.otsu_histogram_bin_count);
     f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     osd_object_heat_predictor.get_otsu_histogram_vote_count());
-    f->dump_unsigned("hp_train_queue_length", osd_object_heat_predictor.get_train_queue_length());
-    f->dump_unsigned("hp_train_drop_count", osd_object_heat_predictor.get_train_drop_count());
+                     stats.otsu_histogram_vote_count);
+    f->dump_unsigned("hp_train_queue_length",
+                     predictor_status.train_queue_length);
+    f->dump_unsigned("hp_train_drop_count",
+                     predictor_status.train_drop_count);
     f->dump_unsigned("hp_snapshot_publish_count",
-                     osd_object_heat_predictor.get_snapshot_publish_count());
+                     predictor_status.snapshot_publish_count);
     f->dump_unsigned("hp_predict_error_count",
-                     osd_object_heat_predictor.get_predict_error_count());
+                     predictor_status.predict_error_count);
     f->close_section();
   }
 }
@@ -691,37 +663,44 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
   hp_zero_object_logger();
 
   if (f != nullptr) {
+    const auto predictor_status = osd_object_heat_predictor.status();
+    const auto& stats = predictor_status.evaluation;
     f->open_object_section(enabled ? "object_hp_enable" : "object_hp_disable");
     f->dump_bool("ok", true);
-    f->dump_bool("enabled", osd_object_heat_predictor.is_enabled());
+    f->dump_bool("enabled", stats.enabled);
     f->dump_unsigned("discarded_pending_io", discarded_pending_io);
-    f->dump_unsigned(
-      "hp_io_count", osd_object_heat_predictor.processed_io_count.load());
-    f->dump_unsigned("hp_labeled_io_total",
-                     osd_object_heat_predictor.get_total_weight());
-    f->dump_unsigned("hp_pending_io_count",
-                     osd_object_heat_predictor.get_pending_io_count());
+    f->dump_unsigned("hp_io_count", stats.io_count);
+    f->dump_unsigned("hp_labeled_io_total", stats.labeled_io_total);
+    f->dump_unsigned("hp_pending_io_count", stats.pending_io_count);
     f->dump_unsigned(
       "hp_awaiting_prediction_count",
-      osd_object_heat_predictor.get_awaiting_prediction_count());
-    f->dump_unsigned("hp_eval_drop_count",
-                     osd_object_heat_predictor.get_eval_drop_count());
+      stats.awaiting_prediction_count);
+    f->dump_unsigned("hp_eval_drop_count", stats.eval_drop_count);
     f->dump_unsigned("hp_heat_state_count",
-                     osd_object_heat_predictor.get_heat_state_count());
+                     stats.heat_state_count);
     f->dump_unsigned("hp_lru_count",
-                     osd_object_heat_predictor.get_lru_count());
+                     stats.lru_count);
+    f->dump_unsigned(
+      "hp_protected_heat_state_count",
+      stats.protected_heat_state_count);
+    f->dump_unsigned(
+      "hp_heat_state_peak_count",
+      stats.heat_state_peak_count);
+    f->dump_unsigned(
+      "hp_lru_eviction_count",
+      stats.lru_eviction_count);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
-                     osd_object_heat_predictor.get_otsu_histogram_bin_count());
+                     stats.otsu_histogram_bin_count);
     f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     osd_object_heat_predictor.get_otsu_histogram_vote_count());
+                     stats.otsu_histogram_vote_count);
     f->dump_unsigned("hp_train_queue_length",
-                     osd_object_heat_predictor.get_train_queue_length());
+                     predictor_status.train_queue_length);
     f->dump_unsigned("hp_train_drop_count",
-                     osd_object_heat_predictor.get_train_drop_count());
+                     predictor_status.train_drop_count);
     f->dump_unsigned("hp_snapshot_publish_count",
-                     osd_object_heat_predictor.get_snapshot_publish_count());
+                     predictor_status.snapshot_publish_count);
     f->dump_unsigned("hp_predict_error_count",
-                     osd_object_heat_predictor.get_predict_error_count());
+                     predictor_status.predict_error_count);
     f->close_section();
   }
 }

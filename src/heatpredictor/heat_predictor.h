@@ -26,13 +26,22 @@
 #include "hp_evaluation_queue.h"
 #include "hp_features.h"
 #include "hp_integer_quantile_window.h"
-#include "hp_quantile_window.h"
 #include "hp_types.h"
+
+struct HeatPredictorStatus {
+    HeatPredictorStats evaluation;
+    size_t train_queue_length;
+    uint64_t train_drop_count;
+    uint64_t snapshot_publish_count;
+    ArfAdaptationStats arf_adaptation;
+    uint64_t predict_error_count;
+};
 
 class HeatPredictor {
 public:
     using ExpiryProgressCallback = void (*)(uint64_t);
 
+private:
     static uint64_t mix64(uint64_t x) {
         x += 0x9e3779b97f4a7c15ULL;
         x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
@@ -50,10 +59,14 @@ public:
         return key;
     }
 
-    static Classifier* make_model() {
+    static Classifier* make_model(
+            std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+                nullptr) {
         auto* classifier = new ARFClassifier<NUM_FEATURES, 2,
-                DetectorFactory<ADWIN<5>, 10>,
-                DetectorFactory<ADWIN<5>, 1>>(
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_WARNING_DELTA_PERMILLE>,
+                DetectorFactory<ADWIN<5>,
+                    HP_ARF_DRIFT_DELTA_PERMILLE>>(
                     HP_ARF_N_MODELS,
                     HP_ARF_MAX_FEATURES,
                     HP_ARF_SEED,
@@ -62,13 +75,12 @@ public:
                     HP_ARF_DELTA,
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
-                    HP_ARF_MIN_BRANCH_FRACTION);
-#if HP_ENABLE_STANDARD_SCALER
+                    HP_ARF_MIN_BRANCH_FRACTION,
+                    std::move(adaptation_telemetry),
+                    HP_ARF_FAST_MODEL_COUNT,
+                    HP_ARF_FAST_MODEL_LIFETIME_SAMPLES);
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(), classifier);
-#else
-        return classifier;
-#endif
     }
 
     // reset_mutex gates full-state reset against foreground prediction and
@@ -79,6 +91,8 @@ public:
     // train_model 只由后台训练线程更新；prediction_snapshot 是前台预测
     // 使用的只读快照。训练线程定期 clone train_model 并发布新快照，
     // 避免前台预测长期等待 learn_one()。
+    std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
+        std::make_shared<ArfAdaptationTelemetry>();
     std::shared_ptr<Classifier> train_model;
     mutable std::mutex train_model_mutex;
     std::shared_ptr<Classifier> prediction_snapshot;
@@ -113,7 +127,6 @@ public:
     std::atomic<bool> expiry_running{false};
     std::atomic<uint64_t> expiry_wake_sequence{0};
     std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
-
     static const std::vector<double>& to_feat(const PredictionSample& item) {
         return hp_to_features(item);
     }
@@ -217,25 +230,17 @@ public:
         if (evaluated.label) {
             hot_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            hot_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             hot_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             hot_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            hot_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         } else {
             cold_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
-            cold_labeled_sample_future_added_heat_sum +=
-                evaluated.future_window_added_heat;
             cold_labeled_sample_predicted_hot_probability_sum +=
                 evaluated.item.predicted_hot_probability;
             cold_labeled_sample_future_access_count_window.insert(
                 evaluated.future_window_access_count);
-            cold_labeled_sample_future_added_heat_window.insert(
-                evaluated.future_window_added_heat);
         }
         accu.update(evaluated.label, evaluated.item.predicted_label);
     }
@@ -247,15 +252,9 @@ public:
         for (auto& item : evaluated) {
             record_evaluated_locked(item);
             samples.push_back(TrainingSample{
-                std::move(item.item), item.label, item.training_weight});
+                std::move(item.item), item.label});
         }
         return samples;
-    }
-
-    std::vector<TrainingSample> collect_expired_training_samples_locked(
-            uint64_t now_ns) {
-        return training_samples_from_evaluated_locked(
-            eq->expire_due_evaluations(now_ns));
     }
 
     void enqueue_training_samples(std::vector<TrainingSample> samples) {
@@ -285,20 +284,18 @@ public:
                     {
                         std::lock_guard<std::mutex> eq_lock(eq_mutex);
                         const uint64_t now_ns = monotonic_now_ns();
-                        const auto schedule = eq->expiry_schedule(now_ns);
-                        if (schedule.state ==
-                            EvaluationQueue::ExpiryScheduleState::due) {
-                            const size_t pending_before = eq->pending_size();
-                            samples = collect_expired_training_samples_locked(
-                                now_ns);
-                            expired_evaluation_count =
-                                pending_before - eq->pending_size();
-                            eq->expire_due_access_windows(now_ns);
-                            processed_due_maintenance = true;
-                        } else if (schedule.state ==
+                        auto maintenance = eq->maintain_expiry(now_ns);
+                        samples = training_samples_from_evaluated_locked(
+                            std::move(maintenance.evaluated));
+                        expired_evaluation_count =
+                            maintenance.expired_evaluation_count;
+                        processed_due_maintenance = maintenance.processed;
+                        if (!maintenance.processed &&
+                            maintenance.next_schedule.state ==
                                    EvaluationQueue::ExpiryScheduleState::
                                        waiting_deadline) {
-                            deadline_ns = schedule.deadline_ns;
+                            deadline_ns =
+                                maintenance.next_schedule.deadline_ns;
                         }
                     }
                     enqueue_training_samples(std::move(samples));
@@ -361,7 +358,7 @@ public:
                 {
                     std::lock_guard<std::mutex> lock(train_model_mutex);
                     train_model->learn_one(
-                        to_feat(sample.item), sample.label, sample.weight);
+                        to_feat(sample.item), sample.label);
                     if (record_model_update_batch(monotonic_now_ns())) {
                         next_snapshot = clone_train_model_for_prediction();
                     }
@@ -377,17 +374,14 @@ public:
     std::atomic<uint64_t> processed_io_count{0};
     uint64_t hot_labeled_sample_future_access_count_sum{0};
     uint64_t cold_labeled_sample_future_access_count_sum{0};
-    double hot_labeled_sample_future_added_heat_sum{0};
-    double cold_labeled_sample_future_added_heat_sum{0};
     double hot_labeled_sample_predicted_hot_probability_sum{0};
     double cold_labeled_sample_predicted_hot_probability_sum{0};
     HpIntegerQuantileWindow hot_labeled_sample_future_access_count_window;
     HpIntegerQuantileWindow cold_labeled_sample_future_access_count_window;
-    HpQuantileWindow hot_labeled_sample_future_added_heat_window;
-    HpQuantileWindow cold_labeled_sample_future_added_heat_window;
 
+public:
     HeatPredictor() {
-        train_model.reset(make_model());
+        train_model.reset(make_model(adaptation_telemetry));
         prediction_snapshot = clone_train_model_for_prediction();
         eq = std::make_unique<EvaluationQueue>();
         last_snapshot_publish_time_ns = monotonic_now_ns();
@@ -408,6 +402,7 @@ public:
         }
     }
 
+private:
     // 懒启动：首次 predict() 调用时才创建后台训练线程，避免静态初始化阶段 spawn thread
     void ensure_started() {
         std::call_once(start_flag, [this] {
@@ -434,6 +429,7 @@ public:
         });
     }
 
+public:
     HeatPredictor(const HeatPredictor&) = delete;
     HeatPredictor& operator=(const HeatPredictor&) = delete;
 
@@ -449,14 +445,16 @@ public:
         std::shared_ptr<Classifier> next_snapshot;
         {
             std::lock_guard<std::mutex> lock(train_model_mutex);
-            train_model.reset(make_model());
+            adaptation_telemetry->reset();
+            train_model.reset(make_model(adaptation_telemetry));
             next_snapshot = clone_train_model_for_prediction();
         }
         publish_prediction_snapshot(std::move(next_snapshot));
 
         {
             std::lock_guard<std::mutex> lock(eq_mutex);
-            discarded_pending = eq->pending_size();
+            discarded_pending =
+                eq->status(monotonic_now_ns()).pending_io_count;
             eq = std::make_unique<EvaluationQueue>();
         }
 
@@ -467,14 +465,10 @@ public:
         processed_io_count.store(0);
         hot_labeled_sample_future_access_count_sum = 0;
         cold_labeled_sample_future_access_count_sum = 0;
-        hot_labeled_sample_future_added_heat_sum = 0;
-        cold_labeled_sample_future_added_heat_sum = 0;
         hot_labeled_sample_predicted_hot_probability_sum = 0;
         cold_labeled_sample_predicted_hot_probability_sum = 0;
         hot_labeled_sample_future_access_count_window.clear();
         cold_labeled_sample_future_access_count_window.clear();
-        hot_labeled_sample_future_added_heat_window.clear();
-        cold_labeled_sample_future_added_heat_window.clear();
         train_drop_count.store(0);
         predict_error_count.store(0);
         notify_expiry_worker();
@@ -535,22 +529,17 @@ public:
             0.0,              // heat_label_threshold_at_prediction
             0,    // tracked_access_count
             0,    // time_since_previous_access_ns
-            0,    // long_window_access_count
-            0,    // short_window_access_count
-            0.0,  // heat_percentile
             0.0,  // predicted_hot_probability
             0     // predicted_label
         };
 
         int res;
-        std::optional<EvaluationQueue::PendingIterator> pending_evaluation;
+        std::optional<EvaluationQueue::PredictionTicket> pending_evaluation;
         std::shared_ptr<Classifier> snapshot;
-        double hot_predict_threshold = HP_HOT_PREDICT_THRESHOLD;
         bool maintenance_schedule_changed = false;
         {
             std::lock_guard<std::mutex> eq_lock(eq_mutex);
             const uint64_t now_ns = monotonic_now_ns();
-            const auto schedule_before = eq->expiry_schedule(now_ns);
             // fetch_add() returns the previous sequence; the current I/O is +1.
             const uint64_t previous_io_sequence =
                 processed_io_count.fetch_add(1);
@@ -560,22 +549,16 @@ public:
                 *io_sequence_out = io_sequence;
             }
 
+            auto begin = eq->begin_prediction(std::move(item), now_ns);
+            item = begin.sample;
             expired_samples = training_samples_from_evaluated_locked(
-                eq->expire_before_prepare(item, now_ns));
+                std::move(begin.evaluated));
             snapshot = get_prediction_snapshot();
-            hot_predict_threshold = eq->hot_predict_threshold();
-            auto reservation = eq->reserve_prediction(
-                item, now_ns);
-            if (reservation.accepted) {
-                pending_evaluation = reservation.position;
+            if (begin.ticket.has_value()) {
+                pending_evaluation.emplace(std::move(*begin.ticket));
             }
-            const auto schedule_after = eq->expiry_schedule(now_ns);
             maintenance_schedule_changed =
-                schedule_after.state !=
-                    EvaluationQueue::ExpiryScheduleState::empty &&
-                (schedule_before.state ==
-                     EvaluationQueue::ExpiryScheduleState::empty ||
-                 schedule_after.deadline_ns < schedule_before.deadline_ns);
+                begin.expiry_schedule_changed;
         }
         if (maintenance_schedule_changed) {
             notify_expiry_worker();
@@ -583,15 +566,18 @@ public:
         enqueue_training_samples(std::move(expired_samples));
 
         bool prediction_failed = false;
+        bool cold_start_fallback = false;
         if (snapshot) {
             try {
                 thread_local std::vector<double> proba;
                 snapshot->predict_proba_one_into(to_feat(item), proba);
+                cold_start_fallback = proba.size() == 2 &&
+                    proba[0] == 0.0 && proba[1] == 0.0;
                 auto hot_probability = validated_hot_probability(proba);
                 if (hot_probability.has_value()) {
                     item.predicted_hot_probability = *hot_probability;
                     res = item.predicted_hot_probability >=
-                        hot_predict_threshold ? 1 : 0;
+                        HP_HOT_PREDICT_THRESHOLD ? 1 : 0;
                 } else {
                     prediction_failed = true;
                 }
@@ -606,18 +592,21 @@ public:
             res = 0;
             if (pending_evaluation.has_value()) {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                eq->cancel_prediction(*pending_evaluation);
+                eq->cancel_prediction(std::move(*pending_evaluation));
             }
-        } else if (pending_evaluation.has_value()) {
+        } else {
             item.predicted_label = res;
+        }
+        if (!prediction_failed && pending_evaluation.has_value()) {
             std::vector<TrainingSample> completed_samples;
             {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
                 completed_samples = training_samples_from_evaluated_locked(
                     eq->complete_prediction(
-                        *pending_evaluation,
+                        std::move(*pending_evaluation),
                         item.predicted_hot_probability,
-                        item.predicted_label));
+                        item.predicted_label,
+                        cold_start_fallback));
             }
             enqueue_training_samples(std::move(completed_samples));
         }
@@ -625,109 +614,58 @@ public:
         return res;
     }
 
-    HeatPredictorStats get_evaluation_stats() {
+    HeatPredictorStatus status() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> eq_lock(eq_mutex);
-        const uint64_t now_ns = monotonic_now_ns();
-        eq->advance_otsu_history(now_ns);
-        const double current_heat_label_threshold =
-            eq->heat_label_threshold_at(now_ns);
-        const double current_otsu_candidate_threshold =
-            eq->otsu_candidate_threshold_at(now_ns);
-        return HeatPredictorStats{
-            is_enabled(),
-            processed_io_count.load(),
-            accu.get_total_weight(),
-            eq->pending_size(),
-            eq->awaiting_prediction_size(),
-            eq->evaluation_drop_count(),
-            eq->heat_state_size(),
-            eq->lru_size(),
-            eq->otsu_histogram_bin_count(),
-            eq->otsu_histogram_vote_count(),
-            accu.true_positives(),
-            accu.false_positives(),
-            accu.true_negatives(),
-            accu.false_negatives(),
-            hot_labeled_sample_future_access_count_sum,
-            cold_labeled_sample_future_access_count_sum,
-            hot_labeled_sample_future_added_heat_sum,
-            cold_labeled_sample_future_added_heat_sum,
-            hot_labeled_sample_predicted_hot_probability_sum,
-            cold_labeled_sample_predicted_hot_probability_sum,
-            hot_labeled_sample_future_access_count_window.summary(),
-            cold_labeled_sample_future_access_count_window.summary(),
-            hot_labeled_sample_future_added_heat_window.summary(),
-            cold_labeled_sample_future_added_heat_window.summary(),
-            current_heat_label_threshold,
-            current_otsu_candidate_threshold,
-            eq->otsu_separation,
-            eq->otsu_confidence,
-            eq->otsu_sharpness_confidence,
-            eq->hot_threshold_method,
-            eq->hot_predict_threshold(),
-            eq->hot_predict_threshold_target(),
-            eq->prediction_calibration_size(),
-            eq->prediction_calibration_current_accuracy(),
-            eq->prediction_calibration_target_accuracy()
-        };
+        HeatPredictorStats evaluation = [&] {
+            std::lock_guard<std::mutex> eq_lock(eq_mutex);
+            const auto queue_status = eq->status(monotonic_now_ns());
+            return HeatPredictorStats{
+                is_enabled(),
+                processed_io_count.load(),
+                accu.get_total_weight(),
+                queue_status.pending_io_count,
+                queue_status.awaiting_prediction_count,
+                queue_status.evaluation_drop_count,
+                queue_status.heat_state_count,
+                queue_status.lru_count,
+                queue_status.protected_heat_state_count,
+                queue_status.heat_state_peak_count,
+                queue_status.lru_eviction_count,
+                queue_status.otsu_histogram_bin_count,
+                queue_status.otsu_histogram_vote_count,
+                accu.true_positives(),
+                accu.false_positives(),
+                accu.true_negatives(),
+                accu.false_negatives(),
+                hot_labeled_sample_future_access_count_sum,
+                cold_labeled_sample_future_access_count_sum,
+                hot_labeled_sample_predicted_hot_probability_sum,
+                cold_labeled_sample_predicted_hot_probability_sum,
+                hot_labeled_sample_future_access_count_window.summary(),
+                cold_labeled_sample_future_access_count_window.summary(),
+                queue_status.heat_label_threshold,
+                queue_status.otsu_candidate_threshold,
+                queue_status.hot_threshold_method
+            };
+        }();
+        size_t train_queue_length = 0;
+        {
+            std::lock_guard<std::mutex> lock(train_queue_mutex);
+            train_queue_length = train_queue.size();
+        }
+        return HeatPredictorStatus{
+            std::move(evaluation),
+            train_queue_length,
+            train_drop_count.load(),
+            snapshot_publish_count.load(),
+            adaptation_telemetry->snapshot(),
+            predict_error_count.load(std::memory_order_relaxed)};
     }
 
-    uint64_t get_total_weight() { return accu.get_total_weight(); }
-    size_t get_train_queue_length() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(train_queue_mutex);
-        return train_queue.size();
-    }
-    uint64_t get_snapshot_publish_count() {
-        return snapshot_publish_count.load();
-    }
-    uint64_t get_pending_io_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        return eq->pending_size();
-    }
-
-    uint64_t get_awaiting_prediction_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        return eq->awaiting_prediction_size();
-    }
-
-    uint64_t get_eval_drop_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        return eq->evaluation_drop_count();
-    }
-    uint64_t get_heat_state_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        return eq->heat_state_size();
-    }
-    uint64_t get_lru_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        return eq->lru_size();
-    }
-    uint64_t get_otsu_histogram_bin_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        eq->advance_otsu_history(monotonic_now_ns());
-        return eq->otsu_histogram_bin_count();
-    }
-    uint64_t get_otsu_histogram_vote_count() {
-        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        std::lock_guard<std::mutex> lock(eq_mutex);
-        eq->advance_otsu_history(monotonic_now_ns());
-        return eq->otsu_histogram_vote_count();
-    }
-    uint64_t get_train_drop_count() { return train_drop_count.load(); }
-    uint64_t get_predict_error_count() {
-        return predict_error_count.load(std::memory_order_relaxed);
-    }
     void record_predict_error() {
         predict_error_count.fetch_add(1, std::memory_order_relaxed);
     }
+
 };
 
 #endif
