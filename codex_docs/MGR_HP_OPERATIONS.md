@@ -29,13 +29,17 @@ sudo ceph osd hp status -f json-pretty
 
 - `summary.osds`：OSD 数量、上报情况以及模块启用状态；
 - `summary.samples`：进入识别流程、已完成评价、等待评价和丢弃的 I/O；
-- `summary.heat_state`：跟踪对象、LRU、Otsu 阈值及置信度；
+- `summary.heat_state`：跟踪 object、LRU、Otsu 投票数、有效/候选阈值和阈值状态；
 - `summary.confusion_matrix`：TP、FP、TN 和 FN；
-- `summary.actual_behavior`：热冷样本未来窗口中的实际访问行为；
-- `summary.prediction`：accuracy、precision、recall 和预测阈值；
+- `summary.actual_behavior`：已完成评价的热/冷 I/O 样本在未来窗口中的实际访问行为；
+- `summary.prediction`：accuracy、balanced accuracy、precision、recall、预测/实际
+  热比例和平均预测热概率；固定预测阈值 `0.50` 不重复输出；
 - `summary.training`：训练队列、训练丢弃和模型快照；
 - `summary.latency`：预测次数和预测延迟；
 - `summary.read_ops`、`summary.write_ops`：各类读写操作数量。
+
+`dev` 构建还会输出 `summary.trace`；它是开发期采集状态，不属于生产 V1 的稳定
+统计契约，`main` 中不存在 Trace 命令。
 
 正常情况下，样本数量满足：
 
@@ -127,7 +131,7 @@ sudo ceph osd hp reset -f json-pretty
 
 - I/O、标签、TP、FP、TN 和 FN 计数；
 - pending、awaiting 和训练队列；
-- 热度表、LRU、Otsu 状态和阈值窗口；
+- 热度表、LRU、Otsu object 投票、直方图和阈值状态；
 - 训练模型、预测快照和预测延迟；
 - 读写操作计数。
 

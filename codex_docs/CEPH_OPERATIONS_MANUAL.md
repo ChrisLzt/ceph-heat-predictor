@@ -1,14 +1,13 @@
-# Ceph 操作手册
+# Ceph 单节点操作手册
 
-单节点测试环境：
+当前环境：
 
-- hostname：`s52`
-- MON IP：`192.168.1.52`
-- 数据盘：WD Green SN350 `/dev/nvme1n1`，序列号 `223447804020`
-- OSD：两个 450GiB 分区，对应 `osd.0/1`
-- 副本：`size=1`、`min_size=1`
+- hostname `s52`，MON IP `192.168.1.52`
+- 数据盘 WD Green SN350 `/dev/nvme1n1`，序列号 `223447804020`
+- 两个 450 GiB 分区对应 `osd.0/1`
+- 单副本 `size=1/min_size=1`
 
-两个 OSD 位于同一块物理 SSD，仅用于测试。不要操作系统盘 `/dev/nvme0n1`。
+两个 OSD 位于同一块 SSD，仅用于测试。不要操作系统盘 `/dev/nvme0n1`。
 
 ## 1. 环境变量
 
@@ -22,7 +21,7 @@ export OSD_DISK=/dev/nvme1n1
 export OSD_DISK_SERIAL=223447804020
 ```
 
-## 2. 构建和更新
+## 2. 构建、安装和重启
 
 首次配置：
 
@@ -30,12 +29,12 @@ export OSD_DISK_SERIAL=223447804020
 cd "$CEPH_REPO"
 git submodule update --force --init --recursive --progress
 ./install-deps.sh
-export EXTRA_CMAKE_ARGS="-DWITH_RADOSGW=OFF -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF"
-./do_cmake.sh $EXTRA_CMAKE_ARGS
-mkdir -p "$CEPH_REPO/src/pybind/mgr/dashboard/frontend/dist"
+./do_cmake.sh -DWITH_RADOSGW=OFF -DWITH_TESTS=OFF \
+  -DWITH_MGR_DASHBOARD_FRONTEND=OFF
+mkdir -p src/pybind/mgr/dashboard/frontend/dist
 ```
 
-每次代码更新后，Codex 可以直接执行全量构建、安装、ldconfig 和重启：
+每次代码更新后统一全量构建和安装，避免 OSD/MGR/插件版本不一致：
 
 ```bash
 cd "$CEPH_REPO/build"
@@ -47,7 +46,7 @@ sudo systemctl restart ceph-mgr@${HOST}
 sudo ceph -s
 ```
 
-若修改了公共库、MON/MDS或插件：
+修改公共库、MON 或 MDS 后再执行：
 
 ```bash
 sudo systemctl restart ceph-mon@${HOST} ceph-mds@${HOST}
@@ -56,13 +55,10 @@ sudo ceph -s
 
 ## 3. 初始化 MON/MGR
 
-创建目录并写入配置：
-
 ```bash
 sudo install -d -o ceph -g ceph -m 0755 \
   /etc/ceph /run/ceph /var/run/ceph /var/log/ceph \
   /var/lib/ceph /var/lib/ceph/osd /var/lib/ceph/bootstrap-osd
-
 sudo tee /etc/ceph/ceph.conf >/dev/null <<EOF
 [global]
 fsid = ${FSID}
@@ -78,11 +74,6 @@ osd_crush_chooseleaf_type = 0
 mon_allow_pool_size_one = true
 mon_allow_pool_delete = true
 EOF
-```
-
-创建 keyring：
-
-```bash
 sudo ceph-authtool --create-keyring /tmp/ceph.mon.keyring \
   --gen-key -n mon. --cap mon 'allow *'
 sudo ceph-authtool --create-keyring /etc/ceph/ceph.client.admin.keyring \
@@ -95,18 +86,13 @@ sudo ceph-authtool /tmp/ceph.mon.keyring \
   --import-keyring /etc/ceph/ceph.client.admin.keyring
 sudo ceph-authtool /tmp/ceph.mon.keyring \
   --import-keyring /var/lib/ceph/bootstrap-osd/ceph.keyring
-sudo chown ceph:ceph /tmp/ceph.mon.keyring /var/lib/ceph/bootstrap-osd/ceph.keyring
-```
-
-初始化 MON/MGR：
-
-```bash
+sudo chown ceph:ceph /tmp/ceph.mon.keyring \
+  /var/lib/ceph/bootstrap-osd/ceph.keyring
 monmaptool --create --add "$HOST" "$MON_IP" --fsid "$FSID" /tmp/monmap
 sudo install -d -o ceph -g ceph -m 0755 /var/lib/ceph/mon/ceph-${HOST}
 sudo -u ceph ceph-mon --mkfs -i "$HOST" \
   --monmap /tmp/monmap --keyring /tmp/ceph.mon.keyring
 sudo systemctl start ceph-mon@${HOST}
-
 sudo install -d -o ceph -g ceph -m 0755 /var/lib/ceph/mgr/ceph-${HOST}
 sudo ceph auth get-or-create mgr.${HOST} mon 'allow profile mgr' \
   osd 'allow *' mds 'allow *' \
@@ -118,16 +104,12 @@ sudo ceph -s
 
 ## 4. 创建两个 OSD
 
-确认数据盘身份：
+以下命令会清空数据盘。先核对型号和序列号：
 
 ```bash
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL,SERIAL
-test "$(cat /sys/block/$(basename "$OSD_DISK")/device/serial)" = "$OSD_DISK_SERIAL"
-```
-
-以下命令会清空数据盘，只在允许丢弃数据时执行：
-
-```bash
+test "$(cat /sys/block/$(basename "$OSD_DISK")/device/serial)" \
+  = "$OSD_DISK_SERIAL"
 sudo ceph-volume lvm zap "$OSD_DISK" --destroy
 sudo wipefs -a "$OSD_DISK"
 sudo sgdisk -o \
@@ -136,7 +118,6 @@ sudo sgdisk -o \
   "$OSD_DISK"
 sudo partprobe "$OSD_DISK"
 sudo udevadm settle
-
 sudo ceph-volume lvm create --data "${OSD_DISK}p1"
 sudo ceph-volume lvm create --data "${OSD_DISK}p2"
 sudo ceph osd tree
@@ -151,41 +132,21 @@ sudo ceph auth get-or-create mds.${HOST} mon 'profile mds' \
   | sudo tee /var/lib/ceph/mds/ceph-${HOST}/keyring >/dev/null
 sudo chown -R ceph:ceph /var/lib/ceph/mds/ceph-${HOST}
 sudo systemctl start ceph-mds@${HOST}
-
 sudo ceph osd pool create cephfs_meta 16 16
 sudo ceph osd pool create cephfs_data 128 128
-sudo ceph osd pool set cephfs_meta size 1 --yes-i-really-mean-it
-sudo ceph osd pool set cephfs_meta min_size 1
-sudo ceph osd pool set cephfs_meta pg_autoscale_mode off
-sudo ceph osd pool set cephfs_data size 1 --yes-i-really-mean-it
-sudo ceph osd pool set cephfs_data min_size 1
-sudo ceph osd pool set cephfs_data pg_autoscale_mode off
+for pool in cephfs_meta cephfs_data; do
+  sudo ceph osd pool set "$pool" size 1 --yes-i-really-mean-it
+  sudo ceph osd pool set "$pool" min_size 1
+  sudo ceph osd pool set "$pool" pg_autoscale_mode off
+done
 sudo ceph fs new myfs cephfs_meta cephfs_data
-```
-
-已有 CephFS 时只调整 PG 和关闭 autoscale：
-
-```bash
-sudo ceph osd pool set cephfs_data pg_num 128
-sudo ceph osd pool set cephfs_data pgp_num 128
-sudo ceph osd pool set cephfs_meta pg_num 16
-sudo ceph osd pool set cephfs_meta pgp_num 16
-sudo ceph osd pool set cephfs_data pg_autoscale_mode off
-sudo ceph osd pool set cephfs_meta pg_autoscale_mode off
-sudo ceph -s
-sudo ceph osd pool ls detail
-```
-
-单节点测试将 `.mgr` 固定为 1 PG，并关闭 autoscale，避免 autoscaler 按默认下限重新
-扩展到 32 PG：
-
-```bash
 sudo ceph osd pool set .mgr pg_autoscale_mode off
 sudo ceph osd pool set .mgr pg_num 1
 watch -n 2 'ceph osd pool get .mgr pg_num; ceph osd pool get .mgr pgp_num; ceph -s'
 ```
 
-`pg_num` 会通过 PG merge 逐步下降，等待所有 PG 恢复 `active+clean` 后再运行负载。
+已有 CephFS 时只把 `cephfs_data/meta` 的 `pg_num/pgp_num` 调整为 `128/16` 并关闭
+autoscale。PG merge 完成且所有 PG 恢复 `active+clean` 后再测试。
 
 挂载：
 
@@ -200,29 +161,40 @@ sudo chown lzt:lzt /mnt/cephfs
 sudo install -d -o "$USER" -g "$USER" -m 0755 /mnt/cephfs/vdbench
 ```
 
-## 6. 测试和观测
+## 6. 五负载测试与观测
+
+正式测试位于 `/home/chris/ceph-test/new_workload/`。修改负载后先执行：
 
 ```bash
-/home/chris/测试脚本/单节点测试/造数据.sh
-/home/chris/测试脚本/单节点测试/后台运行标准IO测试.sh run
+cd /home/chris/ceph-test
+./new_workload/validate_all.sh
 ```
 
+以 MapReduce 为例，造数据时关闭识别，测试前重新启用；enable/disable 都会 reset：
+
 ```bash
-sudo ceph daemon osd.0 perf dump object_hp_status
-sudo ceph daemon osd.1 perf dump object_hp_status
+sudo ceph osd hp disable -f json-pretty
+./new_workload/bigdata_mapreduce_vdbench_v1/prepare_data.sh
+sudo ceph osd hp enable -f json-pretty
+./new_workload/bigdata_mapreduce_vdbench_v1/run_test.sh
+```
+
+其他负载同样使用各目录的 `prepare_data.sh` 和 `run_test.sh`。容量和阶段定义以
+`/home/chris/ceph-test/new_workload/README.md`、`WORKLOAD_SUMMARY.md` 为准。
+
+```bash
 sudo ceph daemon osd.0 object_hp status
 sudo ceph daemon osd.1 object_hp status
+sudo ceph daemon osd.0 perf dump object_hp_status
+sudo ceph daemon osd.1 perf dump object_hp_status
 sudo ceph osd hp status -f json-pretty
 sudo ceph osd hp reset
 ```
 
-OSD `object_hp status` 直接读取实时训练队列；测试结束后不要只用可能滞后的
-perf/MGR 队列字段判断训练是否完成。
+OSD `object_hp status` 是实时状态；Perf/MGR 可能滞后。每轮 reset 后先确认每个 OSD
+实时状态和 PerfCounters 归零，再等待 MGR 汇总归零。结束后等待 pending、awaiting 和
+训练队列排空，再保存最终 MGR 状态。
 
-正式负载脚本在 reset 后先确认各 OSD 的实时状态和 perf 已清零，再等待 MGR 汇总收到
-同一轮零值；只有两层检查都成功后才启动负载和 MGR 周期采样，避免首个快照混入上一
-轮缓存。
-
-汇总包括 `samples`、`heat_state`、`confusion_matrix`、`actual_behavior`、
-`prediction`、`training`、`latency`、`read_ops` 和 `write_ops`。
-`actual_behavior` 当前按 object 级统计；重点看 precision、recall 及 TP/FP/TN/FN。
+重点检查 accuracy、balanced accuracy、precision、recall、预测/实际热比例、
+TP/FP/TN/FN、drop、预测延迟和 OSD RSS。完整命令和归零判据见
+[MGR 操作说明](MGR_HP_OPERATIONS.md)。
