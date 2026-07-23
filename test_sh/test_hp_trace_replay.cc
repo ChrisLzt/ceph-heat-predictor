@@ -157,6 +157,48 @@ void test_feature_mask_applies_to_prediction_and_training_input() {
   require(rejected, "out-of-range feature mask must be rejected");
 }
 
+void test_counterfactual_overrides_are_strict_and_scoped() {
+  const auto override_path = fixture_path("hp_replay_overrides_crlf.tsv");
+  {
+    std::ofstream output(override_path, std::ios::binary | std::ios::trunc);
+    output << "io_sequence\tfeature_0\tactual_label\tlabel_heat_threshold\r\n"
+           << "1\t7.5\t0\t120\r\n"
+           << "2\t-1.5\t1\t140\r\n";
+  }
+  const auto parsed_overrides = read_hp_replay_overrides(override_path);
+  require(parsed_overrides.size() == 2,
+          "override reader must accept a CRLF TSV");
+  std::filesystem::remove(override_path);
+
+  HpReplayTrace trace;
+  trace.header = make_header();
+  trace.records = {
+      make_record(1, 100, 200, 1),
+      make_record(2, 110, 210, 0),
+  };
+  const double original_feature_1 = trace.records[0].features[1];
+  apply_hp_replay_overrides(trace, parsed_overrides);
+  require(trace.records[0].features[0] == 7.5 &&
+          trace.records[0].features[1] == original_feature_1,
+          "override must only replace feature zero");
+  require(trace.records[0].actual_label == 0 &&
+          trace.records[0].label_heat_threshold == 120.0 &&
+          trace.records[1].actual_label == 1 &&
+          trace.records[1].label_heat_threshold == 140.0,
+          "override did not replace D1 labels and thresholds");
+
+  bool rejected = false;
+  try {
+    apply_hp_replay_overrides(trace, {
+        HpReplayRecordOverride{2, 0.0, 0, 100.0},
+        HpReplayRecordOverride{1, 0.0, 0, 100.0},
+    });
+  } catch (const std::runtime_error&) {
+    rejected = true;
+  }
+  require(rejected, "override sequence mismatch must be rejected");
+}
+
 void test_replay_publishes_trained_snapshot_deterministically() {
   HpReplayTrace trace;
   trace.header = make_header();
@@ -266,6 +308,7 @@ int main(int argc, char** argv) {
     test_reader_rejects_bad_magic();
     test_snapshot_schedule_uses_count_or_time();
     test_feature_mask_applies_to_prediction_and_training_input();
+    test_counterfactual_overrides_are_strict_and_scoped();
     test_replay_publishes_trained_snapshot_deterministically();
     test_parity_metrics_and_original_order_tsv();
     std::cout << "PASS: hp trace replay\n";

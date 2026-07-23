@@ -89,6 +89,9 @@ namespace {
     {"hp_eval_drop_count", ObjectHpAggregate::sum},
     {"hp_heat_state_count", ObjectHpAggregate::sum},
     {"hp_lru_count", ObjectHpAggregate::sum},
+    {"hp_protected_heat_state_count", ObjectHpAggregate::sum},
+    {"hp_heat_state_peak_count", ObjectHpAggregate::sum},
+    {"hp_lru_eviction_count", ObjectHpAggregate::sum},
     {"hp_otsu_histogram_bin_count", ObjectHpAggregate::sum},
     {"hp_otsu_histogram_vote_count", ObjectHpAggregate::sum},
     {"hp_true_positive_count", ObjectHpAggregate::sum},
@@ -1855,6 +1858,12 @@ bool DaemonServer::_handle_command(
     f->open_object_section("heat_state");
     f->dump_unsigned("hp_heat_state_count", summary["hp_heat_state_count"]);
     f->dump_unsigned("hp_lru_count", summary["hp_lru_count"]);
+    f->dump_unsigned("hp_protected_heat_state_count",
+                     summary["hp_protected_heat_state_count"]);
+    f->dump_unsigned("hp_heat_state_peak_count",
+                     summary["hp_heat_state_peak_count"]);
+    f->dump_unsigned("hp_lru_eviction_count",
+                     summary["hp_lru_eviction_count"]);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      summary["hp_otsu_histogram_bin_count"]);
     f->dump_unsigned("hp_otsu_histogram_vote_count",

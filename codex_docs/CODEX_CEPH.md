@@ -79,8 +79,9 @@ key = make_object_key(pool, ceph_object_hash, object_name_hash);
 
 `PredictionSample` 和 Trace schema 暂时保留 `short_window_access_count`、
 `long_window_access_count` 字段以兼容实验数据；当前
-`HP_ENABLE_ACCESS_RATE_CHANGE=0`，运行时不维护5秒/10秒访问事件，字段保持0，专用到期
-线程只需要处理 EQ deadline。未来若重新启用速率变化 feature，才恢复两类严格时间窗口。
+`HP_ENABLE_ACCESS_RATE_CHANGE=0`，运行时不维护5秒/10秒访问事件。短窗口字段保持0；长期
+字段复用当前 object 在本次入队前的 `pending_evaluation_count`，不再维护独立事件队列。
+专用到期线程只需要处理 EQ deadline。
 
 `operation`、`size`、`offset`、`pool` 和两个 object hash 不作为模型特征；`operation` 只在 OSD hook 层用于 op 计数，`size/offset` 不进入预测器。
 
@@ -99,7 +100,8 @@ key = make_object_key(pool, ceph_object_hash, object_name_hash);
 - 热度：`HEAT_INCREMENT=100.0`、无访问10秒后保留 `1/5`。
 - 热阈值：初始值 `100`；Otsu 按 object 维护最新总热度的时间归一化 score，使用800个
   固定 bin、宽度 `0.01`。下限是一次访问热度经过一个衰减周期后的值，当前为
-  `100 * 0.20 = 20`；上限按相同800个对数 bin 推导，当前约为 `59619`。最少
+  `100 * 0.20 = 20`；只有当前总热度严格大于20的 object 才保留一票，等于或低于20
+  时立即移除。上限按相同800个对数 bin 推导，当前约为 `59619`。最少
   32个 object 投票，每100次
   有效更新或最迟1秒重算一次。有效阈值以每1秒参考区间固定 EMA `0.10` 跟踪候选，
   实际 gain 只按经过时间复合。
@@ -149,13 +151,17 @@ Otsu score 原点和访问距离全部使用 `steady_clock`；当前访问速率
 
 - `threshold_entries_by_key` 是 object key 到 Otsu bin 和顺序节点的哈希索引；
   `threshold_order` 是按最近一次热度投票更新时间排列的 `std::list<uint64_t>`。object
-  更新时先删除旧节点再追加到队尾，超过容量时从队首淘汰。因此它是更新顺序，不是按
-  热度排序，也不是 LRU 热度状态表。
+  更新时用 `splice` 把原节点移到队尾，超过容量时从队首淘汰。因此它是更新顺序，不是
+  按热度排序，也不是 LRU 热度状态表。
+- `threshold_expiry_heap` 是 object key 到精确下限到期时间的索引最小堆；每个 object
+  最多一个节点。访问刷新和任意删除为 `O(log n)`，到期时只查看堆顶，不保留失效事件。
 - percentile feature 及其 PBDS 顺序统计树已经删除；Otsu 删除投票只依赖
   `threshold_entries_by_key` 保存的 bin 和 `threshold_order` 节点迭代器。
 - `otsu_histogram` 使用固定 `uint64_t[800]` 聚合
   `score = ln(clamp(total_heat, 20, 59619.16)) - decay_factor * timestamp_ns`，bin 宽
-  为 `0.01`。每个 object 只保存一个投票；再次访问时 O(1) 删除旧票并插入新票。
+  为 `0.01`。clamp 只作用于已经满足 `total_heat > 20` 的投票；低于等于20的 object
+  不进入第0个 bin。每个 object 只保存一个投票；再次访问时直方图和顺序链表更新为
+  O(1)，精确到期堆刷新为 O(log n)。
 - score 下界随单调时间右移。只有下界跨过完整 bin 时才物理维护：低于新下界的 bin
   合并到第0个 bin；超过热度上限的值逻辑 clamp 到最后一个 bin。固定容量使 Otsu 扫描
   与 object 数量无关，最多扫描800个 bin。
@@ -173,10 +179,13 @@ Otsu score 原点和访问距离全部使用 `steady_clock`；当前访问速率
 
 LRU 只管理不再受评价队列或访问时间窗口保护的 object 状态：
 
-- `pending_evaluation_count` 大于0的 object 不在 LRU，保证标签到期前状态存在。访问窗口
-  feature 关闭时，两个兼容计数始终为0。
+- `pending_evaluation_count` 大于0的 object 不在 LRU，保证标签到期前状态存在。访问速率
+  feature 关闭时不维护访问窗口状态。
 - pending 计数为0后 object 进入 `lru_list`；再次访问时从 LRU 移回活跃状态。
 - `lru_list.size() > HP_LRU_CAPACITY` 时删除队首 object 的 `heat_map` 状态。
+- `hp_protected_heat_state_count = hp_heat_state_count - hp_lru_count`；另记录 reset 以来
+  每个 OSD 的 heat state 峰值和 LRU 淘汰数。MGR 对三项均求和，其中峰值是各 OSD
+  独立峰值之和，不表示同一时刻的全局峰值。
 
 ## 模型和训练
 
@@ -254,8 +263,8 @@ reset 后用 OSD perf 或 `ceph osd hp status -f json-pretty` 确认计数归零
 - `summary.osds`：`up_osds`、`reporting_osds`、`missing_osds`
 - `summary.samples/confusion_matrix`：I/O 总数、已评估数、pending 数、评价丢弃数
   和 TP/FP/TN/FN
-- `summary.heat_state`：共享热度状态、LRU、Otsu 非空 bin/保留 object 数、有效/候选
-  热阈值和各阈值状态的 OSD 数
+- `summary.heat_state`：共享热度状态、LRU、受保护状态、reset 以来状态峰值和 LRU
+  淘汰数、Otsu 非空 bin/保留 object 数、有效/候选热阈值和各阈值状态的 OSD 数
 - `summary.actual_behavior`：实际热/冷样本的平均未来访问次数、热冷比值，以及各 OSD
   `p99/p95/p50` 按对应冷热样本数加权后的平均值。后者使用
   `*_osd_pXX_weighted_avg` 命名，不表示合并全体样本后的全局分位数。
@@ -284,8 +293,8 @@ OSD perf 命令为 `ceph daemon osd.0 perf dump object_hp_status`。
 
 当前字段按以下组输出：
 
-- 样本/状态：I/O、labeled、pending、评价丢弃、heat state、LRU、Otsu 非空 bin/保留
-  object 数。
+- 样本/状态：I/O、labeled、pending、评价丢弃、heat state、LRU、受保护状态、状态峰值、
+  LRU 淘汰、Otsu 非空 bin/保留 object 数。
 - 混淆矩阵与直观指标：TP/FP/TN/FN、accuracy、balanced accuracy、precision、recall、
   预测/实际热比例。MGR 从所有 OSD 汇总后的 TP/FP/TN/FN 计算全局 balanced accuracy，
   不平均各 OSD 的局部值。

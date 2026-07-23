@@ -11,6 +11,7 @@
 #include <type_traits>
 
 #include "heatpredictor/heat_predictor.h"
+#include "heatpredictor/hp_expiry_heap.h"
 #include "heatpredictor/hp_quantile_window.h"
 #include "heatpredictor/hp_trace.h"
 #include "osd/ObjectHeatPredictor.h"
@@ -833,7 +834,7 @@ void test_score_total_heat_label_ignores_later_threshold_updates()
   for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
     eq.record_object_heat(
         1000 + i,
-        i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0,
+        i < HP_OTSU_MIN_VOTES / 2 ? 30.0 : 1000.0,
         later_time);
   }
   eq.update_hot_threshold(later_time);
@@ -862,7 +863,7 @@ void test_score_total_heat_ema_uses_current_heat_threshold()
   for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
     eq.record_object_heat(
         1000 + i,
-        i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0,
+        i < HP_OTSU_MIN_VOTES / 2 ? 30.0 : 1000.0,
         update_time_ns);
   }
   auto candidate = eq.score_otsu_histogram.otsu_result();
@@ -1543,20 +1544,11 @@ void test_evaluation_queue_reports_head_expiry_schedule()
           "deadline should become due without waiting for prediction");
   require(eq.expire_due_evaluations(1100).empty(),
           "label-only completion should not emit a training sample");
-  require(eq.expiry_schedule(1100).state ==
-              EvaluationQueue::ExpiryScheduleState::due,
-          "the access-window event should remain due after label completion");
-  eq.expire_due_access_windows(1100);
   auto after_label = eq.expiry_schedule(1100);
-#if HP_ENABLE_ACCESS_RATE_CHANGE
   require(after_label.state ==
               EvaluationQueue::ExpiryScheduleState::waiting_deadline &&
-          after_label.deadline_ns == 100 + HP_SHORT_ACCESS_WINDOW_NS,
-          "labeled sample should leave only its later short-window cleanup");
-#else
-  require(after_label.state == EvaluationQueue::ExpiryScheduleState::empty,
-          "without the access-rate feature, no short-window cleanup remains");
-#endif
+          after_label.deadline_ns == 10100,
+          "Otsu maintenance should retain the object until heat reaches 20");
   auto completed = eq.complete_prediction(reservation.position, 0.25, 0);
   require(completed.size() == 1,
           "late prediction should rendezvous with the completed label");
@@ -1986,6 +1978,35 @@ void test_time_domain_heat_decay_and_recency()
       "heat should retain the configured fraction after the decay horizon");
 }
 
+void test_long_window_trace_field_uses_pending_evaluation_count()
+{
+  EvaluationQueue eq(
+    HP_HEAT_DECAY_HORIZON_NS,
+    16,
+    HP_HEAT_INCREMENT,
+    HP_HEAT_INCREMENT,
+    HP_SHORT_ACCESS_WINDOW_NS,
+    HP_FUTURE_LABEL_WINDOW_NS,
+    1);
+
+  PredictionSample first = make_item(1, 9);
+  eq.prepare_features(first, 0);
+  require(first.long_window_access_count == 0,
+          "first access should see no earlier pending evaluation");
+  require(eq.enqueue(first, 0), "first evaluation should be admitted");
+
+  PredictionSample dropped = make_item(2, 9);
+  eq.prepare_features(dropped, 1);
+  require(dropped.long_window_access_count == 1,
+          "compatibility count should include the admitted pending sample");
+  require(!eq.enqueue(dropped, 1), "second evaluation should be dropped");
+
+  PredictionSample after_drop = make_item(3, 9);
+  eq.prepare_features(after_drop, 2);
+  require(after_drop.long_window_access_count == 1,
+          "a dropped evaluation must not create long-window runtime state");
+}
+
 #if HP_ENABLE_ACCESS_RATE_CHANGE
 void test_short_access_window_uses_time_and_counts_prior_io()
 {
@@ -2017,64 +2038,9 @@ void test_short_access_window_uses_time_and_counts_prior_io()
           "a newer object should remain in the short-history window");
 }
 
-void test_long_access_window_uses_time_and_counts_prior_io()
-{
-  constexpr uint64_t long_window_ns = 20ULL * 1000 * 1000 * 1000;
-  EvaluationQueue eq(
-    4,
-    16,
-    HP_HEAT_INCREMENT,
-    HP_HEAT_INCREMENT,
-    HP_SHORT_ACCESS_WINDOW_NS,
-    long_window_ns,
-    16);
-
-  PredictionSample first = make_item(1, 7);
-  eq.prepare_features(first, 0);
-  require(first.long_window_access_count == 0,
-          "first access should see no prior long-window access");
-
-  PredictionSample before_deadline = make_item(2, 7);
-  eq.prepare_features(before_deadline, long_window_ns - 1);
-  require(before_deadline.long_window_access_count == 1,
-          "long-window access should remain before its time deadline");
-
-  PredictionSample at_deadline = make_item(3, 7);
-  eq.prepare_features(at_deadline, long_window_ns);
-  require(at_deadline.long_window_access_count == 1,
-          "the oldest access should expire exactly at the long-window deadline");
-}
-
-void test_long_access_window_counts_eq_admission_drops()
-{
-  constexpr uint64_t long_window_ns = 20ULL * 1000 * 1000 * 1000;
-  EvaluationQueue eq(
-    4,
-    16,
-    HP_HEAT_INCREMENT,
-    HP_HEAT_INCREMENT,
-    HP_SHORT_ACCESS_WINDOW_NS,
-    long_window_ns,
-    1);
-
-  PredictionSample first = make_item(1, 9);
-  eq.prepare_features(first, 0);
-  require(eq.enqueue(first, 0), "first EQ sample should be admitted");
-
-  PredictionSample dropped = make_item(2, 9);
-  eq.prepare_features(dropped, 1);
-  require(!eq.enqueue(dropped, 1), "second EQ sample should be dropped");
-
-  PredictionSample third = make_item(3, 9);
-  eq.prepare_features(third, 2);
-  require(third.long_window_access_count == 2,
-          "strict long window must include an access whose EQ sample was dropped");
-}
-
-void test_access_windows_schedule_idle_cleanup()
+void test_short_access_window_schedules_idle_cleanup()
 {
   constexpr uint64_t short_window_ns = 5ULL * 1000 * 1000 * 1000;
-  constexpr uint64_t long_window_ns = 20ULL * 1000 * 1000 * 1000;
   constexpr uint64_t start_ns = 100;
   EvaluationQueue eq(
     HP_HEAT_DECAY_HORIZON_NS,
@@ -2082,7 +2048,7 @@ void test_access_windows_schedule_idle_cleanup()
     HP_HEAT_INCREMENT,
     HP_HEAT_INCREMENT,
     short_window_ns,
-    long_window_ns,
+    HP_FUTURE_LABEL_WINDOW_NS,
     16);
 
   PredictionSample item = make_item(1, 77);
@@ -2096,19 +2062,11 @@ void test_access_windows_schedule_idle_cleanup()
 
   eq.expire_due_access_windows(start_ns + short_window_ns);
   require(eq.heat_map.at(77).short_window_access_count == 0 &&
-          eq.heat_map.at(77).long_window_access_count == 1,
-          "short cleanup should not remove the long-window event early");
-
-  auto long_schedule = eq.expiry_schedule(start_ns + short_window_ns);
-  require(long_schedule.state ==
-              EvaluationQueue::ExpiryScheduleState::waiting_deadline &&
-          long_schedule.deadline_ns == start_ns + long_window_ns,
-          "idle maintenance should next schedule the long access deadline");
-
-  eq.expire_due_access_windows(start_ns + long_window_ns);
-  require(eq.heat_map.at(77).long_window_access_count == 0 &&
           eq.lru_size() == 1,
-          "idle cleanup should release the object to the LRU");
+          "short-window cleanup should release the object to the LRU");
+  require(eq.expiry_schedule(start_ns + short_window_ns).state ==
+              EvaluationQueue::ExpiryScheduleState::empty,
+          "no independent long-window event should remain scheduled");
 }
 
 void test_access_rate_change_uses_log2p1_rates()
@@ -2172,19 +2130,19 @@ void test_threshold_window_tracks_object_current_heat()
     100.0,  // heat_label_threshold
     100.0); // heat_increment
 
-  eq.record_object_heat(42, 10.0, 1);
+  eq.record_object_heat(42, 30.0, 1);
   require(eq.threshold_entries_by_key.size() == 1,
           "first object should create one object heat entry");
 
-  eq.record_object_heat(42, 30.0, 2);
+  eq.record_object_heat(42, 40.0, 2);
   require(eq.threshold_entries_by_key.size() == 1,
           "same object should replace object heat instead of appending");
 
-  eq.record_object_heat(7, 20.0, 2);
+  eq.record_object_heat(7, 50.0, 2);
   require(eq.threshold_entries_by_key.size() == 2,
           "different object should create a second object heat entry");
 
-  eq.record_object_heat(42, 5.0, 2);
+  eq.record_object_heat(42, 60.0, 2);
   require(eq.threshold_entries_by_key.size() == 2,
           "replacing one object should not change object heat entry count");
 }
@@ -2197,15 +2155,92 @@ void test_threshold_window_order_has_one_entry_per_object()
     100.0,  // heat_label_threshold
     100.0); // heat_increment
 
-  eq.record_object_heat(1, 10.0, 1);
-  eq.record_object_heat(2, 20.0, 2);
-  eq.record_object_heat(3, 30.0, 3);
-  eq.record_object_heat(2, 40.0, 4);
+  eq.record_object_heat(1, 1000.0, 1);
+  eq.record_object_heat(2, 2000.0, 2);
+  eq.record_object_heat(3, 3000.0, 3);
+  eq.record_object_heat(2, 4000.0, 4);
 
   require(eq.threshold_entries_by_key.size() == 3,
           "threshold index should keep one entry per object");
   require(eq.threshold_order.size() == 3,
           "threshold recency list should not retain stale object entries");
+}
+
+void test_heat_state_lifecycle_telemetry()
+{
+  EvaluationQueue eq(
+    HP_HEAT_DECAY_HORIZON_NS,
+    1,
+    HP_HEAT_INCREMENT,
+    HP_HEAT_INCREMENT,
+    HP_SHORT_ACCESS_WINDOW_NS,
+    HP_FUTURE_LABEL_WINDOW_NS,
+    0);
+
+  PredictionSample first = make_item(1, 101);
+  eq.prepare_features(first, 0);
+  require(eq.protected_heat_state_size() == 1,
+          "a newly accessed object should be protected before admission");
+  require(!eq.enqueue(first, 0),
+          "zero evaluation capacity should reject the first sample");
+#if HP_ENABLE_ACCESS_RATE_CHANGE
+  eq.expire_due_access_windows(HP_SHORT_ACCESS_WINDOW_NS);
+#endif
+  require(eq.protected_heat_state_size() == 0 && eq.lru_size() == 1,
+          "a rejected object should become an idle LRU state");
+
+  PredictionSample second = make_item(2, 202);
+  constexpr uint64_t second_time_ns =
+      HP_ENABLE_ACCESS_RATE_CHANGE ? HP_SHORT_ACCESS_WINDOW_NS + 1 : 1;
+  eq.prepare_features(second, second_time_ns);
+  require(!eq.enqueue(second, second_time_ns),
+          "zero evaluation capacity should reject the second sample");
+#if HP_ENABLE_ACCESS_RATE_CHANGE
+  eq.expire_due_access_windows(
+      second_time_ns + HP_SHORT_ACCESS_WINDOW_NS);
+#endif
+  require(eq.heat_state_size() == 1 && eq.lru_size() == 1,
+          "LRU capacity should retain only one idle heat state");
+  require(eq.heat_state_peak_size() == 2,
+          "heat-state peak should include the pre-eviction high-water mark");
+  require(eq.lru_eviction_count() == 1,
+          "LRU eviction telemetry should count removed heat states");
+}
+
+void test_expiry_heap_orders_refreshes_and_erases_keys()
+{
+  HpExpiryHeap heap;
+  require(heap.empty(), "a new expiry heap should be empty");
+
+  heap.upsert(3, 30);
+  heap.upsert(1, 10);
+  heap.upsert(2, 20);
+  require(heap.size() == 3,
+          "expiry heap should keep one node per inserted key");
+  require(!heap.due_key(9).has_value(),
+          "expiry heap should not expose a future deadline");
+  require(heap.due_key(10) == std::optional<uint64_t>(1),
+          "expiry heap should expose the earliest due key");
+
+  heap.upsert(1, 40);
+  require(heap.size() == 3,
+          "refreshing a key should update its node in place");
+  require(heap.due_key(20) == std::optional<uint64_t>(2),
+          "refreshing the root should restore heap order");
+  require(heap.erase(2), "expiry heap should erase an indexed key");
+  require(!heap.erase(2),
+          "erasing a missing expiry key should report false");
+  require(heap.due_key(30) == std::optional<uint64_t>(3),
+          "arbitrary erase should preserve the remaining heap order");
+
+  require(heap.erase(3),
+          "expiry heap should remove the remaining earlier deadline");
+  heap.upsert(4, 40);
+  require(heap.due_key(40) == std::optional<uint64_t>(1),
+          "equal deadlines should use the object key as a stable tie-breaker");
+  heap.clear();
+  require(heap.empty() && heap.size() == 0,
+          "clearing the expiry heap should remove nodes and indexes");
 }
 
 void test_object_heat_window_bounds_otsu_votes()
@@ -2217,13 +2252,131 @@ void test_object_heat_window_bounds_otsu_votes()
     100.0); // heat_increment
   eq.heat_label_threshold_object_capacity = 2;
 
-  eq.record_object_heat(1, 10.0, 1);
+  eq.record_object_heat(1, 30.0, 1);
   eq.record_object_heat(2, 30.0, 2);
   eq.record_object_heat(3, 40.0, 3);
   require(eq.threshold_entries_by_key.size() == 2,
           "threshold index should evict to its configured capacity");
   require(eq.score_otsu_histogram.size() == 2,
           "Otsu should keep one total-heat vote per retained object");
+  require(eq.threshold_expiry_heap.size() == 2,
+          "D1 should keep one expiry node per retained Otsu object");
+}
+
+void test_otsu_population_excludes_floor_heat_objects()
+{
+  constexpr uint64_t decay_horizon_ns = 1000;
+  EvaluationQueue eq(
+    decay_horizon_ns,
+    8,
+    100.0,
+    100.0);
+
+  eq.record_object_heat(1, HP_OTSU_TOTAL_HEAT_MIN, 0);
+  require(eq.score_otsu_histogram.empty(),
+          "D1 should not insert an object already at the heat floor");
+
+  eq.record_object_heat(1, 100.0, 0);
+  require(eq.score_otsu_histogram.size() == 1,
+          "D1 should retain an object while its heat is above the floor");
+  eq.advance_otsu_history(decay_horizon_ns - 1);
+  require(eq.score_otsu_histogram.size() == 1,
+          "D1 should retain the vote until its exact floor crossing");
+  eq.advance_otsu_history(decay_horizon_ns);
+  require(eq.score_otsu_histogram.empty(),
+          "D1 should remove the vote at its floor crossing");
+  require(eq.threshold_entries_by_key.empty() && eq.threshold_order.empty(),
+          "D1 expiry should remove both threshold indexes");
+  require(eq.threshold_expiry_heap.empty(),
+          "D1 expiry should remove the object's expiry index node");
+}
+
+void test_otsu_population_refresh_ignores_stale_expiry()
+{
+  constexpr uint64_t decay_horizon_ns = 1000;
+  EvaluationQueue eq(
+    decay_horizon_ns,
+    8,
+    100.0,
+    100.0);
+
+  eq.record_object_heat(1, 100.0, 0);
+  eq.record_object_heat(1, 100.0, decay_horizon_ns / 2);
+  require(eq.threshold_expiry_heap.size() == 1,
+          "refreshing a D1 vote should replace rather than append expiry state");
+  eq.advance_otsu_history(decay_horizon_ns);
+  require(eq.score_otsu_histogram.size() == 1,
+          "a refreshed D1 vote should survive its stale expiry event");
+  eq.advance_otsu_history(decay_horizon_ns + decay_horizon_ns / 2);
+  require(eq.score_otsu_histogram.empty(),
+          "a refreshed D1 vote should expire at its new floor crossing");
+}
+
+void test_otsu_population_schedules_idle_floor_crossing()
+{
+  constexpr uint64_t decay_horizon_ns = 1000;
+  EvaluationQueue eq(
+    decay_horizon_ns,
+    8,
+    100.0,
+    100.0);
+
+  eq.record_object_heat(1, 100.0, 0);
+  const auto waiting = eq.expiry_schedule(0);
+  require(waiting.state ==
+              EvaluationQueue::ExpiryScheduleState::waiting_deadline &&
+          waiting.deadline_ns == decay_horizon_ns,
+          "idle maintenance should wake at the Otsu vote floor crossing");
+  require(eq.expiry_schedule(decay_horizon_ns).state ==
+              EvaluationQueue::ExpiryScheduleState::due,
+          "the Otsu floor crossing should become due without another I/O");
+}
+
+void test_otsu_population_uses_unclamped_heat_for_expiry()
+{
+  constexpr uint64_t decay_horizon_ns = 1000000;
+  EvaluationQueue eq(
+    decay_horizon_ns,
+    8,
+    100.0,
+    100.0);
+  const double heat = HP_OTSU_TOTAL_HEAT_MAX * 2.0;
+  const double decay_log_factor = hp_heat_decay_log_factor_per_ns(
+    decay_horizon_ns);
+  const uint64_t clamped_expiry = static_cast<uint64_t>(std::ceil(
+    std::log(HP_OTSU_TOTAL_HEAT_MIN / HP_OTSU_TOTAL_HEAT_MAX) /
+    decay_log_factor));
+  const uint64_t actual_expiry = static_cast<uint64_t>(std::ceil(
+    std::log(HP_OTSU_TOTAL_HEAT_MIN / heat) / decay_log_factor));
+  require(actual_expiry > clamped_expiry,
+          "the probe heat should outlive the histogram ceiling");
+
+  eq.record_object_heat(1, heat, 0);
+  eq.advance_otsu_history(clamped_expiry);
+  require(eq.score_otsu_histogram.size() == 1,
+          "histogram clamping must not shorten an object's Otsu lifetime");
+  eq.advance_otsu_history(actual_expiry);
+  require(eq.score_otsu_histogram.empty(),
+          "an above-ceiling object should leave Otsu at its actual floor crossing");
+}
+
+void test_otsu_population_expiry_rounds_toward_the_cold_side()
+{
+  constexpr uint64_t start_ns = 100;
+  constexpr double heat = 150.0;
+  EvaluationQueue eq(
+    10000, 8, 5.0, 100.0, HP_SHORT_ACCESS_WINDOW_NS, 1000, 8);
+
+  eq.record_object_heat(1, heat, start_ns);
+  const double decay_ns = std::log(HP_OTSU_TOTAL_HEAT_MIN / heat) /
+      hp_heat_decay_log_factor_per_ns(10000);
+  const uint64_t expected_deadline =
+      start_ns + static_cast<uint64_t>(std::ceil(decay_ns));
+  const auto schedule = eq.expiry_schedule(start_ns);
+  require(schedule.state ==
+              EvaluationQueue::ExpiryScheduleState::waiting_deadline &&
+          schedule.deadline_ns == expected_deadline,
+          "Otsu expiry must round up so heat is no longer above 20");
 }
 
 void test_time_normalized_ema_gain()
@@ -2242,7 +2395,7 @@ void test_otsu_recomputes_after_wall_clock_interval()
   EvaluationQueue eq;
   constexpr uint64_t second_ns = 1000ULL * 1000 * 1000;
   for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
-    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0;
+    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 30.0 : 1000.0;
     const uint64_t timestamp = i * second_ns / (HP_OTSU_MIN_VOTES - 1);
     record_active_otsu_heat(eq, i, heat, timestamp);
   }
@@ -2257,7 +2410,7 @@ void test_otsu_ema_time_never_moves_backward_for_late_sample()
   EvaluationQueue eq;
 
   for (uint64_t i = 0; i < HP_OTSU_MIN_VOTES; ++i) {
-    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 10.0 : 1000.0;
+    const double heat = i < HP_OTSU_MIN_VOTES / 2 ? 30.0 : 1000.0;
     record_active_otsu_heat(eq, i, heat, current_time);
   }
   eq.update_hot_threshold(current_time);
@@ -2278,7 +2431,7 @@ void test_otsu_threshold_updates_every_100_observations()
     100.0); // heat_increment
 
   for (uint64_t i = 0; i < 99; ++i) {
-    const double heat = 1000.0 * static_cast<double>(i) / 99.0;
+    const double heat = 30.0 + 970.0 * static_cast<double>(i) / 99.0;
     record_active_otsu_heat(eq, i, heat, 1);
   }
   require_close(eq.heat_label_threshold, 100.0,
@@ -2521,11 +2674,10 @@ int main()
   test_object_key_uses_object_identity();
   test_prepare_features_tracks_recency();
   test_time_domain_heat_decay_and_recency();
+  test_long_window_trace_field_uses_pending_evaluation_count();
 #if HP_ENABLE_ACCESS_RATE_CHANGE
   test_short_access_window_uses_time_and_counts_prior_io();
-  test_long_access_window_uses_time_and_counts_prior_io();
-  test_long_access_window_counts_eq_admission_drops();
-  test_access_windows_schedule_idle_cleanup();
+  test_short_access_window_schedules_idle_cleanup();
   test_access_rate_change_uses_log2p1_rates();
 #endif
 #if HP_ENABLE_ACCESS_RATE_CHANGE
@@ -2535,7 +2687,14 @@ int main()
   test_training_batch_size_is_low_latency();
   test_threshold_window_tracks_object_current_heat();
   test_threshold_window_order_has_one_entry_per_object();
+  test_heat_state_lifecycle_telemetry();
+  test_expiry_heap_orders_refreshes_and_erases_keys();
   test_object_heat_window_bounds_otsu_votes();
+  test_otsu_population_excludes_floor_heat_objects();
+  test_otsu_population_refresh_ignores_stale_expiry();
+  test_otsu_population_schedules_idle_floor_crossing();
+  test_otsu_population_uses_unclamped_heat_for_expiry();
+  test_otsu_population_expiry_rounds_toward_the_cold_side();
   test_time_normalized_ema_gain();
   test_otsu_recomputes_after_wall_clock_interval();
   test_otsu_threshold_updates_every_100_observations();

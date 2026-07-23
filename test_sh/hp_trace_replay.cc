@@ -12,6 +12,7 @@ namespace {
 struct CliOptions {
   std::filesystem::path trace_path;
   std::filesystem::path output_path;
+  std::filesystem::path override_path;
   HpReplayOptions replay_options;
 };
 
@@ -19,6 +20,7 @@ CliOptions parse_options(int argc, char** argv) {
   if (argc < 4) {
     throw std::runtime_error(
         "usage: hp_trace_replay TRACE.bin --output replay.tsv "
+        "[--record-overrides overrides.tsv] "
         "[--drop-feature INDEX ...]");
   }
   CliOptions options;
@@ -56,6 +58,14 @@ CliOptions parse_options(int argc, char** argv) {
       options.replay_options.disable_feature(feature_index);
       continue;
     }
+    if (option == "--record-overrides") {
+      if (!options.override_path.empty()) {
+        throw std::runtime_error(
+            "--record-overrides may be specified only once");
+      }
+      options.override_path = value;
+      continue;
+    }
     throw std::runtime_error("unknown replay option: " + option);
   }
   if (options.trace_path.empty() || !has_output ||
@@ -83,8 +93,7 @@ void write_summary(
     const HpReplayTrace& trace,
     const HpReplayResult& result,
     const HpReplayParityMetrics& metrics,
-    const HpReplayOptions& options,
-    const std::filesystem::path& output_path) {
+    const CliOptions& options) {
   std::cout << std::setprecision(17)
             << "osd_id=" << trace.header.osd_id << '\n'
             << "session_id=" << trace.header.session_id << '\n'
@@ -100,8 +109,11 @@ void write_summary(
             << "arf_fast_model_lifetime_samples="
             << HP_ARF_FAST_MODEL_LIFETIME_SAMPLES << '\n'
             << "disabled_features="
-            << disabled_features_string(options) << '\n'
-            << "output=" << output_path.string() << '\n'
+            << disabled_features_string(options.replay_options) << '\n'
+            << "record_overrides="
+            << (options.override_path.empty()
+                    ? "none" : options.override_path.string()) << '\n'
+            << "output=" << options.output_path.string() << '\n'
             << "records=" << metrics.record_count << '\n'
             << "trained_samples=" << result.trained_sample_count << '\n'
             << "snapshot_publishes=" << result.snapshot_publish_count << '\n'
@@ -143,7 +155,11 @@ void write_summary(
 int main(int argc, char** argv) {
   try {
     const CliOptions options = parse_options(argc, argv);
-    const HpReplayTrace trace = read_hp_trace(options.trace_path);
+    HpReplayTrace trace = read_hp_trace(options.trace_path);
+    if (!options.override_path.empty()) {
+      apply_hp_replay_overrides(
+          trace, read_hp_replay_overrides(options.override_path));
+    }
     const HpReplayResult result =
         replay_hp_trace(trace, options.replay_options);
     const HpReplayParityMetrics metrics =
@@ -164,9 +180,7 @@ int main(int argc, char** argv) {
       throw std::runtime_error(
           "cannot finish replay output: " + options.output_path.string());
     }
-    write_summary(
-        trace, result, metrics, options.replay_options,
-        options.output_path);
+    write_summary(trace, result, metrics, options);
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "hp_trace_replay: " << error.what() << '\n';

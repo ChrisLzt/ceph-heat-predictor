@@ -412,6 +412,7 @@ public:
                             const size_t pending_before = eq->pending_size();
                             samples = collect_expired_training_samples_locked(
                                 now_ns);
+                            eq->advance_otsu_history(now_ns);
                             expired_evaluation_count =
                                 pending_before - eq->pending_size();
                             eq->expire_due_access_windows(now_ns);
@@ -782,6 +783,9 @@ public:
             eq->evaluation_drop_count(),
             eq->heat_state_size(),
             eq->lru_size(),
+            eq->protected_heat_state_size(),
+            eq->heat_state_peak_size(),
+            eq->lru_eviction_count(),
             eq->otsu_histogram_bin_count(),
             eq->otsu_histogram_vote_count(),
             accu.true_positives(),
@@ -838,6 +842,21 @@ public:
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> lock(eq_mutex);
         return eq->lru_size();
+    }
+    uint64_t get_protected_heat_state_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        std::lock_guard<std::mutex> lock(eq_mutex);
+        return eq->protected_heat_state_size();
+    }
+    uint64_t get_heat_state_peak_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        std::lock_guard<std::mutex> lock(eq_mutex);
+        return eq->heat_state_peak_size();
+    }
+    uint64_t get_lru_eviction_count() {
+        std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+        std::lock_guard<std::mutex> lock(eq_mutex);
+        return eq->lru_eviction_count();
     }
     uint64_t get_otsu_histogram_bin_count() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);

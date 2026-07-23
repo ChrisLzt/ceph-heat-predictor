@@ -26,6 +26,80 @@ struct HpReplayTrace {
   std::vector<HpTraceRecord> records;
 };
 
+struct HpReplayRecordOverride {
+  uint64_t io_sequence = 0;
+  double feature_0 = 0.0;
+  int8_t actual_label = 0;
+  double label_heat_threshold = 0.0;
+};
+
+inline std::vector<HpReplayRecordOverride> read_hp_replay_overrides(
+    const std::filesystem::path& path) {
+  std::ifstream input(path);
+  if (!input) {
+    throw std::runtime_error(
+        "cannot open replay override file: " + path.string());
+  }
+  std::string header;
+  std::getline(input, header);
+  if (!header.empty() && header.back() == '\r') {
+    header.pop_back();
+  }
+  if (header != "io_sequence\tfeature_0\tactual_label\tlabel_heat_threshold") {
+    throw std::runtime_error("invalid replay override header");
+  }
+  std::vector<HpReplayRecordOverride> overrides;
+  uint64_t io_sequence = 0;
+  double feature_0 = 0.0;
+  int actual_label = 0;
+  double label_heat_threshold = 0.0;
+  while (input >> io_sequence >> feature_0 >> actual_label >>
+         label_heat_threshold) {
+    if (!std::isfinite(feature_0) ||
+        !std::isfinite(label_heat_threshold) ||
+        label_heat_threshold <= 0.0 ||
+        (actual_label != 0 && actual_label != 1)) {
+      throw std::runtime_error("invalid replay override value");
+    }
+    overrides.push_back(HpReplayRecordOverride{
+        io_sequence,
+        feature_0,
+        static_cast<int8_t>(actual_label),
+        label_heat_threshold,
+    });
+  }
+  if (!input.eof()) {
+    throw std::runtime_error("malformed replay override row");
+  }
+  return overrides;
+}
+
+inline void apply_hp_replay_overrides(
+    HpReplayTrace& trace,
+    const std::vector<HpReplayRecordOverride>& overrides) {
+  if (trace.records.size() != overrides.size()) {
+    throw std::runtime_error(
+        "replay override count does not match Trace record count");
+  }
+  for (size_t index = 0; index < trace.records.size(); ++index) {
+    auto& record = trace.records[index];
+    const auto& replacement = overrides[index];
+    if (record.io_sequence != replacement.io_sequence) {
+      throw std::runtime_error(
+          "replay override io_sequence does not match Trace order");
+    }
+    if (!std::isfinite(replacement.feature_0) ||
+        !std::isfinite(replacement.label_heat_threshold) ||
+        replacement.label_heat_threshold <= 0.0 ||
+        (replacement.actual_label != 0 && replacement.actual_label != 1)) {
+      throw std::runtime_error("invalid replay override value");
+    }
+    record.features[0] = replacement.feature_0;
+    record.actual_label = replacement.actual_label;
+    record.label_heat_threshold = replacement.label_heat_threshold;
+  }
+}
+
 enum class HpReplayEventType : uint8_t {
   prediction = 0,
   training = 1,
