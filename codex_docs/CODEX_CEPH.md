@@ -8,7 +8,8 @@
 
 - Ceph 适配层：`src/osd/ObjectHeatPredictor.*`
 - 算法入口：`src/heatpredictor/heat_predictor.h`
-- 算法组件：`hp_config.h`、`hp_types.h`、`hp_features.h`、`hp_evaluation_queue.h`、`hp_score_otsu_histogram.h`
+- 算法组件：`hp_config.h`、`hp_types.h`、`hp_features.h`、`hp_evaluation_queue.h`、
+  `hp_expiry_heap.h`、`hp_score_otsu_histogram.h`
 - Hook 入口：`src/osd/PrimaryLogPG.cc`
 - MGR 汇总：`src/mgr/DaemonServer.cc`、`src/mgr/MgrCommands.h`
 
@@ -82,8 +83,9 @@ key = make_object_key(pool, ceph_object_hash, object_name_hash);
 - 热度：`HEAT_INCREMENT=100.0`、无访问10秒后保留 `1/5`。
 - 热阈值：初始值 `100`；Otsu 按 object 维护最新总热度的时间归一化 score，使用800个
   固定 bin、宽度 `0.01`。下限是一次访问热度经过一个衰减周期后的值，当前为
-  `100 * 0.20 = 20`；上限按相同800个对数 bin 推导，当前约为 `59619`。最少
-  32个 object 投票，每100次
+  `100 * 0.20 = 20`；只有当前总热度严格大于20的 object 才保留一票，等于或低于20
+  时立即移除。上限按相同800个对数 bin 推导，当前约为 `59619`。最少32个 object
+  投票，每100次
   有效更新或最迟1秒重算一次。有效阈值以每1秒参考区间固定 EMA `0.10` 跟踪候选，
   实际 gain 只按经过时间复合。
 - 阈值状态：`0 initializing`、`1 tracking`、`2 holding`。
@@ -132,13 +134,17 @@ Otsu 维护 object 当前
 
 - `threshold_entries_by_key` 是 object key 到 Otsu bin 和顺序节点的哈希索引；
   `threshold_order` 是按最近一次热度投票更新时间排列的 `std::list<uint64_t>`。object
-  更新时先删除旧节点再追加到队尾，超过容量时从队首淘汰。因此它是更新顺序，不是按
+  更新时用 `splice` 把原节点移到队尾，超过容量时从队首淘汰。因此它是更新顺序，不是按
   热度排序，也不是 LRU 热度状态表。
+- `threshold_expiry_heap` 是 object key 到精确下限到期时间的索引最小堆；每个 object
+  最多一个节点。访问刷新和任意删除为 `O(log n)`，到期时只查看堆顶，不保留失效事件。
 - percentile feature 及其 PBDS 顺序统计树已经删除；Otsu 删除投票只依赖
   `threshold_entries_by_key` 保存的 bin 和 `threshold_order` 节点迭代器。
 - `otsu_histogram` 使用固定 `uint64_t[800]` 聚合
   `score = ln(clamp(total_heat, 20, 59619.16)) - decay_factor * timestamp_ns`，bin 宽
-  为 `0.01`。每个 object 只保存一个投票；再次访问时 O(1) 删除旧票并插入新票。
+  为 `0.01`。clamp 只作用于已经满足 `total_heat > 20` 的投票；低于等于20的 object
+  不进入第0个 bin。每个 object 只保存一个投票；再次访问时直方图和顺序链表更新为
+  O(1)，精确到期堆刷新为 O(log n)。
 - score 下界随单调时间右移。只有下界跨过完整 bin 时才物理维护：低于新下界的 bin
   合并到第0个 bin；超过热度上限的值逻辑 clamp 到最后一个 bin。固定容量使 Otsu 扫描
   与 object 数量无关，最多扫描800个 bin。
@@ -157,9 +163,11 @@ Otsu 维护 object 当前
 LRU 只管理不再受评价队列或访问时间窗口保护的 object 状态：
 
 - `pending_evaluation_count` 大于0的 object 不在 LRU，保证标签到期前状态存在。
-- 最近10秒访问计数和 pending 计数均归零后，object 才进入 `lru_list`；再次访问时从
-  LRU 移回活跃状态。
+- pending 计数为0后 object 进入 `lru_list`；再次访问时从 LRU 移回活跃状态。
 - `lru_list.size() > HP_LRU_CAPACITY` 时删除队首 object 的 `heat_map` 状态。
+- `hp_protected_heat_state_count = hp_heat_state_count - hp_lru_count`；另记录 reset 以来
+  每个 OSD 的 heat state 峰值和 LRU 淘汰数。MGR 对三项均求和，其中峰值是各 OSD
+  独立峰值之和，不表示同一时刻的全局峰值。
 
 ## 模型和训练
 
