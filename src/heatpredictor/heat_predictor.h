@@ -26,6 +26,7 @@
 #include "hp_evaluation_queue.h"
 #include "hp_features.h"
 #include "hp_integer_quantile_window.h"
+#include "hp_trace_record.h"
 #include "hp_types.h"
 
 struct HeatPredictorStatus {
@@ -36,6 +37,7 @@ struct HeatPredictorStatus {
     ArfAdaptationStats arf_adaptation;
     uint64_t predict_error_count;
     uint64_t background_error_count;
+    HpTraceStatus trace;
 };
 
 class HeatPredictor {
@@ -129,6 +131,8 @@ private:
     std::atomic<uint64_t> expiry_wake_sequence{0};
     std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
     std::atomic<BackgroundErrorCallback> background_error_callback{nullptr};
+    HpTraceWriter trace_writer;
+
     static const std::vector<double>& to_feat(const PredictionSample& item) {
         return hp_to_features(item);
     }
@@ -259,6 +263,10 @@ private:
         samples.reserve(evaluated.size());
         for (auto& item : evaluated) {
             record_evaluated_locked(item);
+            if (trace_writer.is_enabled()) {
+                trace_writer.try_submit(
+                    hp_trace_record_for_evaluated(item));
+            }
             samples.push_back(TrainingSample{
                 std::move(item.item), item.label});
         }
@@ -587,9 +595,11 @@ public:
         std::optional<EvaluationQueue::PredictionTicket> pending_evaluation;
         std::shared_ptr<Classifier> snapshot;
         bool maintenance_schedule_changed = false;
+        uint64_t prediction_time_ns = 0;
         {
             std::lock_guard<std::mutex> eq_lock(eq_mutex);
             const uint64_t now_ns = monotonic_now_ns();
+            prediction_time_ns = now_ns;
             // fetch_add() returns the previous sequence; the current I/O is +1.
             const uint64_t previous_io_sequence =
                 processed_io_count.fetch_add(1);
@@ -637,12 +647,23 @@ public:
         } else {
             prediction_failed = true;
         }
+        const bool evaluation_reserved = pending_evaluation.has_value();
         if (prediction_failed) {
             predict_error_count.fetch_add(1, std::memory_order_relaxed);
             res = 0;
             if (pending_evaluation.has_value()) {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
                 eq->cancel_prediction(std::move(*pending_evaluation));
+            }
+            if (trace_writer.is_enabled()) {
+                const uint8_t flags = evaluation_reserved
+                    ? HP_TRACE_FLAG_NONE
+                    : HP_TRACE_FLAG_EVALUATION_CAPACITY_DROP;
+                trace_writer.try_submit(hp_trace_record_for_incomplete(
+                    item,
+                    prediction_time_ns,
+                    HpTraceOutcome::prediction_error,
+                    flags));
             }
         } else {
             item.predicted_label = res;
@@ -659,6 +680,16 @@ public:
                         cold_start_fallback));
             }
             enqueue_training_samples(std::move(completed_samples));
+        } else if (!prediction_failed && trace_writer.is_enabled()) {
+            uint8_t flags = HP_TRACE_FLAG_EVALUATION_CAPACITY_DROP;
+            if (cold_start_fallback) {
+                flags |= HP_TRACE_FLAG_COLD_START_FALLBACK;
+            }
+            trace_writer.try_submit(hp_trace_record_for_incomplete(
+                item,
+                prediction_time_ns,
+                HpTraceOutcome::evaluation_capacity_drop,
+                flags));
         }
 
         return res;
@@ -710,11 +741,34 @@ public:
             snapshot_publish_count.load(),
             adaptation_telemetry->snapshot(),
             predict_error_count.load(std::memory_order_relaxed),
-            background_error_count.load(std::memory_order_relaxed)};
+            background_error_count.load(std::memory_order_relaxed),
+            trace_writer.status()};
     }
 
     void record_predict_error() {
         predict_error_count.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    bool start_trace(
+            const std::string& directory,
+            int32_t osd_id,
+            const std::string& phase,
+            const std::string& git_commit) {
+        return trace_writer.start(
+            directory,
+            osd_id,
+            phase,
+            git_commit,
+            hp_trace_config_hash(),
+            NUM_FEATURES);
+    }
+
+    void stop_trace() {
+        trace_writer.stop();
+    }
+
+    HpTraceStatus get_trace_status() const {
+        return trace_writer.status();
     }
 
 };

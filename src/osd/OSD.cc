@@ -2722,6 +2722,15 @@ void OSD::asok_command(
     hp_set_osd_object_heat_predictor_enabled(cct, f, true);
   } else if (prefix == "object_hp disable") {
     hp_set_osd_object_heat_predictor_enabled(cct, f, false);
+  } else if (prefix == "object_hp trace start") {
+    std::string phase;
+    std::string directory;
+    cmd_getval(cmdmap, "phase", phase);
+    cmd_getval(cmdmap, "directory", directory);
+    hp_start_osd_object_heat_predictor_trace(
+      cct, f, phase, directory);
+  } else if (prefix == "object_hp trace stop") {
+    hp_stop_osd_object_heat_predictor_trace(cct, f);
   } else if (prefix == "flush_journal") {
     store->flush_journal();
   } else if (prefix == "dump_ops_in_flight" ||
@@ -4011,7 +4020,7 @@ out:
 void OSD::final_init()
 {
   AdminSocket *admin_socket = cct->get_admin_socket();
-  init_osd_object_hp_status(cct);
+  init_osd_object_hp_status(cct, whoami);
   asok_hook = new OSDSocketHook(this);
   int r = admin_socket->register_command("status", asok_hook,
 					 "high-level status of OSD");
@@ -4027,6 +4036,18 @@ void OSD::final_init()
   ceph_assert(r == 0);
   r = admin_socket->register_command("object_hp disable", asok_hook,
 				     "disable and reset object heat predictor");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command(
+    "object_hp trace start "
+    "name=phase,type=CephString,req=false "
+    "name=directory,type=CephString,req=false",
+    asok_hook,
+    "start or rotate completed-evaluation trace");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command(
+    "object_hp trace stop",
+    asok_hook,
+    "drain and stop completed-evaluation trace");
   ceph_assert(r == 0);
   r = admin_socket->register_command("flush_journal",
                                      asok_hook,

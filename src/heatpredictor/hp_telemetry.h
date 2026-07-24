@@ -98,6 +98,12 @@ inline constexpr char arf_background_training_update_count[] =
     "hp_arf_background_training_update_count";
 inline constexpr char arf_active_background_count[] =
     "hp_arf_active_background_count";
+inline constexpr char trace_enabled[] = "hp_trace_enabled";
+inline constexpr char trace_queue_length[] = "hp_trace_queue_length";
+inline constexpr char trace_written_count[] = "hp_trace_written_count";
+inline constexpr char trace_drop_count[] = "hp_trace_drop_count";
+inline constexpr char trace_write_error_count[] =
+    "hp_trace_write_error_count";
 inline constexpr char op_read_count[] = "hp_op_read_count";
 inline constexpr char op_sync_read_count[] = "hp_op_sync_read_count";
 inline constexpr char op_sparse_read_count[] = "hp_op_sparse_read_count";
@@ -182,6 +188,11 @@ inline constexpr CounterField counter_fields[] = {
     {field::arf_background_discard_count, Aggregate::sum},
     {field::arf_background_training_update_count, Aggregate::sum},
     {field::arf_active_background_count, Aggregate::sum},
+    {field::trace_enabled, Aggregate::sum},
+    {field::trace_queue_length, Aggregate::sum},
+    {field::trace_written_count, Aggregate::sum},
+    {field::trace_drop_count, Aggregate::sum},
+    {field::trace_write_error_count, Aggregate::sum},
     {field::op_read_count, Aggregate::sum},
     {field::op_sync_read_count, Aggregate::sum},
     {field::op_sparse_read_count, Aggregate::sum},

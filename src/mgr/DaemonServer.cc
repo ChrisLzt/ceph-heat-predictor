@@ -1875,6 +1875,18 @@ bool DaemonServer::_handle_command(
                      summary["hp_arf_active_background_count"]);
     f->close_section();
 
+    f->open_object_section("trace");
+    f->dump_unsigned("enabled_osds", summary["hp_trace_enabled"]);
+    f->dump_unsigned("hp_trace_queue_length",
+                     summary["hp_trace_queue_length"]);
+    f->dump_unsigned("hp_trace_written_count",
+                     summary["hp_trace_written_count"]);
+    f->dump_unsigned("hp_trace_drop_count",
+                     summary["hp_trace_drop_count"]);
+    f->dump_unsigned("hp_trace_write_error_count",
+                     summary["hp_trace_write_error_count"]);
+    f->close_section();
+
     f->open_object_section("latency");
     f->open_object_section("hp_predict_latency");
     f->dump_unsigned("avgcount", predict_latency_count);
@@ -1907,12 +1919,16 @@ bool DaemonServer::_handle_command(
     return true;
   } else if (prefix == "osd hp reset" ||
              prefix == "osd hp enable" ||
-             prefix == "osd hp disable") {
+             prefix == "osd hp disable" ||
+             prefix == "osd hp trace start" ||
+             prefix == "osd hp trace stop") {
     if (!f) {
       f.reset(Formatter::create("json-pretty"));
     }
     const std::string action = prefix == "osd hp enable" ? "enable" :
-      (prefix == "osd hp disable" ? "disable" : "reset");
+      (prefix == "osd hp disable" ? "disable" :
+       (prefix == "osd hp trace start" ? "trace start" :
+        (prefix == "osd hp trace stop" ? "trace stop" : "reset")));
     const std::string osd_prefix = "object_hp " + action;
     std::set<int32_t> up_osds;
     cluster_state.with_osdmap([&](const OSDMap& osdmap) {
@@ -1921,10 +1937,22 @@ bool DaemonServer::_handle_command(
 
     std::vector<int32_t> sent_osds;
     std::vector<int32_t> missing_osds;
+    std::string phase;
+    std::string directory;
+    if (prefix == "osd hp trace start") {
+      cmd_getval(cmdctx->cmdmap, "phase", phase);
+      cmd_getval(cmdctx->cmdmap, "directory", directory);
+    }
     std::ostringstream hp_cmd_stream;
     JSONFormatter hp_cmd_formatter;
     hp_cmd_formatter.open_object_section("command");
     hp_cmd_formatter.dump_string("prefix", osd_prefix);
+    if (!phase.empty()) {
+      hp_cmd_formatter.dump_string("phase", phase);
+    }
+    if (!directory.empty()) {
+      hp_cmd_formatter.dump_string("directory", directory);
+    }
     hp_cmd_formatter.close_section();
     hp_cmd_formatter.flush(hp_cmd_stream);
     const std::string hp_cmd = hp_cmd_stream.str();

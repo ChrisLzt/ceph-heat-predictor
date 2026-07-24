@@ -14,6 +14,7 @@
 #include "common/Formatter.h"
 #include "common/hobject.h"
 #include "common/perf_counters.h"
+#include "common/version.h"
 #include "include/rados.h"
 #include "heatpredictor/heat_predictor.h"
 #include "heatpredictor/hp_telemetry.h"
@@ -28,6 +29,9 @@ std::mutex osd_object_hp_logger_mtx;
 std::shared_mutex osd_object_hp_reset_mtx;
 static constexpr uint64_t object_hp_logger_update_interval = 1000;
 uint64_t object_hp_expiry_since_logger_update = 0;
+int osd_object_hp_osd_id = -1;
+std::string osd_object_hp_trace_phase;
+std::string osd_object_hp_trace_directory = "/var/log/ceph";
 
 enum {
   object_hp_first = 591422,
@@ -78,6 +82,11 @@ enum {
   object_hp_arf_background_discard_count,
   object_hp_arf_background_training_update_count,
   object_hp_arf_active_background_count,
+  object_hp_trace_enabled,
+  object_hp_trace_queue_length,
+  object_hp_trace_written_count,
+  object_hp_trace_drop_count,
+  object_hp_trace_write_error_count,
   object_hp_op_read_count,
   object_hp_op_sync_read_count,
   object_hp_op_sparse_read_count,
@@ -275,6 +284,21 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_arf_active_background_count,
             hp_field::arf_active_background_count,
             "currently active ARF background trees");
+  b.add_u64(object_hp_trace_enabled,
+            hp_field::trace_enabled,
+            "completed-evaluation trace enabled");
+  b.add_u64(object_hp_trace_queue_length,
+            hp_field::trace_queue_length,
+            "trace records awaiting disk write");
+  b.add_u64(object_hp_trace_written_count,
+            hp_field::trace_written_count,
+            "trace records written");
+  b.add_u64(object_hp_trace_drop_count,
+            hp_field::trace_drop_count,
+            "trace records dropped by queue pressure");
+  b.add_u64(object_hp_trace_write_error_count,
+            hp_field::trace_write_error_count,
+            "trace records or sessions lost to write errors");
   b.add_u64(object_hp_op_read_count, hp_field::op_read_count, "read op count");
   b.add_u64(object_hp_op_sync_read_count, hp_field::op_sync_read_count, "sync read op count");
   b.add_u64(object_hp_op_sparse_read_count, hp_field::op_sparse_read_count, "sparse read op count");
@@ -284,6 +308,17 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_time_avg(object_hp_predict_latency, hp_field::predict_latency, "predict latency");
   osd_object_hp_logger = b.create_perf_counters();
   cct->get_perfcounters_collection()->add(osd_object_hp_logger);
+}
+
+static void hp_set_trace_logger(PerfCounters *logger,
+                                const HpTraceStatus& status)
+{
+  logger->set(object_hp_trace_enabled, status.enabled ? 1 : 0);
+  logger->set(object_hp_trace_queue_length, status.queue_length);
+  logger->set(object_hp_trace_written_count, status.written_count);
+  logger->set(object_hp_trace_drop_count, status.drop_count);
+  logger->set(object_hp_trace_write_error_count,
+              status.write_error_count);
 }
 
 static void hp_update_object_logger(ceph::timespan predict_latency,
@@ -402,6 +437,7 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               adaptation_stats.background_training_update_count);
   logger->set(object_hp_arf_active_background_count,
               adaptation_stats.active_background_count);
+  hp_set_trace_logger(logger, predictor_status.trace);
   logger->set(object_hp_op_read_count, osd_object_hp_op_counters.read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sync_read_count, osd_object_hp_op_counters.sync_read.load(std::memory_order_relaxed));
   logger->set(object_hp_op_sparse_read_count, osd_object_hp_op_counters.sparse_read.load(std::memory_order_relaxed));
@@ -504,6 +540,8 @@ static void hp_zero_object_logger()
   logger->set(object_hp_arf_background_discard_count, 0);
   logger->set(object_hp_arf_background_training_update_count, 0);
   logger->set(object_hp_arf_active_background_count, 0);
+  hp_set_trace_logger(
+    logger, osd_object_heat_predictor.get_trace_status());
   logger->set(object_hp_op_read_count, 0);
   logger->set(object_hp_op_sync_read_count, 0);
   logger->set(object_hp_op_sparse_read_count, 0);
@@ -560,8 +598,9 @@ static inline void hp_count_osd_op(uint16_t op)
 
 } // namespace
 
-void init_osd_object_hp_status(CephContext *cct)
+void init_osd_object_hp_status(CephContext *cct, int osd_id)
 {
+  osd_object_hp_osd_id = osd_id;
   hp_ensure_object_logger(cct);
   osd_object_heat_predictor.set_expiry_progress_callback(
     hp_record_object_expiry_progress);
@@ -614,7 +653,32 @@ void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
                    predictor_status.predict_error_count);
   f->dump_unsigned("hp_background_error_count",
                    predictor_status.background_error_count);
+  const auto& trace_status = predictor_status.trace;
+  f->open_object_section("trace");
+  f->dump_bool("enabled", trace_status.enabled);
+  f->dump_unsigned("session_id", trace_status.session_id);
+  f->dump_unsigned("queue_length", trace_status.queue_length);
+  f->dump_unsigned("written_count", trace_status.written_count);
+  f->dump_unsigned("drop_count", trace_status.drop_count);
+  f->dump_unsigned("write_error_count", trace_status.write_error_count);
+  f->dump_string("path", trace_status.path);
+  f->dump_string("phase", trace_status.phase);
   f->close_section();
+  f->close_section();
+}
+
+static void hp_rotate_trace_if_enabled()
+{
+  const HpTraceStatus status =
+    osd_object_heat_predictor.get_trace_status();
+  if (!status.enabled || osd_object_hp_osd_id < 0) {
+    return;
+  }
+  osd_object_heat_predictor.start_trace(
+    osd_object_hp_trace_directory,
+    osd_object_hp_osd_id,
+    osd_object_hp_trace_phase,
+    git_version_to_str());
 }
 
 void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
@@ -623,6 +687,7 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
 
   hp_ensure_object_logger(cct);
   uint64_t discarded_pending_io = osd_object_heat_predictor.reset();
+  hp_rotate_trace_if_enabled();
   hp_reset_osd_op_counters();
   hp_zero_object_logger();
 
@@ -678,6 +743,7 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
   hp_ensure_object_logger(cct);
   uint64_t discarded_pending_io =
     osd_object_heat_predictor.set_enabled(enabled);
+  hp_rotate_trace_if_enabled();
   hp_reset_osd_op_counters();
   hp_zero_object_logger();
 
@@ -722,6 +788,63 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
                      predictor_status.predict_error_count);
     f->dump_unsigned("hp_background_error_count",
                      predictor_status.background_error_count);
+    f->close_section();
+  }
+}
+
+void hp_start_osd_object_heat_predictor_trace(
+    CephContext *cct,
+    ceph::Formatter *f,
+    const std::string& phase,
+    const std::string& directory)
+{
+  std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+  hp_ensure_object_logger(cct);
+
+  osd_object_hp_trace_phase = phase;
+  osd_object_hp_trace_directory =
+    directory.empty() ? "/var/log/ceph" : directory;
+  const bool ok = osd_object_hp_osd_id >= 0 &&
+    osd_object_heat_predictor.start_trace(
+      osd_object_hp_trace_directory,
+      osd_object_hp_osd_id,
+      osd_object_hp_trace_phase,
+      git_version_to_str());
+  hp_update_object_logger(ceph::timespan::zero(), false);
+
+  if (f != nullptr) {
+    const HpTraceStatus status =
+      osd_object_heat_predictor.get_trace_status();
+    f->open_object_section("object_hp_trace_start");
+    f->dump_bool("ok", ok);
+    f->dump_bool("enabled", status.enabled);
+    f->dump_unsigned("session_id", status.session_id);
+    f->dump_string("path", status.path);
+    f->dump_string("phase", status.phase);
+    f->dump_unsigned("write_error_count", status.write_error_count);
+    f->close_section();
+  }
+}
+
+void hp_stop_osd_object_heat_predictor_trace(CephContext *cct,
+                                             ceph::Formatter *f)
+{
+  std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+  hp_ensure_object_logger(cct);
+  osd_object_heat_predictor.stop_trace();
+  hp_update_object_logger(ceph::timespan::zero(), false);
+
+  if (f != nullptr) {
+    const HpTraceStatus status =
+      osd_object_heat_predictor.get_trace_status();
+    f->open_object_section("object_hp_trace_stop");
+    f->dump_bool("ok", true);
+    f->dump_bool("enabled", status.enabled);
+    f->dump_unsigned("session_id", status.session_id);
+    f->dump_unsigned("written_count", status.written_count);
+    f->dump_unsigned("drop_count", status.drop_count);
+    f->dump_unsigned("write_error_count", status.write_error_count);
+    f->dump_string("path", status.path);
     f->close_section();
   }
 }
