@@ -1,5 +1,5 @@
-#ifndef CEPH_BLK_HEAT_PREDICTOR_H
-#define CEPH_BLK_HEAT_PREDICTOR_H
+#ifndef CEPH_HEATPREDICTOR_HEAT_PREDICTOR_H
+#define CEPH_HEATPREDICTOR_HEAT_PREDICTOR_H
 
 #include <algorithm>
 #include <atomic>
@@ -35,11 +35,13 @@ struct HeatPredictorStatus {
     uint64_t snapshot_publish_count;
     ArfAdaptationStats arf_adaptation;
     uint64_t predict_error_count;
+    uint64_t background_error_count;
 };
 
 class HeatPredictor {
 public:
     using ExpiryProgressCallback = void (*)(uint64_t);
+    using BackgroundErrorCallback = void (*)();
 
 private:
     static uint64_t mix64(uint64_t x) {
@@ -76,9 +78,7 @@ private:
                     HP_ARF_TAU,
                     HP_ARF_MAX_SHARE_TO_SPLIT,
                     HP_ARF_MIN_BRANCH_FRACTION,
-                    std::move(adaptation_telemetry),
-                    HP_ARF_FAST_MODEL_COUNT,
-                    HP_ARF_FAST_MODEL_LIFETIME_SAMPLES);
+                    std::move(adaptation_telemetry));
         return new PipelineClassifier(
             new StandardScaler<NUM_FEATURES>(), classifier);
     }
@@ -118,6 +118,7 @@ private:
     std::atomic<bool> enabled{true};
     std::atomic<uint64_t> train_drop_count{0};
     std::atomic<uint64_t> predict_error_count{0};
+    std::atomic<uint64_t> background_error_count{0};
 
     // EQ deadlines have their own scheduler. The wait mutex is intentionally
     // separate from reset_mutex/eq_mutex so reset is never blocked by sleep.
@@ -127,6 +128,7 @@ private:
     std::atomic<bool> expiry_running{false};
     std::atomic<uint64_t> expiry_wake_sequence{0};
     std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
+    std::atomic<BackgroundErrorCallback> background_error_callback{nullptr};
     static const std::vector<double>& to_feat(const PredictionSample& item) {
         return hp_to_features(item);
     }
@@ -211,9 +213,15 @@ private:
     }
 
     void enqueue_training_sample(TrainingSample sample) {
+        if (!is_enabled()) {
+            return;
+        }
         bool should_notify = false;
         {
             std::lock_guard<std::mutex> lock(train_queue_mutex);
+            if (!is_enabled()) {
+                return;
+            }
             should_notify = train_queue.empty();
             train_queue.push(std::move(sample));
             if (train_queue.size() > MAX_TRAIN_QUEUE_LENGTH) {
@@ -268,105 +276,139 @@ private:
         expiry_cv.notify_one();
     }
 
-    void expiry_worker() {
-        while (expiry_running.load(std::memory_order_acquire)) {
-            const uint64_t observed_sequence =
-                expiry_wake_sequence.load(std::memory_order_acquire);
-            std::optional<uint64_t> deadline_ns;
-            bool processed_due_maintenance = false;
-            uint64_t expired_evaluation_count = 0;
-
-            {
-                std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-                if (is_enabled() &&
-                    expiry_running.load(std::memory_order_acquire)) {
-                    std::vector<TrainingSample> samples;
-                    {
-                        std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                        const uint64_t now_ns = monotonic_now_ns();
-                        auto maintenance = eq->maintain_expiry(now_ns);
-                        samples = training_samples_from_evaluated_locked(
-                            std::move(maintenance.evaluated));
-                        expired_evaluation_count =
-                            maintenance.expired_evaluation_count;
-                        processed_due_maintenance = maintenance.processed;
-                        if (!maintenance.processed &&
-                            maintenance.next_schedule.state ==
-                                   EvaluationQueue::ExpiryScheduleState::
-                                       waiting_deadline) {
-                            deadline_ns =
-                                maintenance.next_schedule.deadline_ns;
-                        }
-                    }
-                    enqueue_training_samples(std::move(samples));
-                }
-            }
-
-            if (expired_evaluation_count > 0) {
-                auto callback = expiry_progress_callback.load(
-                    std::memory_order_acquire);
-                if (callback != nullptr) {
-                    callback(expired_evaluation_count);
-                }
-            }
-
-            if (processed_due_maintenance) {
-                continue;
-            }
-
-            std::unique_lock<std::mutex> wait_lock(expiry_wait_mutex);
-            const auto scheduling_changed = [this, observed_sequence] {
-                return !expiry_running.load(std::memory_order_acquire) ||
-                    expiry_wake_sequence.load(std::memory_order_acquire) !=
-                        observed_sequence;
-            };
-            if (deadline_ns.has_value()) {
-                const auto deadline = std::chrono::steady_clock::time_point(
-                    std::chrono::nanoseconds(*deadline_ns));
-                expiry_cv.wait_until(
-                    wait_lock, deadline, scheduling_changed);
-            } else {
-                expiry_cv.wait(wait_lock, scheduling_changed);
+    void handle_background_error() noexcept {
+        background_error_count.fetch_add(1, std::memory_order_relaxed);
+        enabled.store(false, std::memory_order_release);
+        try {
+            std::lock_guard<std::mutex> lock(train_queue_mutex);
+            std::queue<TrainingSample> empty;
+            std::swap(train_queue, empty);
+        } catch (...) {
+        }
+        train_queue_cv.notify_all();
+        notify_expiry_worker();
+        auto callback = background_error_callback.load(
+            std::memory_order_acquire);
+        if (callback != nullptr) {
+            try {
+                callback();
+            } catch (...) {
             }
         }
     }
 
-    void train_worker() {
-        while (true) {
-            std::unique_lock<std::mutex> lock(train_queue_mutex);
-            train_queue_cv.wait(lock, [this] {
-                return !train_queue.empty() || !train_running;
-            });
-
-            if (!train_running && train_queue.empty()) break;
-
-            lock.unlock();
-            std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-            lock.lock();
-            if (!train_running && train_queue.empty()) break;
-            if (train_queue.empty()) continue;
-
-            std::queue<TrainingSample> batch =
-                take_training_batch(train_queue);
-            lock.unlock();
-
-            while (!batch.empty()) {
-                TrainingSample sample = std::move(batch.front());
-                batch.pop();
-                std::shared_ptr<Classifier> next_snapshot;
+    void expiry_worker() noexcept {
+        while (expiry_running.load(std::memory_order_acquire)) {
+            try {
+                const uint64_t observed_sequence =
+                    expiry_wake_sequence.load(std::memory_order_acquire);
+                std::optional<uint64_t> deadline_ns;
+                bool processed_due_maintenance = false;
+                uint64_t expired_evaluation_count = 0;
 
                 {
-                    std::lock_guard<std::mutex> lock(train_model_mutex);
-                    train_model->learn_one(
-                        to_feat(sample.item), sample.label);
-                    if (record_model_update_batch(monotonic_now_ns())) {
-                        next_snapshot = clone_train_model_for_prediction();
+                    std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+                    if (is_enabled() &&
+                        expiry_running.load(std::memory_order_acquire)) {
+                        std::vector<TrainingSample> samples;
+                        {
+                            std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                            const uint64_t now_ns = monotonic_now_ns();
+                            auto maintenance = eq->maintain_expiry(now_ns);
+                            samples = training_samples_from_evaluated_locked(
+                                std::move(maintenance.evaluated));
+                            expired_evaluation_count =
+                                maintenance.expired_evaluation_count;
+                            processed_due_maintenance =
+                                maintenance.processed;
+                            if (!maintenance.processed &&
+                                maintenance.next_schedule.state ==
+                                       EvaluationQueue::ExpiryScheduleState::
+                                           waiting_deadline) {
+                                deadline_ns =
+                                    maintenance.next_schedule.deadline_ns;
+                            }
+                        }
+                        enqueue_training_samples(std::move(samples));
                     }
                 }
 
-                if (next_snapshot) {
-                    publish_prediction_snapshot(std::move(next_snapshot));
+                if (expired_evaluation_count > 0) {
+                    auto callback = expiry_progress_callback.load(
+                        std::memory_order_acquire);
+                    if (callback != nullptr) {
+                        callback(expired_evaluation_count);
+                    }
                 }
+
+                if (processed_due_maintenance) {
+                    continue;
+                }
+
+                std::unique_lock<std::mutex> wait_lock(expiry_wait_mutex);
+                const auto scheduling_changed = [this, observed_sequence] {
+                    return !expiry_running.load(std::memory_order_acquire) ||
+                        expiry_wake_sequence.load(std::memory_order_acquire) !=
+                            observed_sequence;
+                };
+                if (deadline_ns.has_value()) {
+                    const auto deadline =
+                        std::chrono::steady_clock::time_point(
+                            std::chrono::nanoseconds(*deadline_ns));
+                    expiry_cv.wait_until(
+                        wait_lock, deadline, scheduling_changed);
+                } else {
+                    expiry_cv.wait(wait_lock, scheduling_changed);
+                }
+            } catch (...) {
+                handle_background_error();
+            }
+        }
+    }
+
+    void train_worker() noexcept {
+        while (true) {
+            try {
+                std::unique_lock<std::mutex> lock(train_queue_mutex);
+                train_queue_cv.wait(lock, [this] {
+                    return !train_running ||
+                        (is_enabled() && !train_queue.empty());
+                });
+
+                if (!train_running) break;
+
+                lock.unlock();
+                std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
+                lock.lock();
+                if (!train_running) break;
+                if (!is_enabled() || train_queue.empty()) continue;
+
+                std::queue<TrainingSample> batch =
+                    take_training_batch(train_queue);
+                lock.unlock();
+
+                while (!batch.empty()) {
+                    TrainingSample sample = std::move(batch.front());
+                    batch.pop();
+                    std::shared_ptr<Classifier> next_snapshot;
+
+                    {
+                        std::lock_guard<std::mutex> lock(train_model_mutex);
+                        train_model->learn_one(
+                            to_feat(sample.item), sample.label);
+                        if (record_model_update_batch(monotonic_now_ns())) {
+                            next_snapshot =
+                                clone_train_model_for_prediction();
+                        }
+                    }
+
+                    if (next_snapshot) {
+                        publish_prediction_snapshot(
+                            std::move(next_snapshot));
+                    }
+                }
+            } catch (...) {
+                handle_background_error();
             }
         }
     }
@@ -453,8 +495,10 @@ public:
 
         {
             std::lock_guard<std::mutex> lock(eq_mutex);
+            const auto queue_status = eq->status(monotonic_now_ns());
             discarded_pending =
-                eq->status(monotonic_now_ns()).pending_io_count;
+                queue_status.pending_io_count +
+                queue_status.awaiting_prediction_count;
             eq = std::make_unique<EvaluationQueue>();
         }
 
@@ -471,6 +515,7 @@ public:
         cold_labeled_sample_future_access_count_window.clear();
         train_drop_count.store(0);
         predict_error_count.store(0);
+        background_error_count.store(0);
         notify_expiry_worker();
         return discarded_pending;
     }
@@ -483,10 +528,15 @@ public:
         expiry_progress_callback.store(callback, std::memory_order_release);
     }
 
+    void set_background_error_callback(BackgroundErrorCallback callback) {
+        background_error_callback.store(callback, std::memory_order_release);
+    }
+
     uint64_t set_enabled(bool next_enabled) {
         enabled.store(false, std::memory_order_release);
         uint64_t discarded_pending = reset();
         enabled.store(next_enabled, std::memory_order_release);
+        train_queue_cv.notify_all();
         notify_expiry_worker();
         return discarded_pending;
     }
@@ -659,7 +709,8 @@ public:
             train_drop_count.load(),
             snapshot_publish_count.load(),
             adaptation_telemetry->snapshot(),
-            predict_error_count.load(std::memory_order_relaxed)};
+            predict_error_count.load(std::memory_order_relaxed),
+            background_error_count.load(std::memory_order_relaxed)};
     }
 
     void record_predict_error() {

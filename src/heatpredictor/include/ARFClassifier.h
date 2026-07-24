@@ -1,7 +1,6 @@
 # ifndef ARFCLASSIFIER_H
 # define ARFCLASSIFIER_H
 
-# include <iostream>
 # include <vector>
 # include <cmath>
 # include <random>
@@ -87,11 +86,6 @@ protected:
     double tau;
     double max_share_to_split;
     double min_branch_fraction;
-    int fast_model_count;
-    uint64_t fast_model_lifetime_samples;
-    uint64_t trained_sample_count = 0;
-    uint64_t fast_model_reset_count = 0;
-    uint64_t next_fast_model_reset_sample = 0;
     void validate_parameters() const {
         if (n_models <= 0) {
             throw std::invalid_argument("ARF n_models must be positive");
@@ -104,13 +98,6 @@ protected:
             !(max_share_to_split > 0.0 && max_share_to_split <= 1.0) ||
             !(min_branch_fraction >= 0.0 && min_branch_fraction < 0.5)) {
             throw std::invalid_argument("invalid ARF tree probability parameter");
-        }
-        if (fast_model_count < 0 || fast_model_count > n_models ||
-            (fast_model_count == 0 && fast_model_lifetime_samples != 0) ||
-            (fast_model_count > 0 &&
-             fast_model_lifetime_samples <
-                 static_cast<uint64_t>(fast_model_count))) {
-            throw std::invalid_argument("invalid ARF fast cohort parameter");
         }
     }
     void initialize_training_state() {
@@ -130,54 +117,6 @@ protected:
     }
     int model_seed(int idx) const {
         return seed + 1000003 * (idx + 1);
-    }
-    uint64_t fast_model_rotation_interval() const {
-        return fast_model_count > 0
-            ? (fast_model_lifetime_samples + fast_model_count - 1) /
-                static_cast<uint64_t>(fast_model_count)
-            : 0;
-    }
-    int fast_model_seed(int idx, uint64_t generation) const {
-        uint64_t value = static_cast<uint32_t>(seed);
-        value ^= 0x9e3779b97f4a7c15ULL *
-            static_cast<uint64_t>(idx + 1);
-        value ^= 0xbf58476d1ce4e5b9ULL * generation;
-        value ^= value >> 30;
-        value *= 0xbf58476d1ce4e5b9ULL;
-        value ^= value >> 27;
-        return static_cast<int>(value & 0x7fffffffULL);
-    }
-    void maybe_rotate_fast_model() {
-        if (fast_model_count == 0) {
-            return;
-        }
-        ++trained_sample_count;
-        if (trained_sample_count < next_fast_model_reset_sample) {
-            return;
-        }
-
-        const int fast_index = static_cast<int>(
-            fast_model_reset_count % static_cast<uint64_t>(fast_model_count));
-        const int model_index = n_models - fast_model_count + fast_index;
-        const bool discarded_background = _background[model_index] != nullptr;
-        if (_background[model_index] != nullptr) {
-            delete _background[model_index];
-            _background[model_index] = nullptr;
-        }
-        delete models[model_index];
-        models[model_index] = new BaseTreeClassifier<num_features, num_labels>(
-            max_features, grace_period, delta, tau, max_share_to_split,
-            min_branch_fraction,
-            fast_model_seed(model_index, fast_model_reset_count + 1));
-        _warning_detectors[model_index] = WarningDetectorFactory::create();
-        _drift_detectors[model_index] = DriftDetectorFactory::create();
-        _metrics[model_index].clear();
-        if (_adaptation_telemetry != nullptr) {
-            _adaptation_telemetry->record_fast_model_reset(
-                discarded_background);
-        }
-        ++fast_model_reset_count;
-        next_fast_model_reset_sample += fast_model_rotation_interval();
     }
     void refresh_prediction_weights() {
         if (_prediction_weights_valid) {
@@ -209,16 +148,12 @@ protected:
     ARFClassifier(PredictionOnlyTag,
         int n_models, int max_features, int seed, int grace_period,
         int lambda_value, double delta, double tau,
-        double max_share_to_split, double min_branch_fraction,
-        int fast_model_count, uint64_t fast_model_lifetime_samples)
+        double max_share_to_split, double min_branch_fraction)
         : _rng(seed), n_models(n_models),
         max_features(normalize_max_features(max_features)), seed(seed),
         grace_period(grace_period), lambda_value(lambda_value), delta(delta),
         tau(tau), max_share_to_split(max_share_to_split),
-        min_branch_fraction(min_branch_fraction),
-        fast_model_count(fast_model_count),
-        fast_model_lifetime_samples(fast_model_lifetime_samples),
-        next_fast_model_reset_sample(fast_model_rotation_interval()) {
+        min_branch_fraction(min_branch_fraction) {
         validate_parameters();
         _prediction_weights.assign(n_models, 1.0);
         _prediction_weights_valid = true;
@@ -229,18 +164,14 @@ public:
         double delta=0.001, double tau = 0.05,
         double max_share_to_split = 0.99,
         double min_branch_fraction = 0.01,
-        std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry = nullptr,
-        int fast_model_count = 0,
-        uint64_t fast_model_lifetime_samples = 0)
+        std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry = nullptr)
         : _rng(seed),
         _adaptation_telemetry(std::move(adaptation_telemetry)),
         n_models(n_models),
         max_features(normalize_max_features(max_features)), seed(seed),
         grace_period(grace_period), lambda_value(lambda_value), delta(delta), tau(tau),
-        max_share_to_split(max_share_to_split), min_branch_fraction(min_branch_fraction),
-        fast_model_count(fast_model_count),
-        fast_model_lifetime_samples(fast_model_lifetime_samples),
-        next_fast_model_reset_sample(fast_model_rotation_interval()) {
+        max_share_to_split(max_share_to_split),
+        min_branch_fraction(min_branch_fraction) {
         validate_parameters();
         _prediction_weights.assign(n_models, 1.0);
         initialize_training_state();
@@ -260,8 +191,7 @@ public:
             new ARFClassifier(
                 PredictionOnlyTag{},
                 n_models, max_features, seed, grace_period, lambda_value,
-                delta, tau, max_share_to_split, min_branch_fraction,
-                fast_model_count, fast_model_lifetime_samples));
+                delta, tau, max_share_to_split, min_branch_fraction));
         if (_prediction_weights_valid) {
             copy->_prediction_weights = _prediction_weights;
         } else {
@@ -295,7 +225,6 @@ public:
             _init_ensemble();
         }
         _prediction_weights_valid = false;
-        maybe_rotate_fast_model();
         for (int i=0;i<n_models;i++) {
             Classifier* model = models[i];
             int y_pred = model->predict_one(x);

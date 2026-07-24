@@ -24,9 +24,6 @@ public:
         transformer->transform_one_into(x, transformed);
         classifier->learn_one(transformed, y, w);
     }
-    int predict_one(const std::vector<double>& x) override {
-        return Classifier::predict_one(x);
-    }
     std::vector<double> predict_proba_one(const std::vector<double>& x) override {
         std::vector<double> proba;
         predict_proba_one_into(x, proba);

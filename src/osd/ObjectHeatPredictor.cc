@@ -65,6 +65,7 @@ enum {
   object_hp_actual_hot_avg_pred_hot_percent,
   object_hp_actual_cold_avg_pred_hot_percent,
   object_hp_predict_error_count,
+  object_hp_background_error_count,
   object_hp_hot_threshold,
   object_hp_otsu_candidate_threshold,
   object_hp_hot_threshold_method,
@@ -241,6 +242,9 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_predict_error_count,
             hp_field::predict_error_count,
             "prediction exceptions or invalid probability outputs");
+  b.add_u64(object_hp_background_error_count,
+            hp_field::background_error_count,
+            "background training or expiry worker exceptions");
   b.add_u64(object_hp_hot_threshold,
             hp_field::hot_threshold,
             "effective heat threshold (x10000)");
@@ -372,6 +376,8 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               actual_cold_avg_pred_hot_percent);
   logger->set(object_hp_predict_error_count,
               predictor_status.predict_error_count);
+  logger->set(object_hp_background_error_count,
+              predictor_status.background_error_count);
   logger->set(object_hp_hot_threshold, hp_mul10000(stats.heat_label_threshold));
   logger->set(object_hp_otsu_candidate_threshold,
               hp_mul10000(stats.otsu_candidate_threshold));
@@ -428,6 +434,12 @@ static void hp_record_object_expiry_progress(uint64_t expired_count)
   hp_update_object_logger(ceph::timespan::zero(), false);
 }
 
+static void hp_record_object_background_error()
+{
+  std::shared_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+  hp_update_object_logger(ceph::timespan::zero(), false);
+}
+
 static void hp_zero_object_logger()
 {
   PerfCounters *logger = osd_object_hp_logger;
@@ -478,6 +490,7 @@ static void hp_zero_object_logger()
   logger->set(object_hp_actual_hot_avg_pred_hot_percent, 0);
   logger->set(object_hp_actual_cold_avg_pred_hot_percent, 0);
   logger->set(object_hp_predict_error_count, 0);
+  logger->set(object_hp_background_error_count, 0);
   logger->set(object_hp_hot_threshold, hp_mul10000(HP_HEAT_INCREMENT));
   logger->set(object_hp_otsu_candidate_threshold, 0);
   logger->set(object_hp_hot_threshold_method,
@@ -552,6 +565,8 @@ void init_osd_object_hp_status(CephContext *cct)
   hp_ensure_object_logger(cct);
   osd_object_heat_predictor.set_expiry_progress_callback(
     hp_record_object_expiry_progress);
+  osd_object_heat_predictor.set_background_error_callback(
+    hp_record_object_background_error);
   hp_zero_object_logger();
 }
 
@@ -597,6 +612,8 @@ void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
   f->close_section();
   f->dump_unsigned("hp_predict_error_count",
                    predictor_status.predict_error_count);
+  f->dump_unsigned("hp_background_error_count",
+                   predictor_status.background_error_count);
   f->close_section();
 }
 
@@ -646,6 +663,8 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
                      predictor_status.snapshot_publish_count);
     f->dump_unsigned("hp_predict_error_count",
                      predictor_status.predict_error_count);
+    f->dump_unsigned("hp_background_error_count",
+                     predictor_status.background_error_count);
     f->close_section();
   }
 }
@@ -701,6 +720,8 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
                      predictor_status.snapshot_publish_count);
     f->dump_unsigned("hp_predict_error_count",
                      predictor_status.predict_error_count);
+    f->dump_unsigned("hp_background_error_count",
+                     predictor_status.background_error_count);
     f->close_section();
   }
 }
@@ -709,15 +730,15 @@ void hp_notify_osd_object_op(CephContext *cct,
                              const hobject_t& soid,
                              uint16_t op)
 {
-  if (!osd_object_heat_predictor.is_enabled()) {
-    return;
-  }
-
   if (!hp_track_osd_op(op)) {
     return;
   }
 
   std::shared_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+  if (!osd_object_heat_predictor.is_enabled()) {
+    return;
+  }
+
   hp_count_osd_op(op);
   hp_ensure_object_logger(cct);
   auto start_time = ceph::mono_clock::now();

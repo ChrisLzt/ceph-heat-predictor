@@ -79,6 +79,8 @@ inline constexpr char actual_hot_avg_pred_hot_percent[] =
 inline constexpr char actual_cold_avg_pred_hot_percent[] =
     "hp_actual_cold_avg_pred_hot_percent";
 inline constexpr char predict_error_count[] = "hp_predict_error_count";
+inline constexpr char background_error_count[] =
+    "hp_background_error_count";
 inline constexpr char hot_threshold[] = "hp_hot_threshold";
 inline constexpr char otsu_candidate_threshold[] =
     "hp_otsu_candidate_threshold";
@@ -165,6 +167,7 @@ inline constexpr CounterField counter_fields[] = {
     {field::actual_cold_avg_pred_hot_percent, Aggregate::cold_weighted,
      nullptr, Unit::scaled_x10000},
     {field::predict_error_count, Aggregate::sum},
+    {field::background_error_count, Aggregate::sum},
     {field::hot_threshold, Aggregate::osd_average,
      "hp_hot_threshold_avg", Unit::scaled_x10000},
     {field::otsu_candidate_threshold, Aggregate::otsu_weighted,

@@ -1832,6 +1832,8 @@ bool DaemonServer::_handle_command(
     hp_dump_float(f.get(), "hp_eval_actual_hot_percent", hp_percent(tp + fn, labeled_total));
     f->dump_unsigned("hp_predict_error_count",
                      summary["hp_predict_error_count"]);
+    f->dump_unsigned("hp_background_error_count",
+                     summary["hp_background_error_count"]);
     {
       uint64_t weight =
         weighted_count["hp_actual_hot_avg_pred_hot_percent"];

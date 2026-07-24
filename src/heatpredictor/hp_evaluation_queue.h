@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <iterator>
 #include <list>
 #include <limits>
@@ -176,35 +175,6 @@ private:
         return factor * last_heat;
     }
 
-    double to_heat_score(double heat, uint64_t timestamp) const {
-        double positive_heat = std::max(
-            heat, std::numeric_limits<double>::min());
-        return std::log(positive_heat) -
-            heat_decay_log_factor_per_ns * static_cast<double>(timestamp);
-    }
-
-    double from_heat_score(double score, uint64_t timestamp) const {
-        double log_heat = score +
-            heat_decay_log_factor_per_ns * static_cast<double>(timestamp);
-        double min_log = std::log(std::numeric_limits<double>::min());
-        double max_log = std::log(std::numeric_limits<double>::max());
-        if (log_heat <= min_log) {
-            return 0.0;
-        }
-        if (log_heat >= max_log) {
-            return std::numeric_limits<double>::max();
-        }
-        return std::exp(log_heat);
-    }
-
-    double otsu_candidate_threshold_at(uint64_t timestamp) const {
-        (void)timestamp;
-        if (!otsu_candidate_available) {
-            return 0.0;
-        }
-        return otsu_candidate_threshold;
-    }
-
     static double ema_gain_for_elapsed(
             double reference_gain,
             uint64_t elapsed_ns) {
@@ -221,7 +191,6 @@ private:
     }
 
     void update_hot_threshold(uint64_t timestamp) {
-        maintain_score_otsu_lower_bound(timestamp);
         const size_t vote_count = score_otsu_histogram.size();
         if (vote_count < HP_OTSU_MIN_VOTES) {
             clear_otsu_candidate_state();
@@ -275,7 +244,6 @@ private:
             return;
         }
 
-        maintain_score_otsu_lower_bound(timestamp);
         auto old = threshold_entries_by_key.find(key);
         const double bounded_heat = std::clamp(
             heat, HP_OTSU_TOTAL_HEAT_MIN, HP_OTSU_TOTAL_HEAT_MAX);
@@ -323,28 +291,37 @@ private:
         const bool time_due = timestamp >= last_otsu_recompute_time_ns &&
             timestamp - last_otsu_recompute_time_ns >=
                 HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS;
-        if (score_otsu_histogram.size() <= HP_OTSU_EAGER_OBJECTS ||
-            threshold_observation_count % HP_OTSU_UPDATE_INTERVAL == 0 ||
-            time_due) {
+        const bool expiry_backlog =
+            threshold_expiry_heap.due_key(timestamp).has_value();
+        if (!expiry_backlog &&
+            (threshold_observation_count % HP_OTSU_UPDATE_INTERVAL == 0 ||
+             time_due)) {
             update_hot_threshold(timestamp);
             last_otsu_recompute_time_ns = timestamp;
         }
     }
 
-    void advance_otsu_history(uint64_t now_ns) {
-        maintain_score_otsu_lower_bound(now_ns);
+    void advance_otsu_history(
+            uint64_t now_ns,
+            size_t max_expirations =
+                HP_EXPIRY_MAINTENANCE_BATCH_SIZE) {
+        const size_t expired_count =
+            maintain_score_otsu_lower_bound(now_ns, max_expirations);
+        const bool expiry_backlog =
+            threshold_expiry_heap.due_key(now_ns).has_value();
+        const bool expiry_backlog_drained =
+            expired_count > 0 && !expiry_backlog;
         const bool time_due = otsu_recompute_time_initialized &&
             now_ns >= last_otsu_recompute_time_ns &&
             now_ns - last_otsu_recompute_time_ns >=
                 HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS;
-        if (time_due) {
+        if (expiry_backlog_drained || (time_due && !expiry_backlog)) {
             update_hot_threshold(now_ns);
             last_otsu_recompute_time_ns = now_ns;
         }
     }
 
     void prepare_features(PredictionSample& item, uint64_t now_ns) {
-        expire_due_access_windows(now_ns);
         advance_otsu_history(now_ns);
         auto it = heat_map.find(item.object_key_hash);
         if (it == heat_map.end()) {
@@ -391,7 +368,8 @@ public:
             PredictionSample item,
             uint64_t now_ns) {
         const auto schedule_before = expiry_schedule(now_ns);
-        auto evaluated = expire_due_evaluations(now_ns);
+        auto evaluated = expire_due_evaluations(
+            now_ns, HP_EXPIRY_MAINTENANCE_BATCH_SIZE);
         prepare_features(item, now_ns);
         PredictionSample prepared_sample = item;
         PendingIterator position = enqueue_time_impl(
@@ -414,31 +392,26 @@ public:
     }
 
 private:
-    std::vector<EvaluatedSample> expire_due_evaluations(uint64_t now_ns) {
+    std::vector<EvaluatedSample> expire_due_evaluations(
+            uint64_t now_ns,
+            size_t max_evaluations) {
         std::vector<EvaluatedSample> evaluated;
-        while (next_deadline != pending_evaluations.end()) {
+        size_t processed_count = 0;
+        while (processed_count < max_evaluations &&
+               next_deadline != pending_evaluations.end()) {
             const PendingEvaluation& slot = *next_deadline;
             if (now_ns < slot.enqueue_time_ns ||
                 now_ns - slot.enqueue_time_ns < future_label_window_ns) {
                 break;
             }
-            const uint64_t deadline_ns = slot.enqueue_time_ns >
-                    std::numeric_limits<uint64_t>::max() -
-                        future_label_window_ns
-                ? std::numeric_limits<uint64_t>::max()
-                : slot.enqueue_time_ns + future_label_window_ns;
-            advance_otsu_history(deadline_ns);
             auto due = next_deadline++;
+            ++processed_count;
             auto completed = evaluate_deadline(due, now_ns);
             if (completed.has_value()) {
                 evaluated.push_back(std::move(*completed));
             }
         }
         return evaluated;
-    }
-
-    void expire_due_access_windows(uint64_t now_ns) {
-        (void)now_ns;
     }
 
     ExpirySchedule expiry_schedule(uint64_t now_ns) const {
@@ -523,16 +496,19 @@ public:
         pending_evaluations.erase(position);
     }
 
-    ExpiryMaintenanceResult maintain_expiry(uint64_t now_ns) {
+    ExpiryMaintenanceResult maintain_expiry(
+            uint64_t now_ns,
+            size_t max_evaluations =
+                HP_EXPIRY_MAINTENANCE_BATCH_SIZE) {
         const auto schedule = expiry_schedule(now_ns);
         if (schedule.state != ExpiryScheduleState::due) {
             return ExpiryMaintenanceResult{{}, 0, false, schedule};
         }
 
         const size_t pending_before = pending_deadline_count;
-        auto evaluated = expire_due_evaluations(now_ns);
-        advance_otsu_history(now_ns);
-        expire_due_access_windows(now_ns);
+        auto evaluated = expire_due_evaluations(
+            now_ns, max_evaluations);
+        advance_otsu_history(now_ns, max_evaluations);
         return ExpiryMaintenanceResult{
             std::move(evaluated),
             pending_before - pending_deadline_count,
@@ -540,8 +516,8 @@ public:
             expiry_schedule(now_ns)};
     }
 
-    EvaluationQueueStatus status(uint64_t now_ns) {
-        advance_otsu_history(now_ns);
+    EvaluationQueueStatus status(uint64_t now_ns) const {
+        (void)now_ns;
         ceph_assert(pending_evaluations.size() >= pending_deadline_count);
         ceph_assert(heat_map.size() >= lru_list.size());
         return EvaluationQueueStatus{
@@ -556,7 +532,7 @@ public:
             score_otsu_histogram.bin_count(),
             score_otsu_histogram.size(),
             heat_label_threshold,
-            otsu_candidate_threshold_at(now_ns),
+            otsu_candidate_available ? otsu_candidate_threshold : 0.0,
             hot_threshold_method};
     }
 
@@ -652,7 +628,7 @@ private:
             uint64_t now_ns) {
         auto state_it = heat_map.find(item.object_key_hash);
         ceph_assert(state_it != heat_map.end());
-        if (pending_deadline_count >= pending_evaluation_capacity) {
+        if (pending_evaluations.size() >= pending_evaluation_capacity) {
             ++evaluation_drop_count_value;
             make_idle_if_unprotected(item.object_key_hash, state_it->second);
             return pending_evaluations.end();
@@ -678,14 +654,23 @@ private:
             heat, timestamp, heat_decay_log_factor_per_ns);
     }
 
-    void maintain_score_otsu_lower_bound(uint64_t timestamp) {
+    size_t maintain_score_otsu_lower_bound(
+            uint64_t timestamp,
+            size_t max_expirations) {
         score_otsu_histogram.advance_lower_bound(
             total_heat_score_for_otsu(HP_OTSU_TOTAL_HEAT_MIN, timestamp));
-        while (auto expired_key = threshold_expiry_heap.due_key(timestamp)) {
+        size_t expired_count = 0;
+        while (expired_count < max_expirations) {
+            auto expired_key = threshold_expiry_heap.due_key(timestamp);
+            if (!expired_key.has_value()) {
+                break;
+            }
             auto entry = threshold_entries_by_key.find(*expired_key);
             ceph_assert(entry != threshold_entries_by_key.end());
             erase_threshold_entry(entry);
+            ++expired_count;
         }
+        return expired_count;
     }
 
     uint64_t otsu_vote_expiry_time(

@@ -24,6 +24,10 @@ sudo ceph osd hp status -f json-pretty
 - `prediction`：accuracy、balanced accuracy、precision、recall 和预测/实际热比例；
 - `training`、`model_adaptation`、`latency`、`read_ops`、`write_ops`。
 
+`hp_background_error_count > 0` 表示训练或到期线程发生异常，Heat Predictor 会自动
+转为 disabled 以避免影响 OSD。OSD 会立即刷新本地 PerfCounters，MGR 在下一次
+daemon report 后看到新状态；排查后执行 `ceph osd hp enable` 完整 reset 并恢复。
+
 `dev` 构建还会输出 `trace`，不属于 `main` 的稳定统计契约。完整字段和聚合公式见
 [实现说明](CODEX_CEPH.md)。
 
@@ -36,6 +40,9 @@ hp_io_count
   + hp_awaiting_prediction_count
   + hp_eval_drop_count
 ```
+
+每个 OSD 的 EQ 硬上限约束
+`hp_pending_io_count + hp_awaiting_prediction_count`，等待预测返回的样本也占容量。
 
 常用查询：
 
@@ -57,7 +64,7 @@ sudo ceph osd hp status -f json |
 |---|---|
 | `sudo ceph osd hp enable` | 启用所有 up OSD，并完整 reset |
 | `sudo ceph osd hp disable` | 禁用所有 up OSD，并完整 reset |
-| `sudo ceph osd hp reset` | 保持启用状态，清空模型、队列、热度和统计 |
+| `sudo ceph osd hp reset` | 保持启用状态，清空模型、队列、热度和统计；丢弃数包含 pending 和 awaiting |
 
 造数据前使用 `disable`，正式测试前使用 `enable`。命令返回只表示请求已发送，MGR
 可能尚未收到 OSD 的新状态。

@@ -74,7 +74,8 @@ current_heat_log2p1 = log2(1 + heat_after_current_access)
 | 组件 | 当前设置 |
 |---|---|
 | 标签窗口 | `10s` |
-| pending EQ / LRU / Otsu object 上限 | 每 OSD 各 `1,000,000` |
+| 未完成 EQ / LRU / Otsu object 上限 | 每 OSD 各 `1,000,000` |
+| 单轮到期维护上限 | EQ 和 Otsu 各 `1,000` |
 | 报告样本窗口 | `400,000` |
 | 每次访问增量 | `100` |
 | 无访问10秒后的热度保留率 | `1/5` |
@@ -94,8 +95,8 @@ current_heat_log2p1 = log2(1 + heat_after_current_access)
 
 ## I/O、EQ 与标签
 
-1. 前台在 `eq_mutex` 内清理已到期样本，再更新当前 object 热度并创建
-   `PredictionSample`。
+1. 前台在 `eq_mutex` 内最多清理一批已到期样本，再更新当前 object 热度并创建
+   `PredictionSample`；剩余到期项由专用线程分批追赶。
 2. 每条 I/O 独立占一个稳定 EQ 节点；同一 object 的热度、访问计数、pending 数和
    上次访问时间在 `heat_map` 共享。
 3. 只读模型快照的预测在 `eq_mutex` 外同步执行，随后用 opaque ticket 以 `O(1)`
@@ -109,8 +110,9 @@ current_heat_log2p1 = log2(1 + heat_after_current_access)
 预测时阈值与 feature 0 来自同一快照；窗口内后续 Otsu 更新不能反向改变标签。
 全局只维护当前 Otsu 热阈值；每个 EQ item 只保存预测时的阈值数值，不维护全局
 阈值历史，也不在到期时按 deadline 重新查询阈值。
-pending 达到上限时跳过新 EQ 样本，但仍预测并更新 object 热状态，同时增加
-`hp_eval_drop_count`。不能提前评价旧样本来腾空间。
+EQ 中未完成节点总数（等待 deadline 的 pending 加等待预测返回的
+`awaiting_prediction`）达到上限时跳过新 EQ 样本，但仍预测并更新 object 热状态，
+同时增加 `hp_eval_drop_count`。不能提前评价旧样本来腾空间。
 
 未训练森林的合法零投票按冷预测并保留样本，用未来标签启动训练。模型异常、
 NaN/Inf、类别数或概率非法时按冷返回，同时取消该 EQ 样本，增加预测错误和评价
@@ -139,6 +141,8 @@ ln(clamp(total_heat, 20, 9.70e9)) - decay_factor * timestamp_ns
 时间右移导致 score 下界跨过完整 bin 时，低于新下界的 bin 物理合并到第0个 bin；
 上限逻辑 clamp 到末 bin。一次 Otsu 扫描最多检查2000个 bin，与 object 数无关。
 候选阈值用固定 EMA 平滑；运行期没有 quantile fallback、动态 EMA 或置信度控制。
+到期投票按每轮上限分批删除；尚有已到期积压时不重算阈值，最后一批排空后立即重算，
+避免用部分过期投票更新阈值。
 
 阈值状态：
 
@@ -161,6 +165,11 @@ LRU 容量被删，因此 `heat_map` 总量不严格等于 LRU 上限。
 
 - 前台只读原子发布的 `prediction_snapshot`。
 - 后台线程分批训练独占的 `train_model`；队列为空时条件变量阻塞。
+- 关闭时最多完成已经取出的当前批次；尚在训练队列中的后续样本直接丢弃，
+  不为无持久化模型延长 OSD 退出时间。
+- 训练或到期线程出现未预期异常时增加 `hp_background_error_count` 并禁用模块，
+  保留 OSD 服务；OSD 会立即刷新本地 PerfCounters，MGR 在下一次 daemon report
+  后看到新状态。重新执行 `enable` 会通过完整 reset 恢复。
 - 发布时只 clone scaler、活动树和投票权重，不复制 warning/drift 训练状态。
 - `prediction_snapshot` 发布后只读，前台预测复用线程本地缓冲区。
 - ARF 遥测记录 warning、drift、后台树晋升/丢弃/训练更新和活动后台树数。
@@ -168,9 +177,13 @@ LRU 容量被删，因此 `heat_map` 总量不严格等于 LRU 上限。
 锁序和职责：
 
 - `reset_mutex` 隔离 reset/enable/disable 与完整预测生命周期。
+- OSD adapter 先取得 reset 共享锁再检查 enabled，确保 reset 前进入的 hook 要么
+  完成后被 reset 清除，要么作为 reset 后的新 I/O 处理。
 - `eq_mutex` 只保护 EQ、heat state、Otsu 和 LRU，不包住25棵树的预测。
 - `train_model_mutex` 只保护后台模型训练和 clone。
 - 到期线程遵守 `reset_mutex(shared) -> eq_mutex`；等待 deadline 时不持锁。
+- 每轮最多处理1000个 EQ deadline 和1000个 Otsu expiry，随后释放 `eq_mutex`；
+  `status()` 只复制状态，不执行到期、Otsu 重算或 EMA 更新。
 - 标签和预测可按任意顺序完成；稳定节点和 opaque ticket 避免线性查找。
 
 ## 控制接口
@@ -192,9 +205,11 @@ sudo ceph osd hp disable
 
 enable/disable 都会完整 reset；reset 保持当前启用状态。reset 清空 EQ、heat/Otsu/LRU、
 训练模型、预测快照、队列、统计、op 计数和预测延迟，并把热阈值恢复为100。
+reset 返回的 `discarded_pending_io` 包含等待 deadline 和等待预测返回的全部未完成
+EQ 节点。
 
-`object_hp status` 直接读取实时 pending、训练和模型状态，并在返回前刷新
-PerfCounters；MGR 汇总可能短暂滞后。完整流程见
+`object_hp status` 只读实时 pending、训练和模型状态，并在返回前刷新
+PerfCounters，不推进 Otsu 或到期维护；MGR 汇总可能短暂滞后。完整流程见
 [MGR 操作说明](MGR_HP_OPERATIONS.md)。
 
 ## 统计与聚合
