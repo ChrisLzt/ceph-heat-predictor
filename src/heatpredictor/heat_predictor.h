@@ -65,10 +65,8 @@ private:
             std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
                 nullptr) {
         auto* classifier = new ARFClassifier<NUM_FEATURES, 2,
-                DetectorFactory<ADWIN<5>,
-                    HP_ARF_WARNING_DELTA_PERMILLE>,
-                DetectorFactory<ADWIN<5>,
-                    HP_ARF_DRIFT_DELTA_PERMILLE>>(
+                DetectorFactory<NeverDriftDetector>,
+                DetectorFactory<NeverDriftDetector>>(
                     HP_ARF_N_MODELS,
                     HP_ARF_MAX_FEATURES,
                     HP_ARF_SEED,
@@ -305,6 +303,7 @@ private:
                 std::optional<uint64_t> deadline_ns;
                 bool processed_due_maintenance = false;
                 uint64_t expired_evaluation_count = 0;
+                bool threshold_status_changed = false;
 
                 {
                     std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
@@ -319,6 +318,8 @@ private:
                                 std::move(maintenance.evaluated));
                             expired_evaluation_count =
                                 maintenance.expired_evaluation_count;
+                            threshold_status_changed =
+                                maintenance.threshold_status_changed;
                             processed_due_maintenance =
                                 maintenance.processed;
                             if (!maintenance.processed &&
@@ -333,7 +334,8 @@ private:
                     }
                 }
 
-                if (expired_evaluation_count > 0) {
+                if (expired_evaluation_count > 0 ||
+                    threshold_status_changed) {
                     auto callback = expiry_progress_callback.load(
                         std::memory_order_acquire);
                     if (callback != nullptr) {
@@ -576,8 +578,9 @@ public:
             0,                // io_sequence
             object_key_hash,  // object_key_hash
             0.0,              // heat_after_current_access
-            0.0,              // heat_label_threshold_at_prediction
-            0,    // tracked_access_count
+            1,    // future_access_threshold_at_prediction
+            0,    // past_window_access_count
+            0,    // tracked_access_count_after_current_access
             0,    // time_since_previous_access_ns
             0.0,  // predicted_hot_probability
             0     // predicted_label
@@ -642,7 +645,9 @@ public:
             res = 0;
             if (pending_evaluation.has_value()) {
                 std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                eq->cancel_prediction(std::move(*pending_evaluation));
+                eq->cancel_prediction(
+                    std::move(*pending_evaluation),
+                    monotonic_now_ns());
             }
         } else {
             item.predicted_label = res;
@@ -682,7 +687,14 @@ public:
                 queue_status.heat_state_peak_count,
                 queue_status.lru_eviction_count,
                 queue_status.otsu_histogram_bin_count,
-                queue_status.otsu_histogram_vote_count,
+                queue_status.future_access_threshold,
+                queue_status.future_access_candidate_threshold,
+                queue_status.threshold_state,
+                queue_status.otsu_positive_object_count,
+                queue_status.otsu_zero_observation_count,
+                queue_status.otsu_upper_clamped_object_count,
+                queue_status.threshold_holding_sample_count,
+                queue_status.sparse_threshold_sample_count,
                 accu.true_positives(),
                 accu.false_positives(),
                 accu.true_negatives(),
@@ -692,10 +704,7 @@ public:
                 hot_labeled_sample_predicted_hot_probability_sum,
                 cold_labeled_sample_predicted_hot_probability_sum,
                 hot_labeled_sample_future_access_count_window.summary(),
-                cold_labeled_sample_future_access_count_window.summary(),
-                queue_status.heat_label_threshold,
-                queue_status.otsu_candidate_threshold,
-                queue_status.hot_threshold_method
+                cold_labeled_sample_future_access_count_window.summary()
             };
         }();
         size_t train_queue_length = 0;

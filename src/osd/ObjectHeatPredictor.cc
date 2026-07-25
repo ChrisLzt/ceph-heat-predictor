@@ -43,7 +43,14 @@ enum {
   object_hp_heat_state_peak_count,
   object_hp_lru_eviction_count,
   object_hp_otsu_histogram_bin_count,
-  object_hp_otsu_histogram_vote_count,
+  object_hp_future_access_threshold,
+  object_hp_future_access_candidate_threshold,
+  object_hp_threshold_state,
+  object_hp_otsu_positive_object_count,
+  object_hp_otsu_zero_observation_count,
+  object_hp_otsu_upper_clamped_object_count,
+  object_hp_threshold_holding_sample_count,
+  object_hp_sparse_threshold_sample_count,
   object_hp_true_positive_count,
   object_hp_false_positive_count,
   object_hp_true_negative_count,
@@ -66,9 +73,6 @@ enum {
   object_hp_actual_cold_avg_pred_hot_percent,
   object_hp_predict_error_count,
   object_hp_background_error_count,
-  object_hp_hot_threshold,
-  object_hp_otsu_candidate_threshold,
-  object_hp_hot_threshold_method,
   object_hp_train_queue_length,
   object_hp_train_drop_count,
   object_hp_snapshot_publish_count,
@@ -184,9 +188,30 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_otsu_histogram_bin_count,
             hp_field::otsu_histogram_bin_count,
             "occupied Otsu histogram bin count");
-  b.add_u64(object_hp_otsu_histogram_vote_count,
-            hp_field::otsu_histogram_vote_count,
-            "retained votes in the Otsu histogram");
+  b.add_u64(object_hp_future_access_threshold,
+            hp_field::future_access_threshold,
+            "current future-window access threshold K");
+  b.add_u64(object_hp_future_access_candidate_threshold,
+            hp_field::future_access_candidate_threshold,
+            "current unsmoothed Otsu candidate K");
+  b.add_u64(object_hp_threshold_state,
+            hp_field::threshold_state,
+            "threshold state: 0 sparse, 1 tracking, 2 holding");
+  b.add_u64(object_hp_otsu_positive_object_count,
+            hp_field::otsu_positive_object_count,
+            "objects with a retained positive future-access vote");
+  b.add_u64(object_hp_otsu_zero_observation_count,
+            hp_field::otsu_zero_observation_count,
+            "zero-future-access observations since reset");
+  b.add_u64(object_hp_otsu_upper_clamped_object_count,
+            hp_field::otsu_upper_clamped_object_count,
+            "object votes clamped into the final Otsu bin");
+  b.add_u64(object_hp_threshold_holding_sample_count,
+            hp_field::threshold_holding_sample_count,
+            "samples enqueued while the last Otsu threshold was held");
+  b.add_u64(object_hp_sparse_threshold_sample_count,
+            hp_field::sparse_threshold_sample_count,
+            "samples enqueued with sparse fallback K=1");
   b.add_u64(object_hp_true_positive_count, hp_field::true_positive_count, "true positive count");
   b.add_u64(object_hp_false_positive_count, hp_field::false_positive_count, "false positive count");
   b.add_u64(object_hp_true_negative_count, hp_field::true_negative_count, "true negative count");
@@ -245,15 +270,6 @@ static void hp_ensure_object_logger(CephContext *cct)
   b.add_u64(object_hp_background_error_count,
             hp_field::background_error_count,
             "background training or expiry worker exceptions");
-  b.add_u64(object_hp_hot_threshold,
-            hp_field::hot_threshold,
-            "effective heat threshold (x10000)");
-  b.add_u64(object_hp_otsu_candidate_threshold,
-            hp_field::otsu_candidate_threshold,
-            "current Otsu candidate heat threshold (x10000)");
-  b.add_u64(object_hp_hot_threshold_method,
-            hp_field::hot_threshold_method,
-            "threshold state: 0 initializing, 1 tracking, 2 holding");
   b.add_u64(object_hp_train_queue_length, hp_field::train_queue_length, "train queue length");
   b.add_u64(object_hp_train_drop_count, hp_field::train_drop_count, "dropped training sample count");
   b.add_u64(object_hp_snapshot_publish_count, hp_field::snapshot_publish_count, "prediction snapshot publish count");
@@ -342,8 +358,21 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
   logger->set(object_hp_lru_eviction_count, stats.lru_eviction_count);
   logger->set(object_hp_otsu_histogram_bin_count,
               stats.otsu_histogram_bin_count);
-  logger->set(object_hp_otsu_histogram_vote_count,
-              stats.otsu_histogram_vote_count);
+  logger->set(object_hp_future_access_threshold,
+              stats.future_access_threshold);
+  logger->set(object_hp_future_access_candidate_threshold,
+              stats.future_access_candidate_threshold);
+  logger->set(object_hp_threshold_state, stats.threshold_state);
+  logger->set(object_hp_otsu_positive_object_count,
+              stats.otsu_positive_object_count);
+  logger->set(object_hp_otsu_zero_observation_count,
+              stats.otsu_zero_observation_count);
+  logger->set(object_hp_otsu_upper_clamped_object_count,
+              stats.otsu_upper_clamped_object_count);
+  logger->set(object_hp_threshold_holding_sample_count,
+              stats.threshold_holding_sample_count);
+  logger->set(object_hp_sparse_threshold_sample_count,
+              stats.sparse_threshold_sample_count);
   logger->set(object_hp_true_positive_count, true_positive);
   logger->set(object_hp_false_positive_count, false_positive);
   logger->set(object_hp_true_negative_count, true_negative);
@@ -378,10 +407,6 @@ static void hp_update_object_logger(ceph::timespan predict_latency,
               predictor_status.predict_error_count);
   logger->set(object_hp_background_error_count,
               predictor_status.background_error_count);
-  logger->set(object_hp_hot_threshold, hp_mul10000(stats.heat_label_threshold));
-  logger->set(object_hp_otsu_candidate_threshold,
-              hp_mul10000(stats.otsu_candidate_threshold));
-  logger->set(object_hp_hot_threshold_method, stats.hot_threshold_method);
   logger->set(object_hp_train_queue_length,
               predictor_status.train_queue_length);
   logger->set(object_hp_train_drop_count,
@@ -424,6 +449,10 @@ static void hp_record_object_predict_latency(ceph::timespan predict_latency)
 static void hp_record_object_expiry_progress(uint64_t expired_count)
 {
   std::shared_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+  if (expired_count == 0) {
+    hp_update_object_logger(ceph::timespan::zero(), false);
+    return;
+  }
   object_hp_expiry_since_logger_update += expired_count;
   if (object_hp_expiry_since_logger_update <
       object_hp_logger_update_interval) {
@@ -462,7 +491,15 @@ static void hp_zero_object_logger()
   logger->set(object_hp_heat_state_peak_count, 0);
   logger->set(object_hp_lru_eviction_count, 0);
   logger->set(object_hp_otsu_histogram_bin_count, 0);
-  logger->set(object_hp_otsu_histogram_vote_count, 0);
+  logger->set(object_hp_future_access_threshold, 1);
+  logger->set(object_hp_future_access_candidate_threshold, 0);
+  logger->set(object_hp_threshold_state,
+              static_cast<uint64_t>(HpThresholdState::sparse));
+  logger->set(object_hp_otsu_positive_object_count, 0);
+  logger->set(object_hp_otsu_zero_observation_count, 0);
+  logger->set(object_hp_otsu_upper_clamped_object_count, 0);
+  logger->set(object_hp_threshold_holding_sample_count, 0);
+  logger->set(object_hp_sparse_threshold_sample_count, 0);
   logger->set(object_hp_true_positive_count, 0);
   logger->set(object_hp_false_positive_count, 0);
   logger->set(object_hp_true_negative_count, 0);
@@ -491,10 +528,6 @@ static void hp_zero_object_logger()
   logger->set(object_hp_actual_cold_avg_pred_hot_percent, 0);
   logger->set(object_hp_predict_error_count, 0);
   logger->set(object_hp_background_error_count, 0);
-  logger->set(object_hp_hot_threshold, hp_mul10000(HP_HEAT_INCREMENT));
-  logger->set(object_hp_otsu_candidate_threshold, 0);
-  logger->set(object_hp_hot_threshold_method,
-              HP_THRESHOLD_METHOD_INITIALIZING);
   logger->set(object_hp_train_queue_length, 0);
   logger->set(object_hp_train_drop_count, 0);
   logger->set(object_hp_snapshot_publish_count, 0);
@@ -570,6 +603,31 @@ void init_osd_object_hp_status(CephContext *cct)
   hp_zero_object_logger();
 }
 
+static void hp_dump_future_access_threshold(
+  ceph::Formatter *f,
+  const HeatPredictorStats& stats)
+{
+  f->open_object_section("future_access_threshold");
+  f->dump_unsigned("hp_future_access_threshold",
+                   stats.future_access_threshold);
+  f->dump_unsigned("hp_future_access_candidate_threshold",
+                   stats.future_access_candidate_threshold);
+  f->dump_unsigned("hp_threshold_state", stats.threshold_state);
+  f->dump_unsigned("hp_otsu_histogram_bin_count",
+                   stats.otsu_histogram_bin_count);
+  f->dump_unsigned("hp_otsu_positive_object_count",
+                   stats.otsu_positive_object_count);
+  f->dump_unsigned("hp_otsu_zero_observation_count",
+                   stats.otsu_zero_observation_count);
+  f->dump_unsigned("hp_otsu_upper_clamped_object_count",
+                   stats.otsu_upper_clamped_object_count);
+  f->dump_unsigned("hp_threshold_holding_sample_count",
+                   stats.threshold_holding_sample_count);
+  f->dump_unsigned("hp_sparse_threshold_sample_count",
+                   stats.sparse_threshold_sample_count);
+  f->close_section();
+}
+
 void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
                                               ceph::Formatter *f)
 {
@@ -588,6 +646,7 @@ void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
     "hp_awaiting_prediction_count",
     stats.awaiting_prediction_count);
   f->dump_unsigned("hp_eval_drop_count", stats.eval_drop_count);
+  hp_dump_future_access_threshold(f, stats);
   f->dump_unsigned("hp_train_queue_length",
                    predictor_status.train_queue_length);
   f->dump_unsigned("hp_train_drop_count",
@@ -651,10 +710,7 @@ void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
     f->dump_unsigned(
       "hp_lru_eviction_count",
       stats.lru_eviction_count);
-    f->dump_unsigned("hp_otsu_histogram_bin_count",
-                     stats.otsu_histogram_bin_count);
-    f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     stats.otsu_histogram_vote_count);
+    hp_dump_future_access_threshold(f, stats);
     f->dump_unsigned("hp_train_queue_length",
                      predictor_status.train_queue_length);
     f->dump_unsigned("hp_train_drop_count",
@@ -708,10 +764,7 @@ void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
     f->dump_unsigned(
       "hp_lru_eviction_count",
       stats.lru_eviction_count);
-    f->dump_unsigned("hp_otsu_histogram_bin_count",
-                     stats.otsu_histogram_bin_count);
-    f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     stats.otsu_histogram_vote_count);
+    hp_dump_future_access_threshold(f, stats);
     f->dump_unsigned("hp_train_queue_length",
                      predictor_status.train_queue_length);
     f->dump_unsigned("hp_train_drop_count",

@@ -41,8 +41,20 @@ static constexpr uint64_t HP_FUTURE_LABEL_WINDOW_NS =
     10ULL * 1000 * 1000 * 1000;
 static constexpr size_t HP_PENDING_EVALUATION_CAPACITY = 1000000;
 static constexpr size_t HP_LRU_CAPACITY = 1000000;
-static constexpr size_t HP_HEAT_LABEL_THRESHOLD_OBJECT_CAPACITY = 1000000;
 static constexpr size_t HP_EXPIRY_MAINTENANCE_BATCH_SIZE = 1000;
+
+// Future-access threshold policy.
+static constexpr size_t HP_FUTURE_ACCESS_THRESHOLD_OBJECT_CAPACITY = 1000000;
+static constexpr size_t HP_FUTURE_ACCESS_OTSU_MIN_POSITIVE_OBJECTS = 32;
+static constexpr size_t HP_FUTURE_ACCESS_OTSU_UPDATE_INTERVAL = 100;
+static constexpr uint64_t HP_FUTURE_ACCESS_OTSU_RECOMPUTE_MAX_INTERVAL_NS =
+    1ULL * 1000 * 1000 * 1000;
+static constexpr uint64_t HP_FUTURE_ACCESS_THRESHOLD_HOLD_NS =
+    10ULL * 1000 * 1000 * 1000;
+static constexpr double HP_FUTURE_ACCESS_THRESHOLD_EMA_ALPHA = 0.10;
+static constexpr double HP_FUTURE_ACCESS_OTSU_SCORE_MIN = 1.0;
+static constexpr double HP_FUTURE_ACCESS_OTSU_BIN_WIDTH = 0.01;
+static constexpr size_t HP_FUTURE_ACCESS_OTSU_BIN_COUNT = 2000;
 
 // Heat model.
 static constexpr double HP_HEAT_INCREMENT = 100.0;
@@ -53,35 +65,10 @@ static constexpr uint64_t HP_HEAT_DECAY_HORIZON_NS =
 // Reporting windows.
 static constexpr size_t HP_REPORT_SAMPLE_WINDOW_CAPACITY = 400000;
 
-// Object-total-heat Otsu threshold policy.
-static constexpr size_t HP_OTSU_MIN_VOTES = 32;
-static constexpr double HP_OTSU_EMA_ALPHA = 0.10;
-static constexpr uint64_t HP_OTSU_EMA_REFERENCE_INTERVAL_NS =
-    1ULL * 1000 * 1000 * 1000;
-static constexpr uint64_t HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS =
-    1ULL * 1000 * 1000 * 1000;
-static constexpr size_t HP_OTSU_UPDATE_INTERVAL = 100;
-
-// Store one score-normalized current-total-heat vote per object.
-static constexpr double HP_OTSU_TOTAL_HEAT_MIN =
-    HP_HEAT_INCREMENT * HP_HEAT_RETAINED_AFTER_DECAY_HORIZON;
-static constexpr size_t HP_SCORE_OTSU_HISTOGRAM_BIN_COUNT = 2000;
-static constexpr double HP_SCORE_OTSU_LOG_HEAT_BIN_WIDTH = 0.01;
-static constexpr double HP_SCORE_OTSU_HEAT_RANGE_RATIO =
-    485165195.4097903;  // exp(2000 * 0.01)
-static constexpr double HP_OTSU_TOTAL_HEAT_MAX =
-    HP_OTSU_TOTAL_HEAT_MIN * HP_SCORE_OTSU_HEAT_RANGE_RATIO;
-static constexpr uint64_t HP_THRESHOLD_METHOD_INITIALIZING = 0;
-static constexpr uint64_t HP_THRESHOLD_METHOD_TRACKING = 1;
-static constexpr uint64_t HP_THRESHOLD_METHOD_HOLDING = 2;
-
-static_assert(HP_SCORE_OTSU_HISTOGRAM_BIN_COUNT >= 2,
-              "score Otsu histogram needs at least two bins");
-static_assert(HP_SCORE_OTSU_LOG_HEAT_BIN_WIDTH > 0.0,
-              "score Otsu histogram bin width must be positive");
-static_assert(HP_OTSU_TOTAL_HEAT_MIN > 0.0 &&
-              HP_OTSU_TOTAL_HEAT_MAX > HP_OTSU_TOTAL_HEAT_MIN,
-              "score Otsu heat bounds must be positive and ordered");
+static_assert(HP_FUTURE_ACCESS_OTSU_BIN_COUNT >= 2,
+              "future-access Otsu histogram needs at least two bins");
+static_assert(HP_FUTURE_ACCESS_OTSU_BIN_WIDTH > 0.0,
+              "future-access Otsu histogram bin width must be positive");
 
 inline double hp_heat_decay_log_factor_per_ns(uint64_t horizon_ns) {
     ceph_assert(horizon_ns > 0);

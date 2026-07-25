@@ -1684,12 +1684,12 @@ bool DaemonServer::_handle_command(
     auto& weighted_sum = cluster_status.weighted_sum;
     auto& weighted_count = cluster_status.weighted_count;
     const auto& missing_osds = cluster_status.missing_osds;
-    const uint64_t threshold_method_initializing_osds =
-      cluster_status.threshold_method_initializing_osds;
-    const uint64_t threshold_method_tracking_osds =
-      cluster_status.threshold_method_tracking_osds;
-    const uint64_t threshold_method_holding_osds =
-      cluster_status.threshold_method_holding_osds;
+    const uint64_t threshold_state_sparse_osds =
+      cluster_status.threshold_state_sparse_osds;
+    const uint64_t threshold_state_tracking_osds =
+      cluster_status.threshold_state_tracking_osds;
+    const uint64_t threshold_state_holding_osds =
+      cluster_status.threshold_state_holding_osds;
     const uint64_t enabled_osds = cluster_status.enabled_osds;
     const uint64_t disabled_osds = cluster_status.disabled_osds;
     const uint64_t predict_latency_sum_ns =
@@ -1732,25 +1732,43 @@ bool DaemonServer::_handle_command(
                      summary["hp_lru_eviction_count"]);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      summary["hp_otsu_histogram_bin_count"]);
-    f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     summary["hp_otsu_histogram_vote_count"]);
+    f->dump_unsigned("hp_otsu_positive_object_count",
+                     summary["hp_otsu_positive_object_count"]);
+    f->dump_unsigned("hp_otsu_zero_observation_count",
+                     summary["hp_otsu_zero_observation_count"]);
+    f->dump_unsigned("hp_otsu_upper_clamped_object_count",
+                     summary["hp_otsu_upper_clamped_object_count"]);
+    f->dump_unsigned("hp_threshold_holding_sample_count",
+                     summary["hp_threshold_holding_sample_count"]);
+    f->dump_unsigned("hp_sparse_threshold_sample_count",
+                     summary["hp_sparse_threshold_sample_count"]);
+    f->open_object_section("future_access_threshold");
+    f->dump_unsigned("min", cluster_status.future_access_threshold_min);
+    f->dump_unsigned("max", cluster_status.future_access_threshold_max);
     {
-      uint64_t weight = weighted_count["hp_hot_threshold_avg"];
-      hp_dump_float(f.get(), "hp_hot_threshold_avg",
-                    weight > 0 ? hp_from_x10000(
-                      weighted_sum["hp_hot_threshold_avg"] / weight) : 0.0);
+      uint64_t weight =
+        weighted_count["hp_future_access_threshold_avg"];
+      hp_dump_float(
+        f.get(), "avg",
+        weight > 0
+          ? weighted_sum["hp_future_access_threshold_avg"] / weight
+          : 0.0);
     }
     {
-      uint64_t weight = weighted_count["hp_otsu_candidate_threshold_avg"];
-      hp_dump_float(f.get(), "hp_otsu_candidate_threshold_avg",
-                    weight > 0 ? hp_from_x10000(
-                      weighted_sum["hp_otsu_candidate_threshold_avg"] /
-                      weight) : 0.0);
+      uint64_t weight =
+        weighted_count["hp_future_access_candidate_threshold_avg"];
+      hp_dump_float(
+        f.get(), "candidate_avg",
+        weight > 0
+          ? weighted_sum["hp_future_access_candidate_threshold_avg"] /
+              weight
+          : 0.0);
     }
-    f->open_object_section("hp_hot_threshold_method_osds");
-    f->dump_unsigned("initializing", threshold_method_initializing_osds);
-    f->dump_unsigned("tracking", threshold_method_tracking_osds);
-    f->dump_unsigned("holding", threshold_method_holding_osds);
+    f->open_object_section("state_osds");
+    f->dump_unsigned("sparse", threshold_state_sparse_osds);
+    f->dump_unsigned("tracking", threshold_state_tracking_osds);
+    f->dump_unsigned("holding", threshold_state_holding_osds);
+    f->close_section();
     f->close_section();
     f->close_section();
 

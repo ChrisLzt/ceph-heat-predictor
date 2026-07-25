@@ -15,9 +15,8 @@
 
 #include "common/debug.h"
 #include "hp_config.h"
-#include "hp_expiry_heap.h"
 #include "hp_features.h"
-#include "hp_score_otsu_histogram.h"
+#include "hp_future_access_threshold.h"
 #include "hp_types.h"
 
 class EvaluationQueue {
@@ -43,11 +42,12 @@ private:
         uint64_t future_window_access_count;
         uint64_t label_deadline_ns;
         uint64_t label_completion_time_ns;
-        double label_heat;
-        double label_heat_threshold;
         bool cold_start_fallback;
 
-        PendingEvaluation(PredictionSample item, bool prediction_complete, uint64_t enqueue_time_ns = 0) :
+        PendingEvaluation(
+                PredictionSample item,
+                bool prediction_complete,
+                uint64_t enqueue_time_ns = 0) :
                 item(std::move(item)),
                 prediction_complete(prediction_complete),
                 label_complete(false),
@@ -56,8 +56,6 @@ private:
                 future_window_access_count(0),
                 label_deadline_ns(0),
                 label_completion_time_ns(0),
-                label_heat(0.0),
-                label_heat_threshold(HP_HEAT_INCREMENT),
                 cold_start_fallback(false) {}
         PendingEvaluation(const PendingEvaluation&) = delete;
         PendingEvaluation& operator=(const PendingEvaluation&) = delete;
@@ -97,234 +95,82 @@ public:
     struct ExpiryMaintenanceResult {
         std::vector<EvaluatedSample> evaluated;
         uint64_t expired_evaluation_count;
+        bool threshold_status_changed;
         bool processed;
         ExpirySchedule next_schedule;
     };
 
 private:
-    double heat_label_threshold;
-    double otsu_candidate_threshold;
-    double otsu_candidate_threshold_score = 0.0;
-    bool otsu_candidate_available = false;
-    uint64_t hot_threshold_method;
-    bool otsu_ema_time_initialized = false;
-    uint64_t last_otsu_ema_update_time_ns = 0;
-    bool otsu_recompute_time_initialized = false;
-    uint64_t last_otsu_recompute_time_ns = 0;
     double heat_decay_log_factor_per_ns;
     double heat_increment;
-    uint64_t heat_decay_horizon_ns;
     uint64_t future_label_window_ns;
     size_t pending_evaluation_capacity;
+    size_t lru_capacity;
     uint64_t evaluation_drop_count_value = 0;
     size_t heat_state_peak_count_value = 0;
     uint64_t lru_eviction_count_value = 0;
-    size_t lru_capacity;
+    uint64_t threshold_holding_sample_count_value = 0;
+    uint64_t sparse_threshold_sample_count_value = 0;
 
     std::list<PendingEvaluation> pending_evaluations;
-    std::list<PendingEvaluation>::iterator next_deadline;
+    PendingIterator next_deadline;
     size_t pending_deadline_count = 0;
     std::unordered_map<uint64_t, ObjectHeatState> heat_map;
     std::list<uint64_t> lru_list;
-
-    size_t heat_label_threshold_object_capacity;
-    struct ThresholdWindowEntry {
-        HpScoreOtsuHistogram::AbsoluteBin otsu_bin;
-        std::list<uint64_t>::iterator order_position;
-    };
-    std::list<uint64_t> threshold_order;
-    std::unordered_map<uint64_t, ThresholdWindowEntry> threshold_entries_by_key;
-    HpExpiryHeap threshold_expiry_heap;
-    HpScoreOtsuHistogram score_otsu_histogram;
-    uint64_t threshold_observation_count = 0;
+    HpFutureAccessThreshold future_access_threshold;
 
 public:
     EvaluationQueue(
             uint64_t heat_decay_horizon_ns = HP_HEAT_DECAY_HORIZON_NS,
             size_t lru_capacity = HP_LRU_CAPACITY,
-            double heat_label_threshold = HP_HEAT_INCREMENT,
             double heat_increment = HP_HEAT_INCREMENT,
             uint64_t future_label_window_ns = HP_FUTURE_LABEL_WINDOW_NS,
-            size_t pending_evaluation_capacity = HP_PENDING_EVALUATION_CAPACITY) :
-            heat_label_threshold(std::clamp(
-                heat_label_threshold,
-                HP_OTSU_TOTAL_HEAT_MIN,
-                HP_OTSU_TOTAL_HEAT_MAX)),
-            otsu_candidate_threshold(0.0),
-            hot_threshold_method(HP_THRESHOLD_METHOD_INITIALIZING),
+            size_t pending_evaluation_capacity =
+                HP_PENDING_EVALUATION_CAPACITY) :
             heat_decay_log_factor_per_ns(
                 hp_heat_decay_log_factor_per_ns(heat_decay_horizon_ns)),
             heat_increment(heat_increment),
-            heat_decay_horizon_ns(heat_decay_horizon_ns),
             future_label_window_ns(future_label_window_ns),
             pending_evaluation_capacity(pending_evaluation_capacity),
             lru_capacity(lru_capacity),
-            next_deadline(pending_evaluations.end()),
-            heat_label_threshold_object_capacity(
-                HP_HEAT_LABEL_THRESHOLD_OBJECT_CAPACITY) {}
+            next_deadline(pending_evaluations.end()) {
+        heat_map.reserve(std::min<size_t>(
+            lru_capacity, static_cast<size_t>(65536)));
+    }
 
 private:
+    static uint64_t saturating_add(uint64_t lhs, uint64_t rhs) {
+        return lhs > std::numeric_limits<uint64_t>::max() - rhs
+            ? std::numeric_limits<uint64_t>::max()
+            : lhs + rhs;
+    }
+
     double decay_heat(
-            double last_heat, uint64_t last_ts, uint64_t cur_ts) const {
-        if (cur_ts <= last_ts) {
+            double last_heat,
+            uint64_t last_timestamp_ns,
+            uint64_t current_timestamp_ns) const {
+        if (current_timestamp_ns <= last_timestamp_ns) {
             return last_heat;
         }
-        const uint64_t delta = cur_ts - last_ts;
-        const double factor = std::exp(
-            static_cast<double>(delta) * heat_decay_log_factor_per_ns);
-        return factor * last_heat;
+        const uint64_t elapsed_ns =
+            current_timestamp_ns - last_timestamp_ns;
+        return std::exp(
+            static_cast<double>(elapsed_ns) *
+                heat_decay_log_factor_per_ns) *
+            last_heat;
     }
 
-    static double ema_gain_for_elapsed(
-            double reference_gain,
-            uint64_t elapsed_ns) {
-        reference_gain = std::clamp(reference_gain, 0.0, 1.0);
-        if (reference_gain == 0.0 || elapsed_ns == 0) {
-            return 0.0;
-        }
-        if (reference_gain == 1.0) {
-            return 1.0;
-        }
-        const double intervals = static_cast<double>(elapsed_ns) /
-            static_cast<double>(HP_OTSU_EMA_REFERENCE_INTERVAL_NS);
-        return 1.0 - std::pow(1.0 - reference_gain, intervals);
-    }
-
-    void update_hot_threshold(uint64_t timestamp) {
-        const size_t vote_count = score_otsu_histogram.size();
-        if (vote_count < HP_OTSU_MIN_VOTES) {
-            clear_otsu_candidate_state();
-            hot_threshold_method = HP_THRESHOLD_METHOD_INITIALIZING;
-            return;
-        }
-
-        auto result = score_otsu_histogram.otsu_result();
-        if (!result.has_value()) {
-            clear_otsu_candidate_state();
-            hot_threshold_method = HP_THRESHOLD_METHOD_HOLDING;
-            return;
-        }
-
-        otsu_candidate_threshold_score = result->threshold_score;
-        otsu_candidate_available = true;
-        otsu_candidate_threshold =
-            HpScoreOtsuHistogram::heat_for_score_at(
-                otsu_candidate_threshold_score,
-                timestamp,
-                heat_decay_log_factor_per_ns);
-        const uint64_t effective_timestamp = otsu_ema_time_initialized
-            ? std::max(timestamp, last_otsu_ema_update_time_ns)
-            : timestamp;
-        const uint64_t elapsed_ns = otsu_ema_time_initialized
-            ? effective_timestamp - last_otsu_ema_update_time_ns
-            : HP_OTSU_EMA_REFERENCE_INTERVAL_NS;
-        const double gain = ema_gain_for_elapsed(
-            HP_OTSU_EMA_ALPHA, elapsed_ns);
-        otsu_ema_time_initialized = true;
-        last_otsu_ema_update_time_ns = effective_timestamp;
-        if (gain > std::numeric_limits<double>::epsilon()) {
-            const double current_effective_score =
-                total_heat_score_for_otsu(
-                    heat_label_threshold, effective_timestamp);
-            const double next_effective_score = current_effective_score +
-                gain * (result->threshold_score - current_effective_score);
-            heat_label_threshold = std::clamp(
-                HpScoreOtsuHistogram::heat_for_score_at(
-                    next_effective_score,
-                    effective_timestamp,
-                    heat_decay_log_factor_per_ns),
-                HP_OTSU_TOTAL_HEAT_MIN,
-                HP_OTSU_TOTAL_HEAT_MAX);
-        }
-        hot_threshold_method = HP_THRESHOLD_METHOD_TRACKING;
-    }
-
-    void record_object_heat(uint64_t key, double heat, uint64_t timestamp) {
-        if (heat_label_threshold_object_capacity == 0) {
-            return;
-        }
-
-        auto old = threshold_entries_by_key.find(key);
-        const double bounded_heat = std::clamp(
-            heat, HP_OTSU_TOTAL_HEAT_MIN, HP_OTSU_TOTAL_HEAT_MAX);
-        if (bounded_heat <= HP_OTSU_TOTAL_HEAT_MIN) {
-            if (old != threshold_entries_by_key.end()) {
-                erase_threshold_entry(old);
-            }
-            return;
-        }
-
-        const auto otsu_bin = score_otsu_histogram.insert(
-            total_heat_score_for_otsu(bounded_heat, timestamp));
-        if (old == threshold_entries_by_key.end()) {
-            threshold_order.push_back(key);
-            threshold_entries_by_key.emplace(
-                key,
-                ThresholdWindowEntry{
-                    otsu_bin,
-                    std::prev(threshold_order.end())
-                });
-        } else {
-            score_otsu_histogram.erase(old->second.otsu_bin);
-            threshold_order.splice(
-                threshold_order.end(),
-                threshold_order,
-                old->second.order_position);
-            old->second.otsu_bin = otsu_bin;
-        }
-        threshold_expiry_heap.upsert(
-            key, otsu_vote_expiry_time(heat, timestamp));
-
-        while (threshold_entries_by_key.size() > heat_label_threshold_object_capacity) {
-            ceph_assert(!threshold_order.empty());
-            uint64_t victim = threshold_order.front();
-            auto victim_it = threshold_entries_by_key.find(victim);
-            ceph_assert(victim_it != threshold_entries_by_key.end());
-            erase_threshold_entry(victim_it);
-        }
-
-        ++threshold_observation_count;
-        if (!otsu_recompute_time_initialized) {
-            otsu_recompute_time_initialized = true;
-            last_otsu_recompute_time_ns = timestamp;
-        }
-        const bool time_due = timestamp >= last_otsu_recompute_time_ns &&
-            timestamp - last_otsu_recompute_time_ns >=
-                HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS;
-        const bool expiry_backlog =
-            threshold_expiry_heap.due_key(timestamp).has_value();
-        if (!expiry_backlog &&
-            (threshold_observation_count % HP_OTSU_UPDATE_INTERVAL == 0 ||
-             time_due)) {
-            update_hot_threshold(timestamp);
-            last_otsu_recompute_time_ns = timestamp;
-        }
-    }
-
-    void advance_otsu_history(
-            uint64_t now_ns,
-            size_t max_expirations =
-                HP_EXPIRY_MAINTENANCE_BATCH_SIZE) {
-        const size_t expired_count =
-            maintain_score_otsu_lower_bound(now_ns, max_expirations);
-        const bool expiry_backlog =
-            threshold_expiry_heap.due_key(now_ns).has_value();
-        const bool expiry_backlog_drained =
-            expired_count > 0 && !expiry_backlog;
-        const bool time_due = otsu_recompute_time_initialized &&
-            now_ns >= last_otsu_recompute_time_ns &&
-            now_ns - last_otsu_recompute_time_ns >=
-                HP_OTSU_RECOMPUTE_MAX_INTERVAL_NS;
-        if (expiry_backlog_drained || (time_due && !expiry_backlog)) {
-            update_hot_threshold(now_ns);
-            last_otsu_recompute_time_ns = now_ns;
-        }
+    bool next_evaluation_is_due(uint64_t now_ns) const {
+        return next_deadline != pending_evaluations.end() &&
+            now_ns >= saturating_add(
+                next_deadline->enqueue_time_ns,
+                future_label_window_ns);
     }
 
     void prepare_features(PredictionSample& item, uint64_t now_ns) {
-        advance_otsu_history(now_ns);
-        auto it = heat_map.find(item.object_key_hash);
-        if (it == heat_map.end()) {
+        future_access_threshold.maintain(now_ns);
+        auto state_position = heat_map.find(item.object_key_hash);
+        if (state_position == heat_map.end()) {
             auto [inserted, ok] = heat_map.emplace(
                 item.object_key_hash,
                 ObjectHeatState{
@@ -332,35 +178,40 @@ private:
                     now_ns,
                     1,
                     0,
-                    lru_list.end()
-                });
+                    lru_list.end()});
             ceph_assert(ok);
-            it = inserted;
+            state_position = inserted;
             heat_state_peak_count_value = std::max(
                 heat_state_peak_count_value, heat_map.size());
             item.time_since_previous_access_ns = 0;
         } else {
-            ObjectHeatState& state = it->second;
-            item.time_since_previous_access_ns = now_ns >= state.last_access_time_ns
-                ? now_ns - state.last_access_time_ns
-                : 0;
+            ObjectHeatState& state = state_position->second;
+            item.time_since_previous_access_ns =
+                now_ns >= state.last_access_time_ns
+                    ? now_ns - state.last_access_time_ns
+                    : 0;
             if (state.lru_position != lru_list.end()) {
                 ceph_assert(state.pending_evaluation_count == 0);
                 lru_list.erase(state.lru_position);
                 state.lru_position = lru_list.end();
             }
             state.heat =
-                decay_heat(state.heat, state.last_access_time_ns, now_ns) +
+                decay_heat(
+                    state.heat,
+                    state.last_access_time_ns,
+                    now_ns) +
                 heat_increment;
             state.last_access_time_ns = now_ns;
-            state.tracked_access_count++;
+            ++state.tracked_access_count;
         }
 
-        const ObjectHeatState& state = it->second;
+        const ObjectHeatState& state = state_position->second;
         item.heat_after_current_access = state.heat;
-        item.tracked_access_count = state.tracked_access_count;
-        record_object_heat(item.object_key_hash, state.heat, now_ns);
-        item.heat_label_threshold_at_prediction = heat_label_threshold;
+        item.future_access_threshold_at_prediction =
+            future_access_threshold.current_threshold();
+        item.past_window_access_count = state.pending_evaluation_count;
+        item.tracked_access_count_after_current_access =
+            state.tracked_access_count;
     }
 
 public:
@@ -368,12 +219,24 @@ public:
             PredictionSample item,
             uint64_t now_ns) {
         const auto schedule_before = expiry_schedule(now_ns);
-        auto evaluated = expire_due_evaluations(
-            now_ns, HP_EXPIRY_MAINTENANCE_BATCH_SIZE);
+        std::vector<EvaluatedSample> evaluated;
+
+        // Foreground accounting must not pass an overdue item: otherwise the
+        // current access could leak into a right-open historical window.
+        while (next_evaluation_is_due(now_ns)) {
+            auto batch = expire_due_evaluations(
+                now_ns, HP_EXPIRY_MAINTENANCE_BATCH_SIZE);
+            ceph_assert(!batch.empty() || !next_evaluation_is_due(now_ns));
+            evaluated.insert(
+                evaluated.end(),
+                std::make_move_iterator(batch.begin()),
+                std::make_move_iterator(batch.end()));
+        }
+
         prepare_features(item, now_ns);
         PredictionSample prepared_sample = item;
-        PendingIterator position = enqueue_time_impl(
-            std::move(item), false, now_ns);
+        PendingIterator position =
+            enqueue_time_impl(std::move(item), false, now_ns);
         std::optional<PredictionTicket> ticket =
             position != pending_evaluations.end()
                 ? std::optional<PredictionTicket>(
@@ -396,48 +259,38 @@ private:
             uint64_t now_ns,
             size_t max_evaluations) {
         std::vector<EvaluatedSample> evaluated;
+        std::vector<HpFutureAccessObservation> observations;
+        evaluated.reserve(std::min(max_evaluations, pending_deadline_count));
+        observations.reserve(std::min(max_evaluations, pending_deadline_count));
+
         size_t processed_count = 0;
         while (processed_count < max_evaluations &&
-               next_deadline != pending_evaluations.end()) {
-            const PendingEvaluation& slot = *next_deadline;
-            if (now_ns < slot.enqueue_time_ns ||
-                now_ns - slot.enqueue_time_ns < future_label_window_ns) {
-                break;
-            }
+               next_evaluation_is_due(now_ns)) {
             auto due = next_deadline++;
             ++processed_count;
-            auto completed = evaluate_deadline(due, now_ns);
+            auto completed = evaluate_deadline(
+                due, now_ns, observations);
             if (completed.has_value()) {
                 evaluated.push_back(std::move(*completed));
             }
         }
+        future_access_threshold.apply_observations(observations, now_ns);
         return evaluated;
     }
 
     ExpirySchedule expiry_schedule(uint64_t now_ns) const {
         std::optional<uint64_t> earliest_deadline;
-        const auto include_deadline = [&earliest_deadline](
-                uint64_t start_ns, uint64_t duration_ns) {
-            const uint64_t deadline_ns = start_ns >
-                    std::numeric_limits<uint64_t>::max() - duration_ns
-                ? std::numeric_limits<uint64_t>::max()
-                : start_ns + duration_ns;
-            if (!earliest_deadline.has_value() ||
-                deadline_ns < *earliest_deadline) {
-                earliest_deadline = deadline_ns;
-            }
-        };
-
         if (next_deadline != pending_evaluations.end()) {
-            include_deadline(
-                next_deadline->enqueue_time_ns, future_label_window_ns);
+            earliest_deadline = saturating_add(
+                next_deadline->enqueue_time_ns,
+                future_label_window_ns);
         }
-        if (auto otsu_deadline =
-                threshold_expiry_heap.earliest_deadline_ns()) {
-            if (!earliest_deadline.has_value() ||
-                *otsu_deadline < *earliest_deadline) {
-                earliest_deadline = *otsu_deadline;
-            }
+        if (auto threshold_deadline =
+                future_access_threshold.maintenance_deadline_ns();
+            threshold_deadline.has_value() &&
+            (!earliest_deadline.has_value() ||
+             *threshold_deadline < *earliest_deadline)) {
+            earliest_deadline = *threshold_deadline;
         }
 
         if (!earliest_deadline.has_value()) {
@@ -445,9 +298,12 @@ private:
         }
         if (now_ns < *earliest_deadline) {
             return ExpirySchedule{
-                ExpiryScheduleState::waiting_deadline, *earliest_deadline};
+                ExpiryScheduleState::waiting_deadline,
+                *earliest_deadline};
         }
-        return ExpirySchedule{ExpiryScheduleState::due, *earliest_deadline};
+        return ExpirySchedule{
+            ExpiryScheduleState::due,
+            *earliest_deadline};
     }
 
 public:
@@ -461,19 +317,20 @@ public:
         ticket.valid = false;
         ceph_assert(position != pending_evaluations.end());
         ceph_assert(!position->prediction_complete);
-        position->item.predicted_hot_probability = predicted_hot_probability;
+        position->item.predicted_hot_probability =
+            predicted_hot_probability;
         position->item.predicted_label = predicted_label;
         position->cold_start_fallback = cold_start_fallback;
         position->prediction_complete = true;
         if (!position->label_complete) {
             return {};
         }
-        std::vector<EvaluatedSample> completed;
-        completed.push_back(finalize_evaluation(position));
-        return completed;
+        return {finalize_evaluation(position)};
     }
 
-    void cancel_prediction(PredictionTicket&& ticket) {
+    void cancel_prediction(
+            PredictionTicket&& ticket,
+            uint64_t now_ns) {
         ceph_assert(ticket.valid);
         PendingIterator position = ticket.position;
         ticket.valid = false;
@@ -484,13 +341,20 @@ public:
             auto state = heat_map.find(position->item.object_key_hash);
             ceph_assert(state != heat_map.end());
             ceph_assert(state->second.pending_evaluation_count > 0);
-            state->second.pending_evaluation_count--;
-            pending_deadline_count--;
+            --state->second.pending_evaluation_count;
+            --pending_deadline_count;
             if (position == next_deadline) {
                 next_deadline = std::next(position);
             }
-            make_idle_if_unprotected(position->item.object_key_hash,
-                                     state->second);
+            future_access_threshold.apply_observation(
+                HpFutureAccessObservation{
+                    position->item.object_key_hash,
+                    now_ns,
+                    state->second.pending_evaluation_count},
+                now_ns);
+            make_idle_if_unprotected(
+                position->item.object_key_hash,
+                state->second);
         }
         ++evaluation_drop_count_value;
         pending_evaluations.erase(position);
@@ -502,16 +366,34 @@ public:
                 HP_EXPIRY_MAINTENANCE_BATCH_SIZE) {
         const auto schedule = expiry_schedule(now_ns);
         if (schedule.state != ExpiryScheduleState::due) {
-            return ExpiryMaintenanceResult{{}, 0, false, schedule};
+            return ExpiryMaintenanceResult{
+                {}, 0, false, false, schedule};
         }
 
+        const auto threshold_before = future_access_threshold.status();
         const size_t pending_before = pending_deadline_count;
         auto evaluated = expire_due_evaluations(
             now_ns, max_evaluations);
-        advance_otsu_history(now_ns, max_evaluations);
+        future_access_threshold.maintain(now_ns);
+        const auto threshold_after = future_access_threshold.status();
+        const bool threshold_status_changed =
+            threshold_before.current_threshold !=
+                threshold_after.current_threshold ||
+            threshold_before.candidate_threshold !=
+                threshold_after.candidate_threshold ||
+            threshold_before.state != threshold_after.state ||
+            threshold_before.positive_object_count !=
+                threshold_after.positive_object_count ||
+            threshold_before.zero_observation_count !=
+                threshold_after.zero_observation_count ||
+            threshold_before.upper_clamped_object_count !=
+                threshold_after.upper_clamped_object_count ||
+            threshold_before.occupied_bin_count !=
+                threshold_after.occupied_bin_count;
         return ExpiryMaintenanceResult{
             std::move(evaluated),
             pending_before - pending_deadline_count,
+            threshold_status_changed,
             true,
             expiry_schedule(now_ns)};
     }
@@ -520,6 +402,7 @@ public:
         (void)now_ns;
         ceph_assert(pending_evaluations.size() >= pending_deadline_count);
         ceph_assert(heat_map.size() >= lru_list.size());
+        const auto threshold = future_access_threshold.status();
         return EvaluationQueueStatus{
             pending_deadline_count,
             pending_evaluations.size() - pending_deadline_count,
@@ -529,27 +412,34 @@ public:
             heat_map.size() - lru_list.size(),
             heat_state_peak_count_value,
             lru_eviction_count_value,
-            score_otsu_histogram.bin_count(),
-            score_otsu_histogram.size(),
-            heat_label_threshold,
-            otsu_candidate_available ? otsu_candidate_threshold : 0.0,
-            hot_threshold_method};
+            threshold.occupied_bin_count,
+            threshold.current_threshold,
+            threshold.candidate_threshold,
+            static_cast<uint64_t>(threshold.state),
+            threshold.positive_object_count,
+            threshold.zero_observation_count,
+            threshold.upper_clamped_object_count,
+            threshold_holding_sample_count_value,
+            sparse_threshold_sample_count_value};
     }
 
 private:
     void enforce_lru_capacity() {
         while (lru_list.size() > lru_capacity) {
-            uint64_t victim = lru_list.front();
+            const uint64_t victim = lru_list.front();
             lru_list.pop_front();
-            auto victim_it = heat_map.find(victim);
-            ceph_assert(victim_it != heat_map.end());
-            ceph_assert(victim_it->second.pending_evaluation_count == 0);
-            heat_map.erase(victim_it);
+            auto victim_position = heat_map.find(victim);
+            ceph_assert(victim_position != heat_map.end());
+            ceph_assert(
+                victim_position->second.pending_evaluation_count == 0);
+            heat_map.erase(victim_position);
             ++lru_eviction_count_value;
         }
     }
 
-    void make_idle_if_unprotected(uint64_t key, ObjectHeatState& state) {
+    void make_idle_if_unprotected(
+            uint64_t key,
+            ObjectHeatState& state) {
         if (state.pending_evaluation_count != 0) {
             return;
         }
@@ -561,39 +451,44 @@ private:
     }
 
     std::optional<EvaluatedSample> evaluate_deadline(
-            std::list<PendingEvaluation>::iterator position,
-            uint64_t now_ns) {
+            PendingIterator position,
+            uint64_t now_ns,
+            std::vector<HpFutureAccessObservation>& observations) {
         PendingEvaluation& expired = *position;
         ceph_assert(!expired.label_complete);
         ceph_assert(pending_deadline_count > 0);
 
-        auto expired_state_it = heat_map.find(expired.item.object_key_hash);
-        ceph_assert(expired_state_it != heat_map.end());
-        ObjectHeatState& expired_state = expired_state_it->second;
-        ceph_assert(expired_state.pending_evaluation_count > 0);
+        auto state_position =
+            heat_map.find(expired.item.object_key_hash);
+        ceph_assert(state_position != heat_map.end());
+        ObjectHeatState& state = state_position->second;
+        ceph_assert(state.pending_evaluation_count > 0);
+        ceph_assert(
+            state.tracked_access_count >=
+            expired.item.tracked_access_count_after_current_access);
 
-        const uint64_t deadline_ns = expired.enqueue_time_ns >
-                std::numeric_limits<uint64_t>::max() - future_label_window_ns
-            ? std::numeric_limits<uint64_t>::max()
-            : expired.enqueue_time_ns + future_label_window_ns;
-        double expired_total_heat = decay_heat(
-            expired_state.heat, expired_state.last_access_time_ns, deadline_ns);
-        expired.label_heat = expired_total_heat;
-        expired.label_heat_threshold =
-            expired.item.heat_label_threshold_at_prediction;
-        expired.actual_label = expired.label_heat >
-            expired.label_heat_threshold ? 1 : 0;
+        const uint64_t deadline_ns = saturating_add(
+            expired.enqueue_time_ns, future_label_window_ns);
+        expired.future_window_access_count =
+            state.tracked_access_count -
+            expired.item.tracked_access_count_after_current_access;
+        expired.actual_label =
+            expired.future_window_access_count >=
+                expired.item.future_access_threshold_at_prediction
+            ? 1
+            : 0;
         expired.label_deadline_ns = deadline_ns;
         expired.label_completion_time_ns = now_ns;
-        expired.future_window_access_count =
-            expired_state.tracked_access_count -
-            expired.item.tracked_access_count;
         expired.label_complete = true;
 
-        expired_state.pending_evaluation_count--;
-        pending_deadline_count--;
+        --state.pending_evaluation_count;
+        --pending_deadline_count;
+        observations.push_back(HpFutureAccessObservation{
+            expired.item.object_key_hash,
+            deadline_ns,
+            state.pending_evaluation_count});
         make_idle_if_unprotected(
-            expired.item.object_key_hash, expired_state);
+            expired.item.object_key_hash, state);
 
         if (!expired.prediction_complete) {
             return std::nullopt;
@@ -601,12 +496,10 @@ private:
         return finalize_evaluation(position);
     }
 
-    EvaluatedSample finalize_evaluation(
-            std::list<PendingEvaluation>::iterator position) {
+    EvaluatedSample finalize_evaluation(PendingIterator position) {
         PendingEvaluation& completed = *position;
         ceph_assert(completed.prediction_complete);
         ceph_assert(completed.label_complete);
-
         EvaluatedSample evaluated{
             std::move(completed.item),
             completed.actual_label,
@@ -614,10 +507,7 @@ private:
             completed.enqueue_time_ns,
             completed.label_deadline_ns,
             completed.label_completion_time_ns,
-            completed.label_heat,
-            completed.label_heat_threshold,
-            completed.cold_start_fallback
-        };
+            completed.cold_start_fallback};
         pending_evaluations.erase(position);
         return evaluated;
     }
@@ -626,15 +516,24 @@ private:
             PredictionSample item,
             bool prediction_complete,
             uint64_t now_ns) {
-        auto state_it = heat_map.find(item.object_key_hash);
-        ceph_assert(state_it != heat_map.end());
+        auto state_position = heat_map.find(item.object_key_hash);
+        ceph_assert(state_position != heat_map.end());
         if (pending_evaluations.size() >= pending_evaluation_capacity) {
             ++evaluation_drop_count_value;
-            make_idle_if_unprotected(item.object_key_hash, state_it->second);
+            make_idle_if_unprotected(
+                item.object_key_hash, state_position->second);
             return pending_evaluations.end();
         }
 
-        state_it->second.pending_evaluation_count++;
+        const HpThresholdState threshold_state =
+            future_access_threshold.status().state;
+        if (threshold_state == HpThresholdState::sparse) {
+            ++sparse_threshold_sample_count_value;
+        } else if (threshold_state == HpThresholdState::holding) {
+            ++threshold_holding_sample_count_value;
+        }
+
+        ++state_position->second.pending_evaluation_count;
         const bool needs_deadline_head =
             next_deadline == pending_evaluations.end();
         pending_evaluations.emplace_back(
@@ -643,71 +542,14 @@ private:
         if (needs_deadline_head) {
             next_deadline = inserted;
         }
-        pending_deadline_count++;
+        ++pending_deadline_count;
+        future_access_threshold.apply_observation(
+            HpFutureAccessObservation{
+                inserted->item.object_key_hash,
+                now_ns,
+                state_position->second.pending_evaluation_count},
+            now_ns);
         return inserted;
-    }
-
-    double total_heat_score_for_otsu(
-            double heat,
-            uint64_t timestamp) const {
-        return HpScoreOtsuHistogram::score_for_heat_at(
-            heat, timestamp, heat_decay_log_factor_per_ns);
-    }
-
-    size_t maintain_score_otsu_lower_bound(
-            uint64_t timestamp,
-            size_t max_expirations) {
-        score_otsu_histogram.advance_lower_bound(
-            total_heat_score_for_otsu(HP_OTSU_TOTAL_HEAT_MIN, timestamp));
-        size_t expired_count = 0;
-        while (expired_count < max_expirations) {
-            auto expired_key = threshold_expiry_heap.due_key(timestamp);
-            if (!expired_key.has_value()) {
-                break;
-            }
-            auto entry = threshold_entries_by_key.find(*expired_key);
-            ceph_assert(entry != threshold_entries_by_key.end());
-            erase_threshold_entry(entry);
-            ++expired_count;
-        }
-        return expired_count;
-    }
-
-    uint64_t otsu_vote_expiry_time(
-            double heat,
-            uint64_t timestamp) const {
-        if (heat <= HP_OTSU_TOTAL_HEAT_MIN) {
-            return timestamp;
-        }
-        if (!std::isfinite(heat)) {
-            return std::numeric_limits<uint64_t>::max();
-        }
-        const double decay_ns = std::log(
-            HP_OTSU_TOTAL_HEAT_MIN / heat) /
-            heat_decay_log_factor_per_ns;
-        ceph_assert(std::isfinite(decay_ns) && decay_ns > 0.0);
-        const double remaining = static_cast<double>(
-            std::numeric_limits<uint64_t>::max() - timestamp);
-        if (decay_ns >= remaining) {
-            return std::numeric_limits<uint64_t>::max();
-        }
-        return timestamp + static_cast<uint64_t>(std::ceil(decay_ns));
-    }
-
-    void erase_threshold_entry(
-            std::unordered_map<uint64_t, ThresholdWindowEntry>::iterator it) {
-        score_otsu_histogram.erase(it->second.otsu_bin);
-        threshold_order.erase(it->second.order_position);
-        ceph_assert(threshold_expiry_heap.erase(it->first));
-        threshold_entries_by_key.erase(it);
-    }
-
-    void clear_otsu_candidate_state() {
-        otsu_candidate_threshold = 0.0;
-        otsu_candidate_threshold_score = 0.0;
-        otsu_candidate_available = false;
-        otsu_ema_time_initialized = false;
-        last_otsu_ema_update_time_ns = 0;
     }
 };
 

@@ -1,5 +1,7 @@
 #include "ObjectHeatPredictorStatus.h"
 
+#include <algorithm>
+
 #include "heatpredictor/hp_telemetry.h"
 
 namespace ceph::mgr {
@@ -42,7 +44,18 @@ ObjectHpClusterStatus aggregate_object_hp_status(
       counter_value(osd.counters, field::true_negative_count) +
       counter_value(osd.counters, field::false_positive_count);
     const uint64_t otsu_vote_count =
-      counter_value(osd.counters, field::otsu_histogram_vote_count);
+      counter_value(osd.counters, field::otsu_positive_object_count);
+    const uint64_t future_access_threshold =
+      counter_value(osd.counters, field::future_access_threshold);
+    if (result.reporting_osds == 1) {
+      result.future_access_threshold_min = future_access_threshold;
+      result.future_access_threshold_max = future_access_threshold;
+    } else {
+      result.future_access_threshold_min = std::min(
+        result.future_access_threshold_min, future_access_threshold);
+      result.future_access_threshold_max = std::max(
+        result.future_access_threshold_max, future_access_threshold);
+    }
 
     if (counter_value(osd.counters, field::enabled) > 0) {
       ++result.enabled_osds;
@@ -50,15 +63,15 @@ ObjectHpClusterStatus aggregate_object_hp_status(
       ++result.disabled_osds;
     }
 
-    switch (counter_value(osd.counters, field::hot_threshold_method)) {
+    switch (counter_value(osd.counters, field::threshold_state)) {
     case 1:
-      ++result.threshold_method_tracking_osds;
+      ++result.threshold_state_tracking_osds;
       break;
     case 2:
-      ++result.threshold_method_holding_osds;
+      ++result.threshold_state_holding_osds;
       break;
     default:
-      ++result.threshold_method_initializing_osds;
+      ++result.threshold_state_sparse_osds;
       break;
     }
 
@@ -91,7 +104,7 @@ ObjectHpClusterStatus aggregate_object_hp_status(
         }
         break;
       case Aggregate::otsu_weighted:
-        if (otsu_vote_count > 0) {
+        if (otsu_vote_count > 0 && value->second > 0) {
           result.weighted_sum[output_name] +=
             static_cast<long double>(value->second) * otsu_vote_count;
           result.weighted_count[output_name] += otsu_vote_count;

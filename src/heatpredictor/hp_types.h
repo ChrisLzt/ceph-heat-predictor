@@ -8,8 +8,9 @@ struct PredictionSample {
     uint64_t io_sequence;
     uint64_t object_key_hash;
     double heat_after_current_access;
-    double heat_label_threshold_at_prediction;
-    uint64_t tracked_access_count;
+    uint64_t future_access_threshold_at_prediction;
+    uint64_t past_window_access_count;
+    uint64_t tracked_access_count_after_current_access;
     uint64_t time_since_previous_access_ns;
     double predicted_hot_probability;
     int predicted_label;
@@ -30,8 +31,6 @@ struct EvaluatedSample {
     uint64_t prediction_time_ns;
     uint64_t label_deadline_ns;
     uint64_t label_completion_time_ns;
-    double label_heat;
-    double label_heat_threshold;
     bool cold_start_fallback;
 };
 
@@ -59,10 +58,14 @@ struct EvaluationQueueStatus {
     uint64_t heat_state_peak_count;
     uint64_t lru_eviction_count;
     uint64_t otsu_histogram_bin_count;
-    uint64_t otsu_histogram_vote_count;
-    double heat_label_threshold;
-    double otsu_candidate_threshold;
-    uint64_t hot_threshold_method;
+    uint64_t future_access_threshold;
+    uint64_t future_access_candidate_threshold;
+    uint64_t threshold_state;
+    uint64_t otsu_positive_object_count;
+    uint64_t otsu_zero_observation_count;
+    uint64_t otsu_upper_clamped_object_count;
+    uint64_t threshold_holding_sample_count;
+    uint64_t sparse_threshold_sample_count;
 };
 
 struct HeatPredictorStats {
@@ -78,7 +81,14 @@ struct HeatPredictorStats {
     uint64_t heat_state_peak_count;
     uint64_t lru_eviction_count;
     uint64_t otsu_histogram_bin_count;
-    uint64_t otsu_histogram_vote_count;
+    uint64_t future_access_threshold;
+    uint64_t future_access_candidate_threshold;
+    uint64_t threshold_state;
+    uint64_t otsu_positive_object_count;
+    uint64_t otsu_zero_observation_count;
+    uint64_t otsu_upper_clamped_object_count;
+    uint64_t threshold_holding_sample_count;
+    uint64_t sparse_threshold_sample_count;
     uint64_t true_positive;
     uint64_t false_positive;
     uint64_t true_negative;
@@ -89,9 +99,6 @@ struct HeatPredictorStats {
     double cold_labeled_sample_predicted_hot_probability_sum;
     HpDistributionSummary hot_labeled_sample_future_access_count;
     HpDistributionSummary cold_labeled_sample_future_access_count;
-    double heat_label_threshold;
-    double otsu_candidate_threshold;
-    uint64_t hot_threshold_method;
 };
 
 #endif

@@ -46,8 +46,21 @@ inline constexpr char heat_state_peak_count[] = "hp_heat_state_peak_count";
 inline constexpr char lru_eviction_count[] = "hp_lru_eviction_count";
 inline constexpr char otsu_histogram_bin_count[] =
     "hp_otsu_histogram_bin_count";
-inline constexpr char otsu_histogram_vote_count[] =
-    "hp_otsu_histogram_vote_count";
+inline constexpr char future_access_threshold[] =
+    "hp_future_access_threshold";
+inline constexpr char future_access_candidate_threshold[] =
+    "hp_future_access_candidate_threshold";
+inline constexpr char threshold_state[] = "hp_threshold_state";
+inline constexpr char otsu_positive_object_count[] =
+    "hp_otsu_positive_object_count";
+inline constexpr char otsu_zero_observation_count[] =
+    "hp_otsu_zero_observation_count";
+inline constexpr char otsu_upper_clamped_object_count[] =
+    "hp_otsu_upper_clamped_object_count";
+inline constexpr char threshold_holding_sample_count[] =
+    "hp_threshold_holding_sample_count";
+inline constexpr char sparse_threshold_sample_count[] =
+    "hp_sparse_threshold_sample_count";
 inline constexpr char true_positive_count[] = "hp_true_positive_count";
 inline constexpr char false_positive_count[] = "hp_false_positive_count";
 inline constexpr char true_negative_count[] = "hp_true_negative_count";
@@ -81,10 +94,6 @@ inline constexpr char actual_cold_avg_pred_hot_percent[] =
 inline constexpr char predict_error_count[] = "hp_predict_error_count";
 inline constexpr char background_error_count[] =
     "hp_background_error_count";
-inline constexpr char hot_threshold[] = "hp_hot_threshold";
-inline constexpr char otsu_candidate_threshold[] =
-    "hp_otsu_candidate_threshold";
-inline constexpr char hot_threshold_method[] = "hp_hot_threshold_method";
 inline constexpr char train_queue_length[] = "hp_train_queue_length";
 inline constexpr char train_drop_count[] = "hp_train_drop_count";
 inline constexpr char snapshot_publish_count[] = "hp_snapshot_publish_count";
@@ -120,7 +129,16 @@ inline constexpr CounterField counter_fields[] = {
     {field::heat_state_peak_count, Aggregate::sum},
     {field::lru_eviction_count, Aggregate::sum},
     {field::otsu_histogram_bin_count, Aggregate::sum},
-    {field::otsu_histogram_vote_count, Aggregate::sum},
+    {field::future_access_threshold, Aggregate::osd_average,
+     "hp_future_access_threshold_avg"},
+    {field::future_access_candidate_threshold, Aggregate::otsu_weighted,
+     "hp_future_access_candidate_threshold_avg"},
+    {field::threshold_state, Aggregate::none},
+    {field::otsu_positive_object_count, Aggregate::sum},
+    {field::otsu_zero_observation_count, Aggregate::sum},
+    {field::otsu_upper_clamped_object_count, Aggregate::sum},
+    {field::threshold_holding_sample_count, Aggregate::sum},
+    {field::sparse_threshold_sample_count, Aggregate::sum},
     {field::true_positive_count, Aggregate::sum},
     {field::false_positive_count, Aggregate::sum},
     {field::true_negative_count, Aggregate::sum},
@@ -168,11 +186,6 @@ inline constexpr CounterField counter_fields[] = {
      nullptr, Unit::scaled_x10000},
     {field::predict_error_count, Aggregate::sum},
     {field::background_error_count, Aggregate::sum},
-    {field::hot_threshold, Aggregate::osd_average,
-     "hp_hot_threshold_avg", Unit::scaled_x10000},
-    {field::otsu_candidate_threshold, Aggregate::otsu_weighted,
-     "hp_otsu_candidate_threshold_avg", Unit::scaled_x10000},
-    {field::hot_threshold_method, Aggregate::none},
     {field::train_queue_length, Aggregate::sum},
     {field::train_drop_count, Aggregate::sum},
     {field::snapshot_publish_count, Aggregate::sum},

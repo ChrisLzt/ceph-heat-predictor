@@ -29,14 +29,16 @@ inline double hp_previous_access_interval_encoded(
 
 inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
     thread_local std::vector<double> features(NUM_FEATURES);
-    const double threshold = std::max(item.heat_label_threshold_at_prediction, 1.0);
-    const double threshold_log2p1 = hp_log2p1(threshold);
+    const double threshold = static_cast<double>(std::max<uint64_t>(
+        item.future_access_threshold_at_prediction, 1));
     const double heat_after_current_access = hp_log2p1(item.heat_after_current_access);
 
     size_t next = 0;
-    features[next++] = heat_after_current_access - threshold_log2p1;
+    features[next++] =
+        hp_log2p1(static_cast<double>(item.past_window_access_count)) -
+        hp_log2p1(threshold);
     features[next++] = hp_previous_access_interval_encoded(
-        item.tracked_access_count,
+        item.tracked_access_count_after_current_access,
         item.time_since_previous_access_ns);
     features[next++] = heat_after_current_access;
     ceph_assert(next == features.size());

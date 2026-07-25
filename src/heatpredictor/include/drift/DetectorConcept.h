@@ -29,6 +29,18 @@ struct is_detector_impl<T, std::void_t<
 template <typename T>
 inline constexpr bool IsDetector_v = is_detector_impl<T>::value;
 
+class NeverDriftDetector {
+public:
+    bool drift_detected = false;
+
+    void update(double) {
+        drift_detected = false;
+    }
+};
+
+static_assert(
+    IsDetector_v<NeverDriftDetector>,
+    "NeverDriftDetector must satisfy the detector interface");
 
 // ==========================================
 // 2. 实现 DetectorFactory 类
