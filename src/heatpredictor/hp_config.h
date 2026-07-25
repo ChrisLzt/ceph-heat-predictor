@@ -7,7 +7,7 @@
 
 #include "common/debug.h"
 
-static constexpr size_t NUM_FEATURES = 3;
+static constexpr size_t NUM_FEATURES = 5;
 
 // Adaptive Random Forest model.
 static constexpr int HP_ARF_N_MODELS = 25;
@@ -39,6 +39,8 @@ static constexpr uint64_t HP_SNAPSHOT_PUBLISH_MAX_INTERVAL_NS =
 // Evaluation and retained object state.
 static constexpr uint64_t HP_FUTURE_LABEL_WINDOW_NS =
     10ULL * 1000 * 1000 * 1000;
+static constexpr uint64_t HP_SHORT_ACCESS_WINDOW_NS =
+    2ULL * 1000 * 1000 * 1000;
 static constexpr size_t HP_PENDING_EVALUATION_CAPACITY = 1000000;
 static constexpr size_t HP_LRU_CAPACITY = 1000000;
 static constexpr size_t HP_EXPIRY_MAINTENANCE_BATCH_SIZE = 1000;

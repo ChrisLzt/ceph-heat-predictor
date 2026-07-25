@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <iterator>
 #include <list>
 #include <limits>
@@ -61,6 +62,11 @@ private:
         PendingEvaluation& operator=(const PendingEvaluation&) = delete;
     };
 
+    struct ShortAccessEvent {
+        uint64_t object_key_hash;
+        uint64_t timestamp_ns;
+    };
+
     using PendingIterator = std::list<PendingEvaluation>::iterator;
 
 public:
@@ -104,6 +110,7 @@ private:
     double heat_decay_log_factor_per_ns;
     double heat_increment;
     uint64_t future_label_window_ns;
+    uint64_t short_access_window_ns;
     size_t pending_evaluation_capacity;
     size_t lru_capacity;
     uint64_t evaluation_drop_count_value = 0;
@@ -117,6 +124,7 @@ private:
     size_t pending_deadline_count = 0;
     std::unordered_map<uint64_t, ObjectHeatState> heat_map;
     std::list<uint64_t> lru_list;
+    std::deque<ShortAccessEvent> short_access_events;
     HpFutureAccessThreshold future_access_threshold;
 
 public:
@@ -126,14 +134,18 @@ public:
             double heat_increment = HP_HEAT_INCREMENT,
             uint64_t future_label_window_ns = HP_FUTURE_LABEL_WINDOW_NS,
             size_t pending_evaluation_capacity =
-                HP_PENDING_EVALUATION_CAPACITY) :
+                HP_PENDING_EVALUATION_CAPACITY,
+            uint64_t short_access_window_ns =
+                HP_SHORT_ACCESS_WINDOW_NS) :
             heat_decay_log_factor_per_ns(
                 hp_heat_decay_log_factor_per_ns(heat_decay_horizon_ns)),
             heat_increment(heat_increment),
             future_label_window_ns(future_label_window_ns),
+            short_access_window_ns(short_access_window_ns),
             pending_evaluation_capacity(pending_evaluation_capacity),
             lru_capacity(lru_capacity),
             next_deadline(pending_evaluations.end()) {
+        ceph_assert(short_access_window_ns > 0);
         heat_map.reserve(std::min<size_t>(
             lru_capacity, static_cast<size_t>(65536)));
     }
@@ -167,8 +179,26 @@ private:
                 future_label_window_ns);
     }
 
+    void expire_short_accesses(uint64_t now_ns) {
+        while (!short_access_events.empty() &&
+               now_ns >= saturating_add(
+                   short_access_events.front().timestamp_ns,
+                   short_access_window_ns)) {
+            const uint64_t key =
+                short_access_events.front().object_key_hash;
+            short_access_events.pop_front();
+            auto state_position = heat_map.find(key);
+            ceph_assert(state_position != heat_map.end());
+            ObjectHeatState& state = state_position->second;
+            ceph_assert(state.short_window_access_count > 0);
+            --state.short_window_access_count;
+            make_idle_if_unprotected(key, state);
+        }
+    }
+
     void prepare_features(PredictionSample& item, uint64_t now_ns) {
         future_access_threshold.maintain(now_ns);
+        expire_short_accesses(now_ns);
         auto state_position = heat_map.find(item.object_key_hash);
         if (state_position == heat_map.end()) {
             auto [inserted, ok] = heat_map.emplace(
@@ -177,6 +207,7 @@ private:
                     heat_increment,
                     now_ns,
                     1,
+                    0,
                     0,
                     lru_list.end()});
             ceph_assert(ok);
@@ -192,6 +223,7 @@ private:
                     : 0;
             if (state.lru_position != lru_list.end()) {
                 ceph_assert(state.pending_evaluation_count == 0);
+                ceph_assert(state.short_window_access_count == 0);
                 lru_list.erase(state.lru_position);
                 state.lru_position = lru_list.end();
             }
@@ -210,8 +242,13 @@ private:
         item.future_access_threshold_at_prediction =
             future_access_threshold.current_threshold();
         item.past_window_access_count = state.pending_evaluation_count;
+        item.short_window_access_count =
+            state.short_window_access_count;
         item.tracked_access_count_after_current_access =
             state.tracked_access_count;
+        ++state_position->second.short_window_access_count;
+        short_access_events.push_back(
+            ShortAccessEvent{item.object_key_hash, now_ns});
     }
 
 public:
@@ -291,6 +328,15 @@ private:
             (!earliest_deadline.has_value() ||
              *threshold_deadline < *earliest_deadline)) {
             earliest_deadline = *threshold_deadline;
+        }
+        if (!short_access_events.empty()) {
+            const uint64_t short_access_deadline = saturating_add(
+                short_access_events.front().timestamp_ns,
+                short_access_window_ns);
+            if (!earliest_deadline.has_value() ||
+                short_access_deadline < *earliest_deadline) {
+                earliest_deadline = short_access_deadline;
+            }
         }
 
         if (!earliest_deadline.has_value()) {
@@ -372,6 +418,7 @@ public:
 
         const auto threshold_before = future_access_threshold.status();
         const size_t pending_before = pending_deadline_count;
+        expire_short_accesses(now_ns);
         auto evaluated = expire_due_evaluations(
             now_ns, max_evaluations);
         future_access_threshold.maintain(now_ns);
@@ -432,6 +479,8 @@ private:
             ceph_assert(victim_position != heat_map.end());
             ceph_assert(
                 victim_position->second.pending_evaluation_count == 0);
+            ceph_assert(
+                victim_position->second.short_window_access_count == 0);
             heat_map.erase(victim_position);
             ++lru_eviction_count_value;
         }
@@ -440,7 +489,8 @@ private:
     void make_idle_if_unprotected(
             uint64_t key,
             ObjectHeatState& state) {
-        if (state.pending_evaluation_count != 0) {
+        if (state.pending_evaluation_count != 0 ||
+            state.short_window_access_count != 0) {
             return;
         }
         if (state.lru_position == lru_list.end()) {

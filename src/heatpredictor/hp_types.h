@@ -10,6 +10,7 @@ struct PredictionSample {
     double heat_after_current_access;
     uint64_t future_access_threshold_at_prediction;
     uint64_t past_window_access_count;
+    uint64_t short_window_access_count;
     uint64_t tracked_access_count_after_current_access;
     uint64_t time_since_previous_access_ns;
     double predicted_hot_probability;
@@ -20,6 +21,7 @@ struct ObjectHeatState {
     double heat;
     uint64_t last_access_time_ns;
     uint64_t tracked_access_count;
+    uint64_t short_window_access_count;
     uint64_t pending_evaluation_count;
     std::list<uint64_t>::iterator lru_position;
 };

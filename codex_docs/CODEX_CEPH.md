@@ -62,7 +62,7 @@ actual_hot = future_access_count >= K_at_prediction
 
 预测与标签始终回答同一个问题；后续 `K` 的变化不会改写已入队样本。
 
-模型固定三维 feature：
+模型固定五维 feature：
 
 ```text
 past_access_count_margin =
@@ -73,10 +73,19 @@ previous_access_interval_encoded =
     first_access ? 0 : 1 + log2(1 + previous_interval_seconds)
 
 current_heat_log2p1 = log2(1 + current_heat)
+
+projected_count_margin =
+    log2(1 + short_2s_access_count / 2 * 10)
+  - log2(1 + K_at_prediction)
+
+short_access_count_log2p1 =
+    log2(1 + short_2s_access_count)
 ```
 
 `past_10s_access_count` 是当前 item 入队前，同一 object 尚未到期的 EQ item 数。
-feature 在预测时生成；后台训练复用该快照，不读取未来状态。
+`short_2s_access_count` 是 `(prediction_time - 2s, prediction_time)` 内同一 object
+的历史访问数。两个计数都不包含当前 I/O。feature 在预测时生成；后台训练复用该
+快照，不读取未来状态。
 
 ## 动态访问阈值 K
 
@@ -113,7 +122,8 @@ Otsu 扫描最多 2000 个 bin，与 object 数无关。
 ## EQ、热度与 LRU
 
 1. 前台取得 `eq_mutex` 后先清空所有已到期批次，避免当前 I/O 泄漏进旧标签。
-2. 更新 object 共享访问计数和热度，读取 `K` 与 feature，并创建稳定 EQ 节点。
+2. 清理到期的2秒短窗口事件，更新 object 共享访问计数和热度，读取 `K` 与
+   feature，并创建稳定 EQ 节点。
 3. 在 `eq_mutex` 外使用只读模型快照同步预测，再用 opaque ticket `O(1)` 提交。
 4. 专用线程按 deadline 唤醒，每批最多处理1000个 item；无新 I/O 时也会完成标签。
 5. EQ 入队、到期和取消同步更新 object 阈值票；标签与预测都完成后才进入混淆
@@ -126,15 +136,16 @@ EQ pending 与 awaiting-prediction 合计达到100万时，新样本不再入 EQ
 热度只作为第三个 feature 和 object 状态保留。每次访问增加100，无访问10秒后保留
 `1/5`。它不再决定标签或 Otsu 阈值。
 
-`heat_map` 保存共享热度、累计访问数、pending 数和上次访问时间。pending 为0的
-object 进入 LRU；LRU 超过100万才删除最久未访问状态。protected object 不受 LRU
-上限淘汰，因此 `heat_map` 总量可能高于100万。
+`heat_map` 保存共享热度、累计访问数、2秒访问数、pending 数和上次访问时间。
+pending 与2秒访问数均为0的 object 才进入 LRU；短窗口事件由同一个 expiry 线程
+按时间清理，因此无新 I/O 时也会释放状态。LRU 超过100万才删除最久未访问状态。
+protected object 不受 LRU 上限淘汰，因此 `heat_map` 总量可能高于100万。
 
 ## 模型、训练与并发
 
 模型为 `PipelineClassifier(StandardScaler, ARFClassifier)`：
 
-- 25棵树、3个候选 feature、seed `591422`。
+- 25棵树、5个候选 feature、seed `591422`。
 - 预测阈值固定 `0.50`，冷热训练权重均为 `1.0`。
 - warning 与 drift detector 固定不触发；现有树继续在线学习，但不创建后台树或替换
   当前树。

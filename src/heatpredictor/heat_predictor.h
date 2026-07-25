@@ -580,6 +580,7 @@ public:
             0.0,              // heat_after_current_access
             1,    // future_access_threshold_at_prediction
             0,    // past_window_access_count
+            0,    // short_window_access_count
             0,    // tracked_access_count_after_current_access
             0,    // time_since_previous_access_ns
             0.0,  // predicted_hot_probability
