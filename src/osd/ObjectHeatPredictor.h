@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "include/common_fwd.h"
 
@@ -11,13 +12,20 @@ class Formatter;
 
 struct hobject_t;
 
-void init_osd_object_hp_status(CephContext *cct);
+void init_osd_object_hp_status(CephContext *cct, int osd_id);
 void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
                                               ceph::Formatter *f);
 void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f);
 void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
                                               ceph::Formatter *f,
                                               bool enabled);
+void hp_start_osd_object_heat_predictor_trace(
+    CephContext *cct,
+    ceph::Formatter *f,
+    const std::string& phase,
+    const std::string& directory);
+void hp_stop_osd_object_heat_predictor_trace(CephContext *cct,
+                                             ceph::Formatter *f);
 void hp_notify_osd_object_op(CephContext *cct,
                              const hobject_t& soid,
                              uint16_t op);

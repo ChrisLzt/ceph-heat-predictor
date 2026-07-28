@@ -83,6 +83,16 @@ COMMAND("osd hp disable", \
         "disable and reset heat predictor on all up OSDs", \
         "osd", \
         "rw")
+COMMAND("osd hp trace start " \
+        "name=phase,type=CephString,req=false " \
+        "name=directory,type=CephString,req=false", \
+        "start or rotate completed-evaluation trace on all up OSDs", \
+        "osd", \
+        "rw")
+COMMAND("osd hp trace stop", \
+        "drain and stop completed-evaluation trace on all up OSDs", \
+        "osd", \
+        "rw")
 COMMAND("osd df " \
         "name=output_method,type=CephChoices,strings=plain|tree,req=false " \
         "name=filter_by,type=CephChoices,strings=class|name,req=false " \
