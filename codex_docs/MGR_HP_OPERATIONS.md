@@ -41,6 +41,13 @@ hp_io_count
   + hp_eval_drop_count
 ```
 
+Heat Predictor 在单 OSD 内以同一个状态迁移边界发布上述计数，因此一次 OSD 上报内部
+满足该等式。MGR 聚合的是各 OSD 最近一次 daemon report；不同 OSD 的上报时刻可以
+不同，但每份已接收的 OSD 状态自身必须一致。OSD PerfCounters 使用首尾发布代次
+检测采集期间的新旧字段混合；代次缺失或不一致的报告不会参与汇总，该 OSD 在本次
+查询中计入 `missing_osds`，等待下一次完整 daemon report。
+升级该协议时必须同时部署并重启 OSD 和 MGR，旧 OSD 因缺少代次字段会显示为 missing。
+
 每个 OSD 的 EQ 硬上限约束
 `hp_pending_io_count + hp_awaiting_prediction_count`，等待预测返回的样本也占容量。
 

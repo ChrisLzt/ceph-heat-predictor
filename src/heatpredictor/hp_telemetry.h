@@ -9,7 +9,6 @@ enum class Aggregate {
     osd_average,
     hot_weighted,
     cold_weighted,
-    otsu_weighted,
 };
 
 enum class Unit {
@@ -31,6 +30,8 @@ struct AverageField {
 };
 
 namespace field {
+inline constexpr char status_publish_generation_begin[] =
+    "hp_status_publish_generation_begin";
 inline constexpr char enabled[] = "hp_enabled";
 inline constexpr char io_count[] = "hp_io_count";
 inline constexpr char labeled_io_total[] = "hp_labeled_io_total";
@@ -48,8 +49,6 @@ inline constexpr char otsu_histogram_bin_count[] =
     "hp_otsu_histogram_bin_count";
 inline constexpr char future_access_threshold[] =
     "hp_future_access_threshold";
-inline constexpr char future_access_candidate_threshold[] =
-    "hp_future_access_candidate_threshold";
 inline constexpr char threshold_state[] = "hp_threshold_state";
 inline constexpr char otsu_positive_object_count[] =
     "hp_otsu_positive_object_count";
@@ -57,8 +56,6 @@ inline constexpr char otsu_zero_observation_count[] =
     "hp_otsu_zero_observation_count";
 inline constexpr char otsu_upper_clamped_object_count[] =
     "hp_otsu_upper_clamped_object_count";
-inline constexpr char threshold_holding_sample_count[] =
-    "hp_threshold_holding_sample_count";
 inline constexpr char sparse_threshold_sample_count[] =
     "hp_sparse_threshold_sample_count";
 inline constexpr char true_positive_count[] = "hp_true_positive_count";
@@ -113,10 +110,13 @@ inline constexpr char op_sparse_read_count[] = "hp_op_sparse_read_count";
 inline constexpr char op_write_count[] = "hp_op_write_count";
 inline constexpr char op_writefull_count[] = "hp_op_writefull_count";
 inline constexpr char op_writesame_count[] = "hp_op_writesame_count";
+inline constexpr char status_publish_generation_end[] =
+    "hp_status_publish_generation_end";
 inline constexpr char predict_latency[] = "hp_predict_latency";
 } // namespace field
 
 inline constexpr CounterField counter_fields[] = {
+    {field::status_publish_generation_begin, Aggregate::none},
     {field::enabled, Aggregate::sum},
     {field::io_count, Aggregate::sum},
     {field::labeled_io_total, Aggregate::sum},
@@ -131,13 +131,10 @@ inline constexpr CounterField counter_fields[] = {
     {field::otsu_histogram_bin_count, Aggregate::sum},
     {field::future_access_threshold, Aggregate::osd_average,
      "hp_future_access_threshold_avg"},
-    {field::future_access_candidate_threshold, Aggregate::otsu_weighted,
-     "hp_future_access_candidate_threshold_avg"},
     {field::threshold_state, Aggregate::none},
     {field::otsu_positive_object_count, Aggregate::sum},
     {field::otsu_zero_observation_count, Aggregate::sum},
     {field::otsu_upper_clamped_object_count, Aggregate::sum},
-    {field::threshold_holding_sample_count, Aggregate::sum},
     {field::sparse_threshold_sample_count, Aggregate::sum},
     {field::true_positive_count, Aggregate::sum},
     {field::false_positive_count, Aggregate::sum},
@@ -201,6 +198,7 @@ inline constexpr CounterField counter_fields[] = {
     {field::op_write_count, Aggregate::sum},
     {field::op_writefull_count, Aggregate::sum},
     {field::op_writesame_count, Aggregate::sum},
+    {field::status_publish_generation_end, Aggregate::none},
 };
 
 inline constexpr AverageField average_fields[] = {

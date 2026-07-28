@@ -21,6 +21,7 @@ struct ObjectHeatState {
     double heat;
     uint64_t last_access_time_ns;
     uint64_t tracked_access_count;
+    uint64_t recent_window_access_count;
     uint64_t short_window_access_count;
     uint64_t pending_evaluation_count;
     std::list<uint64_t>::iterator lru_position;
@@ -28,11 +29,12 @@ struct ObjectHeatState {
 
 struct EvaluatedSample {
     PredictionSample item;
-    int label;
     uint64_t future_window_access_count;
+    uint64_t future_window_access_threshold;
     uint64_t prediction_time_ns;
     uint64_t label_deadline_ns;
     uint64_t label_completion_time_ns;
+    int label;
     bool cold_start_fallback;
 };
 
@@ -61,12 +63,10 @@ struct EvaluationQueueStatus {
     uint64_t lru_eviction_count;
     uint64_t otsu_histogram_bin_count;
     uint64_t future_access_threshold;
-    uint64_t future_access_candidate_threshold;
     uint64_t threshold_state;
     uint64_t otsu_positive_object_count;
     uint64_t otsu_zero_observation_count;
     uint64_t otsu_upper_clamped_object_count;
-    uint64_t threshold_holding_sample_count;
     uint64_t sparse_threshold_sample_count;
 };
 
@@ -84,12 +84,10 @@ struct HeatPredictorStats {
     uint64_t lru_eviction_count;
     uint64_t otsu_histogram_bin_count;
     uint64_t future_access_threshold;
-    uint64_t future_access_candidate_threshold;
     uint64_t threshold_state;
     uint64_t otsu_positive_object_count;
     uint64_t otsu_zero_observation_count;
     uint64_t otsu_upper_clamped_object_count;
-    uint64_t threshold_holding_sample_count;
     uint64_t sparse_threshold_sample_count;
     uint64_t true_positive;
     uint64_t false_positive;

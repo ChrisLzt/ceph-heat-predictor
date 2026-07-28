@@ -1,29 +1,26 @@
 #ifndef CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 #define CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <functional>
-#include <utility>
-
-#include <ext/pb_ds/assoc_container.hpp>
-#include <ext/pb_ds/tree_policy.hpp>
+#include <limits>
 
 #include "hp_config.h"
 #include "hp_types.h"
 
 class HpIntegerQuantileWindow {
-public:
-    typedef __gnu_pbds::tree<
-        std::pair<uint64_t, uint64_t>,
-        __gnu_pbds::null_type,
-        std::less<std::pair<uint64_t, uint64_t>>,
-        __gnu_pbds::rb_tree_tag,
-        __gnu_pbds::tree_order_statistics_node_update
-    > pbds_set;
+private:
+    static constexpr double bin_width =
+        HP_REPORT_LOG_HISTOGRAM_BIN_WIDTH;
+    static constexpr size_t bin_count =
+        HP_REPORT_LOG_HISTOGRAM_BIN_COUNT;
+    using BinIndex = uint16_t;
 
+public:
     explicit HpIntegerQuantileWindow(
             size_t capacity = HP_REPORT_SAMPLE_WINDOW_CAPACITY) :
             capacity(capacity) {}
@@ -33,30 +30,30 @@ public:
             return;
         }
 
-        auto entry = std::make_pair(value, ++counter);
-        values.insert(entry);
-        order.push_back(entry);
-        if (values.size() > capacity) {
-            values.erase(order.front());
+        const BinIndex bin = bin_for_value(value);
+        ceph_assert(bins[bin] < std::numeric_limits<uint64_t>::max());
+        ++bins[bin];
+        order.push_back(bin);
+        if (order.size() > capacity) {
+            ceph_assert(bins[order.front()] > 0);
+            --bins[order.front()];
             order.pop_front();
         }
     }
 
     void clear() {
-        values.clear();
+        bins.fill(0);
         order.clear();
-        counter = 0;
     }
 
     HpDistributionSummary summary() const {
-        if (values.empty()) {
+        if (order.empty()) {
             return {};
         }
 
         return HpDistributionSummary{
-            static_cast<uint64_t>(values.size()),
-            static_cast<double>(
-                values.find_by_order(values.size() - 1)->first),
+            static_cast<uint64_t>(order.size()),
+            quantile(1.0),
             quantile(0.50),
             quantile(0.90),
             quantile(0.95),
@@ -66,18 +63,43 @@ public:
 
 private:
     size_t capacity;
-    pbds_set values;
-    std::deque<std::pair<uint64_t, uint64_t>> order;
-    uint64_t counter = 0;
+    std::array<uint64_t, bin_count> bins{};
+    std::deque<BinIndex> order;
+
+    static BinIndex bin_for_value(uint64_t value) {
+        const double score =
+            std::log2(1.0 + static_cast<double>(value));
+        const double relative = std::floor(score / bin_width);
+        if (!std::isfinite(relative) ||
+            relative >= static_cast<double>(bin_count)) {
+            return static_cast<BinIndex>(bin_count - 1);
+        }
+        return static_cast<BinIndex>(
+            std::max(0.0, relative));
+    }
+
+    static double value_for_bin(size_t bin) {
+        if (bin == 0) {
+            return 0.0;
+        }
+        const double center =
+            (static_cast<double>(bin) + 0.5) * bin_width;
+        return std::round(std::exp2(center) - 1.0);
+    }
 
     double quantile(double q) const {
-        size_t index = static_cast<size_t>(
-            std::ceil(q * static_cast<double>(values.size())));
-        index = index == 0 ? 0 : index - 1;
-        if (index >= values.size()) {
-            index = values.size() - 1;
+        const uint64_t rank = std::max<uint64_t>(
+            1,
+            static_cast<uint64_t>(
+                std::ceil(q * static_cast<double>(order.size()))));
+        uint64_t cumulative = 0;
+        for (size_t bin = 0; bin < bins.size(); ++bin) {
+            cumulative += bins[bin];
+            if (cumulative >= rank) {
+                return value_for_bin(bin);
+            }
         }
-        return static_cast<double>(values.find_by_order(index)->first);
+        return value_for_bin(bins.size() - 1);
     }
 };
 

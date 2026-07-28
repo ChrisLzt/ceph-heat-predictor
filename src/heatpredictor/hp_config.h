@@ -44,16 +44,14 @@ static constexpr uint64_t HP_SHORT_ACCESS_WINDOW_NS =
 static constexpr size_t HP_PENDING_EVALUATION_CAPACITY = 1000000;
 static constexpr size_t HP_LRU_CAPACITY = 1000000;
 static constexpr size_t HP_EXPIRY_MAINTENANCE_BATCH_SIZE = 1000;
+static constexpr uint64_t HP_THRESHOLD_DEADLINE_MICROBATCH_NS =
+    1ULL * 1000 * 1000;
 
 // Future-access threshold policy.
-static constexpr size_t HP_FUTURE_ACCESS_THRESHOLD_OBJECT_CAPACITY = 1000000;
 static constexpr size_t HP_FUTURE_ACCESS_OTSU_MIN_POSITIVE_OBJECTS = 32;
 static constexpr size_t HP_FUTURE_ACCESS_OTSU_UPDATE_INTERVAL = 100;
 static constexpr uint64_t HP_FUTURE_ACCESS_OTSU_RECOMPUTE_MAX_INTERVAL_NS =
     1ULL * 1000 * 1000 * 1000;
-static constexpr uint64_t HP_FUTURE_ACCESS_THRESHOLD_HOLD_NS =
-    10ULL * 1000 * 1000 * 1000;
-static constexpr double HP_FUTURE_ACCESS_THRESHOLD_EMA_ALPHA = 0.10;
 static constexpr double HP_FUTURE_ACCESS_OTSU_SCORE_MIN = 1.0;
 static constexpr double HP_FUTURE_ACCESS_OTSU_BIN_WIDTH = 0.01;
 static constexpr size_t HP_FUTURE_ACCESS_OTSU_BIN_COUNT = 2000;
@@ -66,11 +64,19 @@ static constexpr uint64_t HP_HEAT_DECAY_HORIZON_NS =
 
 // Reporting windows.
 static constexpr size_t HP_REPORT_SAMPLE_WINDOW_CAPACITY = 400000;
+static constexpr double HP_REPORT_LOG_HISTOGRAM_BIN_WIDTH = 0.01;
+static constexpr size_t HP_REPORT_LOG_HISTOGRAM_BIN_COUNT = 2101;
 
 static_assert(HP_FUTURE_ACCESS_OTSU_BIN_COUNT >= 2,
               "future-access Otsu histogram needs at least two bins");
 static_assert(HP_FUTURE_ACCESS_OTSU_BIN_WIDTH > 0.0,
               "future-access Otsu histogram bin width must be positive");
+static_assert(HP_THRESHOLD_DEADLINE_MICROBATCH_NS > 0,
+              "threshold deadline microbatch must be positive");
+static_assert(HP_REPORT_LOG_HISTOGRAM_BIN_WIDTH > 0.0,
+              "reporting histogram bin width must be positive");
+static_assert(HP_REPORT_LOG_HISTOGRAM_BIN_COUNT <= 65536,
+              "reporting histogram bin index must fit in uint16_t");
 
 inline double hp_heat_decay_log_factor_per_ns(uint64_t horizon_ns) {
     ceph_assert(horizon_ns > 0);

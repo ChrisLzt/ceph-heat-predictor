@@ -36,13 +36,14 @@ public:
 private:
     struct PendingEvaluation {
         PredictionSample item;
-        bool prediction_complete;
-        bool label_complete;
         uint64_t enqueue_time_ns;
-        int actual_label;
         uint64_t future_window_access_count;
+        uint64_t future_window_access_threshold;
         uint64_t label_deadline_ns;
         uint64_t label_completion_time_ns;
+        int actual_label;
+        bool prediction_complete;
+        bool label_complete;
         bool cold_start_fallback;
 
         PendingEvaluation(
@@ -50,19 +51,20 @@ private:
                 bool prediction_complete,
                 uint64_t enqueue_time_ns = 0) :
                 item(std::move(item)),
-                prediction_complete(prediction_complete),
-                label_complete(false),
                 enqueue_time_ns(enqueue_time_ns),
-                actual_label(0),
                 future_window_access_count(0),
+                future_window_access_threshold(1),
                 label_deadline_ns(0),
                 label_completion_time_ns(0),
+                actual_label(0),
+                prediction_complete(prediction_complete),
+                label_complete(false),
                 cold_start_fallback(false) {}
         PendingEvaluation(const PendingEvaluation&) = delete;
         PendingEvaluation& operator=(const PendingEvaluation&) = delete;
     };
 
-    struct ShortAccessEvent {
+    struct AccessEvent {
         uint64_t object_key_hash;
         uint64_t timestamp_ns;
     };
@@ -116,7 +118,6 @@ private:
     uint64_t evaluation_drop_count_value = 0;
     size_t heat_state_peak_count_value = 0;
     uint64_t lru_eviction_count_value = 0;
-    uint64_t threshold_holding_sample_count_value = 0;
     uint64_t sparse_threshold_sample_count_value = 0;
 
     std::list<PendingEvaluation> pending_evaluations;
@@ -124,7 +125,8 @@ private:
     size_t pending_deadline_count = 0;
     std::unordered_map<uint64_t, ObjectHeatState> heat_map;
     std::list<uint64_t> lru_list;
-    std::deque<ShortAccessEvent> short_access_events;
+    std::deque<AccessEvent> recent_access_events;
+    std::deque<AccessEvent> short_access_events;
     HpFutureAccessThreshold future_access_threshold;
 
 public:
@@ -179,6 +181,29 @@ private:
                 future_label_window_ns);
     }
 
+    void expire_recent_accesses(uint64_t now_ns) {
+        while (!recent_access_events.empty() &&
+               now_ns >= saturating_add(
+                   recent_access_events.front().timestamp_ns,
+                   future_label_window_ns)) {
+            const uint64_t key =
+                recent_access_events.front().object_key_hash;
+            recent_access_events.pop_front();
+            auto state_position = heat_map.find(key);
+            ceph_assert(state_position != heat_map.end());
+            ObjectHeatState& state = state_position->second;
+            ceph_assert(state.recent_window_access_count > 0);
+            const uint64_t old_count =
+                state.recent_window_access_count;
+            --state.recent_window_access_count;
+            future_access_threshold.update_object_count_deferred(
+                old_count,
+                state.recent_window_access_count);
+            make_idle_if_unprotected(key, state);
+        }
+        future_access_threshold.maintain(now_ns);
+    }
+
     void expire_short_accesses(uint64_t now_ns) {
         while (!short_access_events.empty() &&
                now_ns >= saturating_add(
@@ -197,7 +222,7 @@ private:
     }
 
     void prepare_features(PredictionSample& item, uint64_t now_ns) {
-        future_access_threshold.maintain(now_ns);
+        expire_recent_accesses(now_ns);
         expire_short_accesses(now_ns);
         auto state_position = heat_map.find(item.object_key_hash);
         if (state_position == heat_map.end()) {
@@ -207,6 +232,7 @@ private:
                     heat_increment,
                     now_ns,
                     1,
+                    0,
                     0,
                     0,
                     lru_list.end()});
@@ -223,6 +249,7 @@ private:
                     : 0;
             if (state.lru_position != lru_list.end()) {
                 ceph_assert(state.pending_evaluation_count == 0);
+                ceph_assert(state.recent_window_access_count == 0);
                 ceph_assert(state.short_window_access_count == 0);
                 lru_list.erase(state.lru_position);
                 state.lru_position = lru_list.end();
@@ -241,14 +268,27 @@ private:
         item.heat_after_current_access = state.heat;
         item.future_access_threshold_at_prediction =
             future_access_threshold.current_threshold();
-        item.past_window_access_count = state.pending_evaluation_count;
+        item.past_window_access_count =
+            state.recent_window_access_count;
         item.short_window_access_count =
             state.short_window_access_count;
         item.tracked_access_count_after_current_access =
             state.tracked_access_count;
-        ++state_position->second.short_window_access_count;
+
+        ObjectHeatState& mutable_state = state_position->second;
+        const uint64_t old_recent_count =
+            mutable_state.recent_window_access_count;
+        ++mutable_state.recent_window_access_count;
+        future_access_threshold.update_object_count(
+            old_recent_count,
+            mutable_state.recent_window_access_count,
+            now_ns);
+        recent_access_events.push_back(
+            AccessEvent{item.object_key_hash, now_ns});
+
+        ++mutable_state.short_window_access_count;
         short_access_events.push_back(
-            ShortAccessEvent{item.object_key_hash, now_ns});
+            AccessEvent{item.object_key_hash, now_ns});
     }
 
 public:
@@ -296,22 +336,57 @@ private:
             uint64_t now_ns,
             size_t max_evaluations) {
         std::vector<EvaluatedSample> evaluated;
-        std::vector<HpFutureAccessObservation> observations;
         evaluated.reserve(std::min(max_evaluations, pending_deadline_count));
-        observations.reserve(std::min(max_evaluations, pending_deadline_count));
 
         size_t processed_count = 0;
         while (processed_count < max_evaluations &&
                next_evaluation_is_due(now_ns)) {
-            auto due = next_deadline++;
-            ++processed_count;
-            auto completed = evaluate_deadline(
-                due, now_ns, observations);
-            if (completed.has_value()) {
-                evaluated.push_back(std::move(*completed));
+            const uint64_t first_deadline = saturating_add(
+                next_deadline->enqueue_time_ns,
+                future_label_window_ns);
+            const uint64_t microbatch =
+                first_deadline / HP_THRESHOLD_DEADLINE_MICROBATCH_NS;
+            size_t microbatch_count = 0;
+            uint64_t threshold_time_ns = first_deadline;
+            auto scan = next_deadline;
+            while (scan != pending_evaluations.end() &&
+                   processed_count + microbatch_count < max_evaluations) {
+                const uint64_t deadline = saturating_add(
+                    scan->enqueue_time_ns,
+                    future_label_window_ns);
+                if (deadline > now_ns ||
+                    deadline / HP_THRESHOLD_DEADLINE_MICROBATCH_NS !=
+                        microbatch) {
+                    break;
+                }
+                threshold_time_ns = deadline;
+                ++microbatch_count;
+                ++scan;
+            }
+            ceph_assert(microbatch_count > 0);
+
+            // Deadlines within one millisecond share the threshold at the
+            // latest deadline in that microbatch.
+            expire_recent_accesses(threshold_time_ns);
+            future_access_threshold.recompute_now(threshold_time_ns);
+            const uint64_t label_threshold =
+                future_access_threshold.current_threshold();
+            for (size_t index = 0; index < microbatch_count; ++index) {
+                auto due = next_deadline++;
+                ++processed_count;
+                complete_deadline_counts(due, now_ns);
+                PendingEvaluation& completed = *due;
+                completed.future_window_access_threshold = label_threshold;
+                completed.actual_label =
+                    completed.future_window_access_count >= label_threshold
+                    ? 1
+                    : 0;
+                completed.label_complete = true;
+                if (completed.prediction_complete) {
+                    evaluated.push_back(finalize_evaluation(due));
+                }
             }
         }
-        future_access_threshold.apply_observations(observations, now_ns);
         return evaluated;
     }
 
@@ -328,6 +403,15 @@ private:
             (!earliest_deadline.has_value() ||
              *threshold_deadline < *earliest_deadline)) {
             earliest_deadline = *threshold_deadline;
+        }
+        if (!recent_access_events.empty()) {
+            const uint64_t recent_access_deadline = saturating_add(
+                recent_access_events.front().timestamp_ns,
+                future_label_window_ns);
+            if (!earliest_deadline.has_value() ||
+                recent_access_deadline < *earliest_deadline) {
+                earliest_deadline = recent_access_deadline;
+            }
         }
         if (!short_access_events.empty()) {
             const uint64_t short_access_deadline = saturating_add(
@@ -377,6 +461,7 @@ public:
     void cancel_prediction(
             PredictionTicket&& ticket,
             uint64_t now_ns) {
+        (void)now_ns;
         ceph_assert(ticket.valid);
         PendingIterator position = ticket.position;
         ticket.valid = false;
@@ -392,12 +477,6 @@ public:
             if (position == next_deadline) {
                 next_deadline = std::next(position);
             }
-            future_access_threshold.apply_observation(
-                HpFutureAccessObservation{
-                    position->item.object_key_hash,
-                    now_ns,
-                    state->second.pending_evaluation_count},
-                now_ns);
             make_idle_if_unprotected(
                 position->item.object_key_hash,
                 state->second);
@@ -418,16 +497,20 @@ public:
 
         const auto threshold_before = future_access_threshold.status();
         const size_t pending_before = pending_deadline_count;
+        std::vector<EvaluatedSample> evaluated;
+        if (next_evaluation_is_due(now_ns)) {
+            evaluated = expire_due_evaluations(
+                now_ns, max_evaluations);
+        }
+        if (!next_evaluation_is_due(now_ns)) {
+            expire_recent_accesses(now_ns);
+        }
         expire_short_accesses(now_ns);
-        auto evaluated = expire_due_evaluations(
-            now_ns, max_evaluations);
         future_access_threshold.maintain(now_ns);
         const auto threshold_after = future_access_threshold.status();
         const bool threshold_status_changed =
             threshold_before.current_threshold !=
                 threshold_after.current_threshold ||
-            threshold_before.candidate_threshold !=
-                threshold_after.candidate_threshold ||
             threshold_before.state != threshold_after.state ||
             threshold_before.positive_object_count !=
                 threshold_after.positive_object_count ||
@@ -461,12 +544,10 @@ public:
             lru_eviction_count_value,
             threshold.occupied_bin_count,
             threshold.current_threshold,
-            threshold.candidate_threshold,
             static_cast<uint64_t>(threshold.state),
             threshold.positive_object_count,
             threshold.zero_observation_count,
             threshold.upper_clamped_object_count,
-            threshold_holding_sample_count_value,
             sparse_threshold_sample_count_value};
     }
 
@@ -480,6 +561,8 @@ private:
             ceph_assert(
                 victim_position->second.pending_evaluation_count == 0);
             ceph_assert(
+                victim_position->second.recent_window_access_count == 0);
+            ceph_assert(
                 victim_position->second.short_window_access_count == 0);
             heat_map.erase(victim_position);
             ++lru_eviction_count_value;
@@ -490,6 +573,7 @@ private:
             uint64_t key,
             ObjectHeatState& state) {
         if (state.pending_evaluation_count != 0 ||
+            state.recent_window_access_count != 0 ||
             state.short_window_access_count != 0) {
             return;
         }
@@ -500,10 +584,9 @@ private:
         enforce_lru_capacity();
     }
 
-    std::optional<EvaluatedSample> evaluate_deadline(
+    void complete_deadline_counts(
             PendingIterator position,
-            uint64_t now_ns,
-            std::vector<HpFutureAccessObservation>& observations) {
+            uint64_t now_ns) {
         PendingEvaluation& expired = *position;
         ceph_assert(!expired.label_complete);
         ceph_assert(pending_deadline_count > 0);
@@ -522,28 +605,13 @@ private:
         expired.future_window_access_count =
             state.tracked_access_count -
             expired.item.tracked_access_count_after_current_access;
-        expired.actual_label =
-            expired.future_window_access_count >=
-                expired.item.future_access_threshold_at_prediction
-            ? 1
-            : 0;
         expired.label_deadline_ns = deadline_ns;
         expired.label_completion_time_ns = now_ns;
-        expired.label_complete = true;
 
         --state.pending_evaluation_count;
         --pending_deadline_count;
-        observations.push_back(HpFutureAccessObservation{
-            expired.item.object_key_hash,
-            deadline_ns,
-            state.pending_evaluation_count});
         make_idle_if_unprotected(
             expired.item.object_key_hash, state);
-
-        if (!expired.prediction_complete) {
-            return std::nullopt;
-        }
-        return finalize_evaluation(position);
     }
 
     EvaluatedSample finalize_evaluation(PendingIterator position) {
@@ -552,11 +620,12 @@ private:
         ceph_assert(completed.label_complete);
         EvaluatedSample evaluated{
             std::move(completed.item),
-            completed.actual_label,
             completed.future_window_access_count,
+            completed.future_window_access_threshold,
             completed.enqueue_time_ns,
             completed.label_deadline_ns,
             completed.label_completion_time_ns,
+            completed.actual_label,
             completed.cold_start_fallback};
         pending_evaluations.erase(position);
         return evaluated;
@@ -579,8 +648,6 @@ private:
             future_access_threshold.status().state;
         if (threshold_state == HpThresholdState::sparse) {
             ++sparse_threshold_sample_count_value;
-        } else if (threshold_state == HpThresholdState::holding) {
-            ++threshold_holding_sample_count_value;
         }
 
         ++state_position->second.pending_evaluation_count;
@@ -593,12 +660,6 @@ private:
             next_deadline = inserted;
         }
         ++pending_deadline_count;
-        future_access_threshold.apply_observation(
-            HpFutureAccessObservation{
-                inserted->item.object_key_hash,
-                now_ns,
-                state_position->second.pending_evaluation_count},
-            now_ns);
         return inserted;
     }
 };

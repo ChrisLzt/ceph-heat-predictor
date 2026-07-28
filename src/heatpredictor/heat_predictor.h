@@ -92,11 +92,15 @@ private:
     std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
         std::make_shared<ArfAdaptationTelemetry>();
     std::shared_ptr<Classifier> train_model;
-    mutable std::mutex train_model_mutex;
     std::shared_ptr<Classifier> prediction_snapshot;
 
+    // Serializes externally visible sample-accounting transitions. Lock order:
+    // reset_mutex -> evaluation_transition_mutex -> eq/stats mutex. EQ and
+    // evaluation_stats_mutex remain non-nested.
+    mutable std::mutex evaluation_transition_mutex;
     std::unique_ptr<EvaluationQueue> eq;
     std::mutex eq_mutex;
+    mutable std::mutex evaluation_stats_mutex;
     Accuracy<2> accu;
 
     static constexpr int MODEL_UPDATE_REPORT_INTERVAL = 500;
@@ -232,7 +236,7 @@ private:
         }
     }
 
-    void record_evaluated_locked(const EvaluatedSample& evaluated) {
+    void record_evaluated(const EvaluatedSample& evaluated) {
         if (evaluated.label) {
             hot_labeled_sample_future_access_count_sum +=
                 evaluated.future_window_access_count;
@@ -251,12 +255,22 @@ private:
         accu.update(evaluated.label, evaluated.item.predicted_label);
     }
 
-    std::vector<TrainingSample> training_samples_from_evaluated_locked(
+    void record_evaluated_batch(
+            const std::vector<EvaluatedSample>& evaluated) {
+        {
+            std::lock_guard<std::mutex> stats_lock(
+                evaluation_stats_mutex);
+            for (const auto& item : evaluated) {
+                record_evaluated(item);
+            }
+        }
+    }
+
+    std::vector<TrainingSample> training_samples_from_evaluated(
             std::vector<EvaluatedSample> evaluated) {
         std::vector<TrainingSample> samples;
         samples.reserve(evaluated.size());
         for (auto& item : evaluated) {
-            record_evaluated_locked(item);
             samples.push_back(TrainingSample{
                 std::move(item.item), item.label});
         }
@@ -309,27 +323,34 @@ private:
                     std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
                     if (is_enabled() &&
                         expiry_running.load(std::memory_order_acquire)) {
-                        std::vector<TrainingSample> samples;
+                        std::vector<EvaluatedSample> evaluated;
                         {
-                            std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                            const uint64_t now_ns = monotonic_now_ns();
-                            auto maintenance = eq->maintain_expiry(now_ns);
-                            samples = training_samples_from_evaluated_locked(
-                                std::move(maintenance.evaluated));
-                            expired_evaluation_count =
-                                maintenance.expired_evaluation_count;
-                            threshold_status_changed =
-                                maintenance.threshold_status_changed;
-                            processed_due_maintenance =
-                                maintenance.processed;
-                            if (!maintenance.processed &&
-                                maintenance.next_schedule.state ==
-                                       EvaluationQueue::ExpiryScheduleState::
-                                           waiting_deadline) {
-                                deadline_ns =
-                                    maintenance.next_schedule.deadline_ns;
+                            std::lock_guard<std::mutex> transition_lock(
+                                evaluation_transition_mutex);
+                            {
+                                std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                                const uint64_t now_ns = monotonic_now_ns();
+                                auto maintenance = eq->maintain_expiry(now_ns);
+                                evaluated = std::move(maintenance.evaluated);
+                                expired_evaluation_count =
+                                    maintenance.expired_evaluation_count;
+                                threshold_status_changed =
+                                    maintenance.threshold_status_changed;
+                                processed_due_maintenance =
+                                    maintenance.processed;
+                                if (!maintenance.processed &&
+                                    maintenance.next_schedule.state ==
+                                           EvaluationQueue::
+                                               ExpiryScheduleState::
+                                                   waiting_deadline) {
+                                    deadline_ns =
+                                        maintenance.next_schedule.deadline_ns;
+                                }
                             }
+                            record_evaluated_batch(evaluated);
                         }
+                        auto samples = training_samples_from_evaluated(
+                            std::move(evaluated));
                         enqueue_training_samples(std::move(samples));
                     }
                 }
@@ -394,14 +415,11 @@ private:
                     batch.pop();
                     std::shared_ptr<Classifier> next_snapshot;
 
-                    {
-                        std::lock_guard<std::mutex> lock(train_model_mutex);
-                        train_model->learn_one(
-                            to_feat(sample.item), sample.label);
-                        if (record_model_update_batch(monotonic_now_ns())) {
-                            next_snapshot =
-                                clone_train_model_for_prediction();
-                        }
+                    train_model->learn_one(
+                        to_feat(sample.item), sample.label);
+                    if (record_model_update_batch(monotonic_now_ns())) {
+                        next_snapshot =
+                            clone_train_model_for_prediction();
                     }
 
                     if (next_snapshot) {
@@ -487,12 +505,9 @@ public:
             std::swap(train_queue, empty);
         }
         std::shared_ptr<Classifier> next_snapshot;
-        {
-            std::lock_guard<std::mutex> lock(train_model_mutex);
-            adaptation_telemetry->reset();
-            train_model.reset(make_model(adaptation_telemetry));
-            next_snapshot = clone_train_model_for_prediction();
-        }
+        adaptation_telemetry->reset();
+        train_model.reset(make_model(adaptation_telemetry));
+        next_snapshot = clone_train_model_for_prediction();
         publish_prediction_snapshot(std::move(next_snapshot));
 
         {
@@ -504,17 +519,21 @@ public:
             eq = std::make_unique<EvaluationQueue>();
         }
 
-        accu.clear();
+        {
+            std::lock_guard<std::mutex> stats_lock(
+                evaluation_stats_mutex);
+            accu.clear();
+            hot_labeled_sample_future_access_count_sum = 0;
+            cold_labeled_sample_future_access_count_sum = 0;
+            hot_labeled_sample_predicted_hot_probability_sum = 0;
+            cold_labeled_sample_predicted_hot_probability_sum = 0;
+            hot_labeled_sample_future_access_count_window.clear();
+            cold_labeled_sample_future_access_count_window.clear();
+        }
         model_update_train_count = 0;
         last_snapshot_publish_time_ns = monotonic_now_ns();
         snapshot_publish_count.store(0);
         processed_io_count.store(0);
-        hot_labeled_sample_future_access_count_sum = 0;
-        cold_labeled_sample_future_access_count_sum = 0;
-        hot_labeled_sample_predicted_hot_probability_sum = 0;
-        cold_labeled_sample_predicted_hot_probability_sum = 0;
-        hot_labeled_sample_future_access_count_window.clear();
-        cold_labeled_sample_future_access_count_window.clear();
         train_drop_count.store(0);
         predict_error_count.store(0);
         background_error_count.store(0);
@@ -572,7 +591,7 @@ public:
         uint64_t object_key_hash = make_object_key(
             pool, ceph_object_hash, object_name_hash);
 
-        std::vector<TrainingSample> expired_samples;
+        std::vector<EvaluatedSample> expired_evaluated;
         uint64_t io_sequence = 0;
         PredictionSample item = {
             0,                // io_sequence
@@ -592,31 +611,37 @@ public:
         std::shared_ptr<Classifier> snapshot;
         bool maintenance_schedule_changed = false;
         {
-            std::lock_guard<std::mutex> eq_lock(eq_mutex);
-            const uint64_t now_ns = monotonic_now_ns();
-            // fetch_add() returns the previous sequence; the current I/O is +1.
-            const uint64_t previous_io_sequence =
-                processed_io_count.fetch_add(1);
-            io_sequence = previous_io_sequence + 1;
-            item.io_sequence = io_sequence;
-            if (io_sequence_out != nullptr) {
-                *io_sequence_out = io_sequence;
-            }
+            std::lock_guard<std::mutex> transition_lock(
+                evaluation_transition_mutex);
+            {
+                std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                const uint64_t now_ns = monotonic_now_ns();
+                // fetch_add() returns the previous sequence; the current I/O is +1.
+                const uint64_t previous_io_sequence =
+                    processed_io_count.fetch_add(1);
+                io_sequence = previous_io_sequence + 1;
+                item.io_sequence = io_sequence;
+                if (io_sequence_out != nullptr) {
+                    *io_sequence_out = io_sequence;
+                }
 
-            auto begin = eq->begin_prediction(std::move(item), now_ns);
-            item = begin.sample;
-            expired_samples = training_samples_from_evaluated_locked(
-                std::move(begin.evaluated));
-            snapshot = get_prediction_snapshot();
-            if (begin.ticket.has_value()) {
-                pending_evaluation.emplace(std::move(*begin.ticket));
+                auto begin = eq->begin_prediction(std::move(item), now_ns);
+                item = begin.sample;
+                expired_evaluated = std::move(begin.evaluated);
+                if (begin.ticket.has_value()) {
+                    pending_evaluation.emplace(std::move(*begin.ticket));
+                }
+                maintenance_schedule_changed =
+                    begin.expiry_schedule_changed;
             }
-            maintenance_schedule_changed =
-                begin.expiry_schedule_changed;
+            record_evaluated_batch(expired_evaluated);
         }
         if (maintenance_schedule_changed) {
             notify_expiry_worker();
         }
+        snapshot = get_prediction_snapshot();
+        auto expired_samples = training_samples_from_evaluated(
+            std::move(expired_evaluated));
         enqueue_training_samples(std::move(expired_samples));
 
         bool prediction_failed = false;
@@ -645,25 +670,35 @@ public:
             predict_error_count.fetch_add(1, std::memory_order_relaxed);
             res = 0;
             if (pending_evaluation.has_value()) {
-                std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                eq->cancel_prediction(
-                    std::move(*pending_evaluation),
-                    monotonic_now_ns());
+                std::lock_guard<std::mutex> transition_lock(
+                    evaluation_transition_mutex);
+                {
+                    std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                    eq->cancel_prediction(
+                        std::move(*pending_evaluation),
+                        monotonic_now_ns());
+                }
             }
         } else {
             item.predicted_label = res;
         }
         if (!prediction_failed && pending_evaluation.has_value()) {
-            std::vector<TrainingSample> completed_samples;
+            std::vector<EvaluatedSample> completed_evaluated;
             {
-                std::lock_guard<std::mutex> eq_lock(eq_mutex);
-                completed_samples = training_samples_from_evaluated_locked(
-                    eq->complete_prediction(
+                std::lock_guard<std::mutex> transition_lock(
+                    evaluation_transition_mutex);
+                {
+                    std::lock_guard<std::mutex> eq_lock(eq_mutex);
+                    completed_evaluated = eq->complete_prediction(
                         std::move(*pending_evaluation),
                         item.predicted_hot_probability,
                         item.predicted_label,
-                        cold_start_fallback));
+                        cold_start_fallback);
+                }
+                record_evaluated_batch(completed_evaluated);
             }
+            auto completed_samples = training_samples_from_evaluated(
+                std::move(completed_evaluated));
             enqueue_training_samples(std::move(completed_samples));
         }
 
@@ -672,10 +707,18 @@ public:
 
     HeatPredictorStatus status() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
-        HeatPredictorStats evaluation = [&] {
+        std::lock_guard<std::mutex> transition_lock(
+            evaluation_transition_mutex);
+        EvaluationQueueStatus queue_status;
+        {
             std::lock_guard<std::mutex> eq_lock(eq_mutex);
-            const auto queue_status = eq->status(monotonic_now_ns());
-            return HeatPredictorStats{
+            queue_status = eq->status(monotonic_now_ns());
+        }
+        HeatPredictorStats evaluation;
+        {
+            std::lock_guard<std::mutex> stats_lock(
+                evaluation_stats_mutex);
+            evaluation = HeatPredictorStats{
                 is_enabled(),
                 processed_io_count.load(),
                 accu.get_total_weight(),
@@ -689,12 +732,10 @@ public:
                 queue_status.lru_eviction_count,
                 queue_status.otsu_histogram_bin_count,
                 queue_status.future_access_threshold,
-                queue_status.future_access_candidate_threshold,
                 queue_status.threshold_state,
                 queue_status.otsu_positive_object_count,
                 queue_status.otsu_zero_observation_count,
                 queue_status.otsu_upper_clamped_object_count,
-                queue_status.threshold_holding_sample_count,
                 queue_status.sparse_threshold_sample_count,
                 accu.true_positives(),
                 accu.false_positives(),
@@ -707,7 +748,7 @@ public:
                 hot_labeled_sample_future_access_count_window.summary(),
                 cold_labeled_sample_future_access_count_window.summary()
             };
-        }();
+        }
         size_t train_queue_length = 0;
         {
             std::lock_guard<std::mutex> lock(train_queue_mutex);

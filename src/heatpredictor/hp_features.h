@@ -29,37 +29,33 @@ inline double hp_previous_access_interval_encoded(
 
 inline double hp_projected_count_margin(
         uint64_t short_window_access_count,
-        uint64_t future_access_threshold) {
-    const double short_window_seconds =
-        hp_nanoseconds_to_seconds(HP_SHORT_ACCESS_WINDOW_NS);
-    const double future_window_seconds =
-        hp_nanoseconds_to_seconds(HP_FUTURE_LABEL_WINDOW_NS);
-    ceph_assert(short_window_seconds > 0.0);
+        double threshold_log2p1) {
+    constexpr double projection_scale =
+        static_cast<double>(HP_FUTURE_LABEL_WINDOW_NS) /
+        static_cast<double>(HP_SHORT_ACCESS_WINDOW_NS);
     const double projected_future_access_count =
-        static_cast<double>(short_window_access_count) /
-        short_window_seconds * future_window_seconds;
-    return hp_log2p1(projected_future_access_count) -
-        hp_log2p1(static_cast<double>(
-            std::max<uint64_t>(future_access_threshold, 1)));
+        static_cast<double>(short_window_access_count) * projection_scale;
+    return hp_log2p1(projected_future_access_count) - threshold_log2p1;
 }
 
 inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
     thread_local std::vector<double> features(NUM_FEATURES);
     const double threshold = static_cast<double>(std::max<uint64_t>(
         item.future_access_threshold_at_prediction, 1));
+    const double threshold_log2p1 = hp_log2p1(threshold);
     const double heat_after_current_access = hp_log2p1(item.heat_after_current_access);
 
     size_t next = 0;
     features[next++] =
         hp_log2p1(static_cast<double>(item.past_window_access_count)) -
-        hp_log2p1(threshold);
+        threshold_log2p1;
     features[next++] = hp_previous_access_interval_encoded(
         item.tracked_access_count_after_current_access,
         item.time_since_previous_access_ns);
     features[next++] = heat_after_current_access;
     features[next++] = hp_projected_count_margin(
         item.short_window_access_count,
-        item.future_access_threshold_at_prediction);
+        threshold_log2p1);
     features[next++] =
         hp_log2p1(static_cast<double>(item.short_window_access_count));
     ceph_assert(next == features.size());

@@ -27,7 +27,6 @@ struct ObjectHpClusterStatus {
   std::map<std::string, uint64_t> weighted_count;
   uint64_t threshold_state_sparse_osds = 0;
   uint64_t threshold_state_tracking_osds = 0;
-  uint64_t threshold_state_holding_osds = 0;
   uint64_t future_access_threshold_min = 0;
   uint64_t future_access_threshold_max = 0;
   uint64_t predict_latency_sum_ns = 0;
