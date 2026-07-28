@@ -1,0 +1,137 @@
+# MGR 冷热识别操作说明
+
+本文只说明通过 MGR 操作和监控所有 `up` OSD 上的 Heat Predictor。单 OSD 实时接口
+见 [实现说明](CODEX_CEPH.md)，集群部署见
+[操作手册](CEPH_OPERATIONS_MANUAL.md)。
+
+## 状态
+
+```bash
+# 适合脚本解析
+sudo ceph osd hp status -f json
+
+# 适合人工查看
+sudo ceph osd hp status -f json-pretty
+```
+
+`-f` 只控制输出格式。MGR 汇总 OSD 周期上报的 PerfCounters，主要分组为：
+
+- `osds`：up、reporting、enabled、disabled 和 missing OSD；
+- `samples`：I/O、已完成标签、pending、awaiting 和 drop；
+- `heat_state`：heat/LRU、Otsu 投票、阈值和状态；
+- `confusion_matrix`：TP、FP、TN 和 FN；
+- `actual_behavior`：实际热/冷样本的未来访问行为；
+- `prediction`：accuracy、balanced accuracy、precision、recall 和预测/实际热比例；
+- `training`、`model_adaptation`、`latency`、`read_ops`、`write_ops`。
+
+`hp_background_error_count > 0` 表示训练或到期线程发生异常，Heat Predictor 会自动
+转为 disabled 以避免影响 OSD。OSD 会立即刷新本地 PerfCounters，MGR 在下一次
+daemon report 后看到新状态；排查后执行 `ceph osd hp enable` 完整 reset 并恢复。
+
+`dev` 构建还会输出 `trace`，不属于 `main` 的稳定统计契约。完整字段和聚合公式见
+[实现说明](CODEX_CEPH.md)。
+
+正常情况下：
+
+```text
+hp_io_count
+  = hp_labeled_io_total
+  + hp_pending_io_count
+  + hp_awaiting_prediction_count
+  + hp_eval_drop_count
+```
+
+Heat Predictor 在单 OSD 内以同一个状态迁移边界发布上述计数，因此一次 OSD 上报内部
+满足该等式。MGR 聚合的是各 OSD 最近一次 daemon report；不同 OSD 的上报时刻可以
+不同，但每份已接收的 OSD 状态自身必须一致。OSD PerfCounters 使用首尾发布代次
+检测采集期间的新旧字段混合；代次缺失或不一致的报告不会参与汇总，该 OSD 在本次
+查询中计入 `missing_osds`，等待下一次完整 daemon report。
+升级该协议时必须同时部署并重启 OSD 和 MGR，旧 OSD 因缺少代次字段会显示为 missing。
+
+每个 OSD 的 EQ 硬上限约束
+`hp_pending_io_count + hp_awaiting_prediction_count`，等待预测返回的样本也占容量。
+
+常用查询：
+
+```bash
+sudo ceph osd hp status -f json |
+  jq '.summary | {
+    osds,
+    samples,
+    heat_state,
+    confusion_matrix,
+    prediction,
+    training
+  }'
+```
+
+## 控制
+
+| 命令 | 作用 |
+|---|---|
+| `sudo ceph osd hp enable` | 启用所有 up OSD，并完整 reset |
+| `sudo ceph osd hp disable` | 禁用所有 up OSD，并完整 reset |
+| `sudo ceph osd hp reset` | 保持启用状态，清空模型、队列、热度和统计；丢弃数包含 pending 和 awaiting |
+
+造数据前使用 `disable`，正式测试前使用 `enable`。命令返回只表示请求已发送，MGR
+可能尚未收到 OSD 的新状态。
+
+## 开始测试前
+
+先检查：
+
+```bash
+sudo ceph osd hp status -f json |
+  jq '.summary | {
+    osds,
+    samples,
+    confusion_matrix,
+    training
+  }'
+```
+
+至少满足：
+
+```text
+reporting_osds == up_osds
+missing_osds == []
+enabled_osds == up_osds
+
+hp_io_count == 0
+hp_labeled_io_total == 0
+hp_pending_io_count == 0
+hp_awaiting_prediction_count == 0
+hp_eval_drop_count == 0
+hp_train_queue_length == 0
+```
+
+若 MGR 尚未归零，优先用实时接口确认 OSD：
+
+```bash
+sudo ceph daemon osd.0 object_hp status
+sudo ceph daemon osd.1 object_hp status
+```
+
+## 标准流程
+
+```bash
+# 造数据
+sudo ceph osd hp disable -f json-pretty
+./prepare_data.sh
+
+# 开始独立测试
+sudo ceph osd hp enable -f json-pretty
+# 等待上述归零条件满足
+./run_test.sh
+
+# 测试期间每 10～30 秒采集
+sudo ceph osd hp status -f json-pretty \
+  > hp_status_$(date +%Y%m%d_%H%M%S).json
+
+# 测试结束；等待 pending、awaiting 和训练队列排空
+sudo ceph osd hp status -f json-pretty > hp_status_final.json
+```
+
+不同实验之间执行 `reset` 并重新确认归零。`status` 是只读命令；`reset`、`enable`
+和 `disable` 会改变集群状态。`missing_osds` 非空或
+`reporting_osds != up_osds` 时不要开始正式测试。

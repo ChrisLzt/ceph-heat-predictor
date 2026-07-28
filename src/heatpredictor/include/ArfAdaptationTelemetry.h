@@ -11,8 +11,6 @@ struct ArfAdaptationStats {
     uint64_t background_discard_count{0};
     uint64_t background_training_update_count{0};
     uint64_t active_background_count{0};
-    uint64_t fast_model_reset_count{0};
-    uint64_t fast_model_background_discard_count{0};
 };
 
 class ArfAdaptationTelemetry {
@@ -43,16 +41,6 @@ public:
         }
     }
 
-    void record_fast_model_reset(bool discarded_background) {
-        fast_model_reset_count.fetch_add(1, std::memory_order_relaxed);
-        if (discarded_background) {
-            fast_model_background_discard_count.fetch_add(
-                1, std::memory_order_relaxed);
-            active_background_count.fetch_sub(
-                1, std::memory_order_relaxed);
-        }
-    }
-
     ArfAdaptationStats snapshot() const {
         return ArfAdaptationStats{
             warning_count.load(std::memory_order_relaxed),
@@ -61,9 +49,6 @@ public:
             background_discard_count.load(std::memory_order_relaxed),
             background_training_update_count.load(std::memory_order_relaxed),
             active_background_count.load(std::memory_order_relaxed),
-            fast_model_reset_count.load(std::memory_order_relaxed),
-            fast_model_background_discard_count.load(
-                std::memory_order_relaxed),
         };
     }
 
@@ -74,9 +59,6 @@ public:
         background_discard_count.store(0, std::memory_order_relaxed);
         background_training_update_count.store(0, std::memory_order_relaxed);
         active_background_count.store(0, std::memory_order_relaxed);
-        fast_model_reset_count.store(0, std::memory_order_relaxed);
-        fast_model_background_discard_count.store(
-            0, std::memory_order_relaxed);
     }
 
 private:
@@ -86,8 +68,6 @@ private:
     std::atomic<uint64_t> background_discard_count{0};
     std::atomic<uint64_t> background_training_update_count{0};
     std::atomic<uint64_t> active_background_count{0};
-    std::atomic<uint64_t> fast_model_reset_count{0};
-    std::atomic<uint64_t> fast_model_background_discard_count{0};
 };
 
 #endif

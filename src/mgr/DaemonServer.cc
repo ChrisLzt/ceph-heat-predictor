@@ -24,6 +24,7 @@
 #include "mgr/DaemonHealthMetricCollector.h"
 #include "mgr/OSDPerfMetricCollector.h"
 #include "mgr/MDSPerfMetricCollector.h"
+#include "mgr/ObjectHeatPredictorStatus.h"
 #include "mon/MonCommand.h"
 
 #include "messages/MMgrOpen.h"
@@ -42,6 +43,7 @@
 #include "common/errno.h"
 #include "common/pick_address.h"
 #include "heatpredictor/include/Metrics.h"
+#include "heatpredictor/hp_telemetry.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_mgr
@@ -65,84 +67,7 @@ namespace {
                     [] (auto a, auto b) { return a.first == b.first && a.second == b.second; });
   }
 
-  enum class ObjectHpAggregate {
-    none,
-    sum,
-    osd_average,
-    hot_weighted,
-    cold_weighted,
-    otsu_weighted,
-  };
-
-  struct ObjectHpCounterField {
-    const char *name;
-    ObjectHpAggregate aggregate;
-    const char *aggregate_name = nullptr;
-  };
-
-  const ObjectHpCounterField object_hp_counter_fields[] = {
-    {"hp_enabled", ObjectHpAggregate::sum},
-    {"hp_io_count", ObjectHpAggregate::sum},
-    {"hp_labeled_io_total", ObjectHpAggregate::sum},
-    {"hp_pending_io_count", ObjectHpAggregate::sum},
-    {"hp_awaiting_prediction_count", ObjectHpAggregate::sum},
-    {"hp_eval_drop_count", ObjectHpAggregate::sum},
-    {"hp_heat_state_count", ObjectHpAggregate::sum},
-    {"hp_lru_count", ObjectHpAggregate::sum},
-    {"hp_protected_heat_state_count", ObjectHpAggregate::sum},
-    {"hp_heat_state_peak_count", ObjectHpAggregate::sum},
-    {"hp_lru_eviction_count", ObjectHpAggregate::sum},
-    {"hp_otsu_histogram_bin_count", ObjectHpAggregate::sum},
-    {"hp_otsu_histogram_vote_count", ObjectHpAggregate::sum},
-    {"hp_true_positive_count", ObjectHpAggregate::sum},
-    {"hp_false_positive_count", ObjectHpAggregate::sum},
-    {"hp_true_negative_count", ObjectHpAggregate::sum},
-    {"hp_false_negative_count", ObjectHpAggregate::sum},
-    {"hp_hot_labeled_sample_avg_future_access_count",
-     ObjectHpAggregate::hot_weighted},
-    {"hp_cold_labeled_sample_avg_future_access_count",
-     ObjectHpAggregate::cold_weighted},
-    {"hp_hot_labeled_sample_future_access_count_p99", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_access_count_osd_p99_weighted_avg"},
-    {"hp_hot_labeled_sample_future_access_count_p95", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_access_count_osd_p95_weighted_avg"},
-    {"hp_hot_labeled_sample_future_access_count_p50", ObjectHpAggregate::hot_weighted,
-     "hp_hot_labeled_sample_future_access_count_osd_p50_weighted_avg"},
-    {"hp_cold_labeled_sample_future_access_count_p99", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_access_count_osd_p99_weighted_avg"},
-    {"hp_cold_labeled_sample_future_access_count_p95", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_access_count_osd_p95_weighted_avg"},
-    {"hp_cold_labeled_sample_future_access_count_p50", ObjectHpAggregate::cold_weighted,
-     "hp_cold_labeled_sample_future_access_count_osd_p50_weighted_avg"},
-    {"hp_actual_hot_avg_pred_hot_percent", ObjectHpAggregate::hot_weighted},
-    {"hp_actual_cold_avg_pred_hot_percent", ObjectHpAggregate::cold_weighted},
-    {"hp_predict_error_count", ObjectHpAggregate::sum},
-    {"hp_hot_threshold", ObjectHpAggregate::osd_average,
-     "hp_hot_threshold_avg"},
-    {"hp_otsu_candidate_threshold", ObjectHpAggregate::otsu_weighted,
-     "hp_otsu_candidate_threshold_avg"},
-    {"hp_hot_threshold_method", ObjectHpAggregate::none},
-    {"hp_train_queue_length", ObjectHpAggregate::sum},
-    {"hp_train_drop_count", ObjectHpAggregate::sum},
-    {"hp_snapshot_publish_count", ObjectHpAggregate::sum},
-    {"hp_arf_warning_count", ObjectHpAggregate::sum},
-    {"hp_arf_drift_count", ObjectHpAggregate::sum},
-    {"hp_arf_background_promotion_count", ObjectHpAggregate::sum},
-    {"hp_arf_background_discard_count", ObjectHpAggregate::sum},
-    {"hp_arf_background_training_update_count", ObjectHpAggregate::sum},
-    {"hp_arf_active_background_count", ObjectHpAggregate::sum},
-    {"hp_op_read_count", ObjectHpAggregate::sum},
-    {"hp_op_sync_read_count", ObjectHpAggregate::sum},
-    {"hp_op_sparse_read_count", ObjectHpAggregate::sum},
-    {"hp_op_write_count", ObjectHpAggregate::sum},
-    {"hp_op_writefull_count", ObjectHpAggregate::sum},
-    {"hp_op_writesame_count", ObjectHpAggregate::sum},
-  };
-
-  const char *hp_aggregate_name(const ObjectHpCounterField& field)
-  {
-    return field.aggregate_name != nullptr ? field.aggregate_name : field.name;
-  }
+  using ceph::hp_telemetry::counter_fields;
 
   double hp_ratio(uint64_t numerator, uint64_t denominator)
   {
@@ -1712,126 +1637,70 @@ bool DaemonServer::_handle_command(
       osdmap.get_up_osds(up_osds);
     });
 
-    std::map<std::string, uint64_t> summary;
-    std::map<std::string, long double> weighted_sum;
-    std::map<std::string, uint64_t> weighted_count;
-    std::vector<int32_t> missing_osds;
-    uint64_t threshold_method_initializing_osds = 0;
-    uint64_t threshold_method_tracking_osds = 0;
-    uint64_t threshold_method_holding_osds = 0;
-    uint64_t enabled_osds = 0;
-    uint64_t disabled_osds = 0;
-    uint64_t predict_latency_sum_ns = 0;
-    uint64_t predict_latency_count = 0;
-
+    std::vector<ceph::mgr::ObjectHpOsdStatus> osd_statuses;
+    osd_statuses.reserve(up_osds.size());
     for (auto osd : up_osds) {
+      ceph::mgr::ObjectHpOsdStatus osd_status;
+      osd_status.osd_id = osd;
       DaemonStatePtr state = daemon_state.get(DaemonKey{"osd", std::to_string(osd)});
       if (!state) {
-        missing_osds.push_back(osd);
+        osd_statuses.push_back(std::move(osd_status));
         continue;
       }
 
-      std::map<std::string, uint64_t> values;
       {
         std::lock_guard l(state->lock);
         uint64_t hp_io_count = 0;
         uint64_t labeled_io_total = 0;
         bool has_hp_io_count =
-          get_object_hp_counter(state, "hp_io_count", &hp_io_count);
+          get_object_hp_counter(
+            state, ceph::hp_telemetry::field::io_count, &hp_io_count);
         bool has_labeled_io_total =
           get_object_hp_counter(
-            state, "hp_labeled_io_total", &labeled_io_total);
+            state, ceph::hp_telemetry::field::labeled_io_total,
+            &labeled_io_total);
         if (!has_hp_io_count && !has_labeled_io_total) {
-          missing_osds.push_back(osd);
+          osd_statuses.push_back(std::move(osd_status));
           continue;
         }
-        for (const auto& field : object_hp_counter_fields) {
+        osd_status.reporting = true;
+        for (const auto& field : counter_fields) {
           uint64_t value = 0;
           if (get_object_hp_counter(state, field.name, &value)) {
-            values[field.name] = value;
+            osd_status.counters[field.name] = value;
           }
         }
-        uint64_t latency_sum_ns = 0;
-        uint64_t latency_count = 0;
-        if (get_object_hp_average(
-              state, "hp_predict_latency",
-              &latency_sum_ns, &latency_count)) {
-          predict_latency_sum_ns += latency_sum_ns;
-          predict_latency_count += latency_count;
-        }
+        get_object_hp_average(
+          state, ceph::hp_telemetry::field::predict_latency,
+          &osd_status.predict_latency_sum_ns,
+          &osd_status.predict_latency_count);
       }
-
-      uint64_t actual_hot_count =
-        values["hp_true_positive_count"] + values["hp_false_negative_count"];
-      uint64_t actual_cold_count =
-        values["hp_true_negative_count"] + values["hp_false_positive_count"];
-      uint64_t otsu_vote_count =
-        values["hp_otsu_histogram_vote_count"];
-      if (values["hp_enabled"] > 0) {
-        enabled_osds++;
-      } else {
-        disabled_osds++;
-      }
-      auto threshold_method = values.find("hp_hot_threshold_method");
-      if (threshold_method != values.end()) {
-        switch (threshold_method->second) {
-        case 1:
-          threshold_method_tracking_osds++;
-          break;
-        case 2:
-          threshold_method_holding_osds++;
-          break;
-        default:
-          threshold_method_initializing_osds++;
-          break;
-        }
-      }
-
-      for (const auto& field : object_hp_counter_fields) {
-        auto value = values.find(field.name);
-        if (value != values.end()) {
-          switch (field.aggregate) {
-          case ObjectHpAggregate::sum:
-            summary[field.name] += value->second;
-            break;
-          case ObjectHpAggregate::osd_average:
-            weighted_sum[hp_aggregate_name(field)] += value->second;
-            weighted_count[hp_aggregate_name(field)]++;
-            break;
-          case ObjectHpAggregate::hot_weighted:
-            if (actual_hot_count > 0) {
-              weighted_sum[hp_aggregate_name(field)] +=
-                static_cast<long double>(value->second) * actual_hot_count;
-              weighted_count[hp_aggregate_name(field)] += actual_hot_count;
-            }
-            break;
-          case ObjectHpAggregate::cold_weighted:
-            if (actual_cold_count > 0) {
-              weighted_sum[hp_aggregate_name(field)] +=
-                static_cast<long double>(value->second) * actual_cold_count;
-              weighted_count[hp_aggregate_name(field)] += actual_cold_count;
-            }
-            break;
-          case ObjectHpAggregate::otsu_weighted:
-            if (otsu_vote_count > 0) {
-              weighted_sum[hp_aggregate_name(field)] +=
-                static_cast<long double>(value->second) * otsu_vote_count;
-              weighted_count[hp_aggregate_name(field)] += otsu_vote_count;
-            }
-            break;
-          case ObjectHpAggregate::none:
-            break;
-          }
-        }
-      }
+      osd_statuses.push_back(std::move(osd_status));
     }
+
+    auto cluster_status =
+      ceph::mgr::aggregate_object_hp_status(osd_statuses);
+    auto& summary = cluster_status.sum;
+    auto& weighted_sum = cluster_status.weighted_sum;
+    auto& weighted_count = cluster_status.weighted_count;
+    const auto& missing_osds = cluster_status.missing_osds;
+    const uint64_t threshold_state_sparse_osds =
+      cluster_status.threshold_state_sparse_osds;
+    const uint64_t threshold_state_tracking_osds =
+      cluster_status.threshold_state_tracking_osds;
+    const uint64_t enabled_osds = cluster_status.enabled_osds;
+    const uint64_t disabled_osds = cluster_status.disabled_osds;
+    const uint64_t predict_latency_sum_ns =
+      cluster_status.predict_latency_sum_ns;
+    const uint64_t predict_latency_count =
+      cluster_status.predict_latency_count;
 
     f->open_object_section("osd_hp_status");
     f->open_object_section("summary");
 
     f->open_object_section("osds");
-    f->dump_unsigned("up_osds", up_osds.size());
-    f->dump_unsigned("reporting_osds", up_osds.size() - missing_osds.size());
+    f->dump_unsigned("up_osds", cluster_status.up_osds);
+    f->dump_unsigned("reporting_osds", cluster_status.reporting_osds);
     f->dump_unsigned("enabled_osds", enabled_osds);
     f->dump_unsigned("disabled_osds", disabled_osds);
     f->open_array_section("missing_osds");
@@ -1861,25 +1730,30 @@ bool DaemonServer::_handle_command(
                      summary["hp_lru_eviction_count"]);
     f->dump_unsigned("hp_otsu_histogram_bin_count",
                      summary["hp_otsu_histogram_bin_count"]);
-    f->dump_unsigned("hp_otsu_histogram_vote_count",
-                     summary["hp_otsu_histogram_vote_count"]);
+    f->dump_unsigned("hp_otsu_positive_object_count",
+                     summary["hp_otsu_positive_object_count"]);
+    f->dump_unsigned("hp_otsu_zero_observation_count",
+                     summary["hp_otsu_zero_observation_count"]);
+    f->dump_unsigned("hp_otsu_upper_clamped_object_count",
+                     summary["hp_otsu_upper_clamped_object_count"]);
+    f->dump_unsigned("hp_sparse_threshold_sample_count",
+                     summary["hp_sparse_threshold_sample_count"]);
+    f->open_object_section("future_access_threshold");
+    f->dump_unsigned("min", cluster_status.future_access_threshold_min);
+    f->dump_unsigned("max", cluster_status.future_access_threshold_max);
     {
-      uint64_t weight = weighted_count["hp_hot_threshold_avg"];
-      hp_dump_float(f.get(), "hp_hot_threshold_avg",
-                    weight > 0 ? hp_from_x10000(
-                      weighted_sum["hp_hot_threshold_avg"] / weight) : 0.0);
+      uint64_t weight =
+        weighted_count["hp_future_access_threshold_avg"];
+      hp_dump_float(
+        f.get(), "avg",
+        weight > 0
+          ? weighted_sum["hp_future_access_threshold_avg"] / weight
+          : 0.0);
     }
-    {
-      uint64_t weight = weighted_count["hp_otsu_candidate_threshold_avg"];
-      hp_dump_float(f.get(), "hp_otsu_candidate_threshold_avg",
-                    weight > 0 ? hp_from_x10000(
-                      weighted_sum["hp_otsu_candidate_threshold_avg"] /
-                      weight) : 0.0);
-    }
-    f->open_object_section("hp_hot_threshold_method_osds");
-    f->dump_unsigned("initializing", threshold_method_initializing_osds);
-    f->dump_unsigned("tracking", threshold_method_tracking_osds);
-    f->dump_unsigned("holding", threshold_method_holding_osds);
+    f->open_object_section("state_osds");
+    f->dump_unsigned("sparse", threshold_state_sparse_osds);
+    f->dump_unsigned("tracking", threshold_state_tracking_osds);
+    f->close_section();
     f->close_section();
     f->close_section();
 
@@ -1961,6 +1835,8 @@ bool DaemonServer::_handle_command(
     hp_dump_float(f.get(), "hp_eval_actual_hot_percent", hp_percent(tp + fn, labeled_total));
     f->dump_unsigned("hp_predict_error_count",
                      summary["hp_predict_error_count"]);
+    f->dump_unsigned("hp_background_error_count",
+                     summary["hp_background_error_count"]);
     {
       uint64_t weight =
         weighted_count["hp_actual_hot_avg_pred_hot_percent"];
