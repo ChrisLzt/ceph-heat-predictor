@@ -117,7 +117,7 @@ private:
     std::thread train_thread;
     std::once_flag start_flag;
     std::atomic<bool> train_running{false};
-    std::atomic<bool> enabled{true};
+    std::atomic<bool> enabled{false};
     std::atomic<uint64_t> train_drop_count{0};
     std::atomic<uint64_t> predict_error_count{0};
     std::atomic<uint64_t> background_error_count{0};
