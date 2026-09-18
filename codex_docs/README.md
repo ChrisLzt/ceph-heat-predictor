@@ -6,6 +6,7 @@
 - [CODEX_CEPH.md](CODEX_CEPH.md)：Ceph object-layer Heat Predictor 的稳定实现说明。
 - [CEPH_OPERATIONS_MANUAL.md](CEPH_OPERATIONS_MANUAL.md)：单节点构建、部署和运维命令。
 - [MGR_HP_OPERATIONS.md](MGR_HP_OPERATIONS.md)：集群级状态、开关和 reset 操作。
+- [ONODE_CACHE_OPERATIONS.md](ONODE_CACHE_OPERATIONS.md)：Onode LRU/S3FIFO 在线切换、实际状态与查询命中率口径。
 - [BRANCH_WORKFLOW.md](BRANCH_WORKFLOW.md)：`main`/`dev` 职责、开发、发布和重新对齐流程。
 
 实验计划、TODO、测试规范和 Trace 设计只在 `dev` 分支维护。

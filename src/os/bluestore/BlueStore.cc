@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <algorithm>
+#include <cmath>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/algorithm/string.hpp>
@@ -1133,16 +1134,8 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
     dout(20) << __func__ << " " << this << " " << " " << o->oid << " removed, num=" << num << dendl;
   }
 
-  void maybe_unpin(BlueStore::Onode* o) override
+  void _maybe_unpin(BlueStore::Onode* o) override
   {
-    OnodeCacheShard* ocs = this;
-    ocs->lock.lock();
-    // It is possible that during waiting split_cache moved us to different OnodeCacheShard.
-    while (ocs != o->c->get_onode_cache()) {
-      ocs->lock.unlock();
-      ocs = o->c->get_onode_cache();
-      ocs->lock.lock();
-    }
     if (o->is_cached() && o->pin_nref == 1) {
       if(!o->lru_item.is_linked()) {
         if (o->exists) {
@@ -1173,7 +1166,6 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
                  << dendl;
       }
     }
-    ocs->lock.unlock();
   }
 
   void _trim_to(uint64_t new_size) override
@@ -1220,7 +1212,7 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
   }
 };
 
-// S3FIFOOnodeCacheShard
+// SwitchableOnodeCacheShard
 //
 // Implements the S3FIFO cache eviction algorithm (SOSP'23 paper:
 // "FIFO Queues are All You Need for Cache Eviction" by Juncheng Yang et al.)
@@ -1239,7 +1231,8 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
 //   PROMOTE: small eviction with freq >= threshold → move to main
 //   DEMOTE:  small eviction with freq < threshold → evict + insert into ghost
 //
-struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
+// The shard address, counts and age bins stay stable across policy changes.
+struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
   typedef boost::intrusive::list<
     BlueStore::Onode,
     boost::intrusive::member_hook<
@@ -1251,6 +1244,7 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
   // of small_q or main_q at any time, or in neither when pinned)
   list_t small_q;
   list_t main_q;
+  Policy policy;
 
   // Ghost FIFO: circular buffer storing only ghobject_t keys
   boost::circular_buffer<ghobject_t> ghost_q;
@@ -1260,8 +1254,9 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
   const double ghost_capacity_ratio;
   const uint8_t promotion_threshold;
 
-  explicit S3FIFOOnodeCacheShard(CephContext *cct)
-    : BlueStore::OnodeCacheShard(cct),
+  SwitchableOnodeCacheShard(CephContext *cct, Policy initial_policy)
+    : LruOnodeCacheShard(cct),
+      policy(initial_policy),
       ghost_q(1),  // initial minimal capacity, resized in _trim_to
       small_ratio(cct->_conf.get_val<double>(
           "bluestore_cache_s3fifo_small_ratio")),
@@ -1271,12 +1266,55 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
           cct->_conf.get_val<uint64_t>(
               "bluestore_cache_s3fifo_promotion_threshold")))
   {
-    ceph_assert(small_ratio > 0.0 && small_ratio < 1.0);
-    ceph_assert(ghost_capacity_ratio > 0.0);
-    ceph_assert(promotion_threshold >= 1);
+    ceph_assert(_supports_policy(initial_policy));
   }
 
-  ~S3FIFOOnodeCacheShard() override = default;
+  bool _supports_policy(Policy next) const override {
+    return next == Policy::LRU ||
+      (small_ratio > 0.0 && small_ratio < 1.0 &&
+       std::isfinite(ghost_capacity_ratio) && ghost_capacity_ratio > 0.0 &&
+       promotion_threshold >= 1);
+  }
+
+  void _set_policy(Policy next) override {
+    if (policy == next) {
+      return;
+    }
+    ghost_q.clear();
+    if (next == Policy::S3FIFO) {
+      ceph_assert(small_q.empty() && main_q.empty());
+      small_q.splice(small_q.end(), lru);
+      for (auto& o : small_q) {
+        o.s3fifo_queue = BlueStore::Onode::Q_SMALL;
+        o.s3fifo_freq = 0;
+      }
+    } else {
+      ceph_assert(lru.empty());
+      // S3FIFO has no global recency order. Keep each queue's FIFO order,
+      // placing its main (reused) entries ahead of probationary entries.
+      lru.splice(lru.end(), main_q);
+      lru.splice(lru.end(), small_q);
+      for (auto& o : lru) {
+        o.s3fifo_queue = BlueStore::Onode::Q_NONE;
+        o.s3fifo_freq = 0;
+      }
+    }
+    policy = next;
+  }
+
+  Policy _get_policy() const override {
+    return policy;
+  }
+
+  void _dump_policy(ceph::Formatter* f) const override {
+    f->dump_string("effective_policy", policy == Policy::S3FIFO ? "s3fifo" : "lru");
+    f->dump_unsigned("resident_onodes", num.load());
+    f->dump_unsigned("unlinked_onodes", num - lru.size() - small_q.size() - main_q.size());
+    f->dump_unsigned("lru_entries", lru.size());
+    f->dump_unsigned("small_entries", small_q.size());
+    f->dump_unsigned("main_entries", main_q.size());
+    f->dump_unsigned("ghost_entries", ghost_q.size());
+  }
 
   // =========================================================================
   // Ghost queue helpers
@@ -1379,6 +1417,11 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
   // =========================================================================
 
   void _add(BlueStore::Onode* o, int level) override {
+    if (policy == Policy::LRU) {
+      o->s3fifo_queue = BlueStore::Onode::Q_NONE;
+      o->s3fifo_freq = 0;
+      return LruOnodeCacheShard::_add(o, level);
+    }
     o->set_cached();
 
     if (o->pin_nref == 1) {
@@ -1407,6 +1450,9 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
   }
 
   void _rm(BlueStore::Onode* o) override {
+    if (policy == Policy::LRU) {
+      return LruOnodeCacheShard::_rm(o);
+    }
     o->clear_cached();
     if (o->lru_item.is_linked()) {
       *(o->cache_age_bin) -= 1;
@@ -1428,14 +1474,9 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
              << num << dendl;
   }
 
-  void maybe_unpin(BlueStore::Onode* o) override {
-    OnodeCacheShard* ocs = this;
-    ocs->lock.lock();
-    // Handle cross-shard move that may happen during split_cache
-    while (ocs != o->c->get_onode_cache()) {
-      ocs->lock.unlock();
-      ocs = o->c->get_onode_cache();
-      ocs->lock.lock();
+  void _maybe_unpin(BlueStore::Onode* o) override {
+    if (policy == Policy::LRU) {
+      return LruOnodeCacheShard::_maybe_unpin(o);
     }
     if (o->is_cached() && o->pin_nref == 1) {
       if (!o->lru_item.is_linked()) {
@@ -1481,10 +1522,12 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
                  << dendl;
       }
     }
-    ocs->lock.unlock();
   }
 
   void _trim_to(uint64_t new_size) override {
+    if (policy == Policy::LRU) {
+      return LruOnodeCacheShard::_trim_to(new_size);
+    }
     // Dynamically resize ghost queue based on current target capacity
     uint64_t ghost_cap = static_cast<uint64_t>(new_size * ghost_capacity_ratio);
     if (ghost_cap < 1) ghost_cap = 1;
@@ -1539,7 +1582,7 @@ struct S3FIFOOnodeCacheShard : public BlueStore::OnodeCacheShard {
   void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) override {
     std::lock_guard l(lock);
     *onodes += num;
-    *pinned_onodes += num - (small_q.size() + main_q.size());
+    *pinned_onodes += num - (lru.size() + small_q.size() + main_q.size());
   }
 };
 
@@ -1549,15 +1592,24 @@ BlueStore::OnodeCacheShard *BlueStore::OnodeCacheShard::create(
     string type,
     PerfCounters *logger)
 {
-  BlueStore::OnodeCacheShard *c = nullptr;
-  // Currently we implement an LRU cache for onodes, and optionally S3FIFO
-  if (type == "s3fifo") {
-    c = new S3FIFOOnodeCacheShard(cct);
-  } else {
-    c = new LruOnodeCacheShard(cct);
-  }
+  auto *c = new SwitchableOnodeCacheShard(
+    cct, type == "s3fifo" ? Policy::S3FIFO : Policy::LRU);
   c->logger = logger;
   return c;
+}
+
+void BlueStore::OnodeCacheShard::maybe_unpin(Onode* o)
+{
+  auto* shard = this;
+  std::unique_lock l(shard->lock);
+  // split_cache may have moved the onode while we waited. Dispatch on the
+  // shard whose lock we hold, not the original shard or its former policy.
+  while (shard != o->c->get_onode_cache()) {
+    l.unlock();
+    shard = o->c->get_onode_cache();
+    l = std::unique_lock(shard->lock);
+  }
+  shard->_maybe_unpin(o);
 }
 
 // LruBufferCacheShard
@@ -4962,6 +5014,7 @@ BlueStore::BlueStore(CephContext *cct,
     mempool_thread(this)
 {
   _init_logger();
+  onode_cache_instance.generate_random();
   cct->_conf.add_observer(this);
   set_cache_shards(1);
 }
@@ -7998,22 +8051,119 @@ int BlueStore::dump_bluefs_sizes(ostream& out)
 
 void BlueStore::set_cache_shards(unsigned num)
 {
+  std::lock_guard policy_guard(onode_cache_policy_lock);
   dout(10) << __func__ << " " << num << dendl;
   size_t oold = onode_cache_shards.size();
   size_t bold = buffer_cache_shards.size();
   ceph_assert(num >= oold && num >= bold);
+  std::string onode_policy = cct->_conf->bluestore_cache_type;
+  if (oold) {
+    std::lock_guard l(onode_cache_shards.front()->lock);
+    onode_policy = onode_cache_shards.front()->_get_policy() ==
+      OnodeCacheShard::Policy::S3FIFO ? "s3fifo" : "lru";
+  }
+  if (!bold) {
+    buffer_cache_policy = cct->_conf->bluestore_cache_type;
+    if (buffer_cache_policy == "s3fifo") {
+      buffer_cache_policy = "2q";
+    }
+  }
   onode_cache_shards.resize(num);
   buffer_cache_shards.resize(num);
   for (unsigned i = oold; i < num; ++i) {
     onode_cache_shards[i] = 
-        OnodeCacheShard::create(cct, cct->_conf->bluestore_cache_type,
+        OnodeCacheShard::create(cct, onode_policy,
                                  logger);
   }
   for (unsigned i = bold; i < num; ++i) {
     buffer_cache_shards[i] = 
-        BufferCacheShard::create(cct, cct->_conf->bluestore_cache_type,
+        BufferCacheShard::create(cct, buffer_cache_policy,
                                  logger);
   }
+}
+
+int BlueStore::set_onode_cache_policy(const std::string& policy, Formatter* f)
+{
+  if (policy != "lru" && policy != "s3fifo") {
+    return -EINVAL;
+  }
+  std::lock_guard policy_guard(onode_cache_policy_lock);
+  if (onode_cache_shards.empty()) {
+    return -EAGAIN;
+  }
+  const auto next = policy == "s3fifo" ? OnodeCacheShard::Policy::S3FIFO :
+    OnodeCacheShard::Policy::LRU;
+  // Validate every shard before changing any of them. Tunables are immutable
+  // for a shard's lifetime, including while its LRU policy is active.
+  for (auto* shard : onode_cache_shards) {
+    std::lock_guard l(shard->lock);
+    if (!shard->_supports_policy(next)) {
+      return -EINVAL;
+    }
+  }
+  bool changed = false;
+  const auto started = ceph_clock_now().to_nsec();
+  for (auto* shard : onode_cache_shards) {
+    std::lock_guard l(shard->lock);
+    if (shard->_get_policy() != next) {
+      shard->_set_policy(next);
+      changed = true;
+    }
+  }
+  if (changed) {
+    ++onode_cache_policy_generation;
+    onode_cache_switch_started_ns = started;
+    onode_cache_switch_completed_ns = ceph_clock_now().to_nsec();
+    dout(1) << __func__ << " effective_policy=" << policy
+            << " generation=" << onode_cache_policy_generation << dendl;
+  }
+  _dump_onode_cache_policy(f);
+  return 0;
+}
+
+int BlueStore::get_onode_cache_policy(Formatter* f)
+{
+  std::lock_guard policy_guard(onode_cache_policy_lock);
+  if (onode_cache_shards.empty()) {
+    return -EAGAIN;
+  }
+  _dump_onode_cache_policy(f);
+  return 0;
+}
+
+void BlueStore::_dump_onode_cache_policy(Formatter* f)
+{
+  f->open_object_section("onode_cache");
+  f->dump_stream("cache_instance") << onode_cache_instance;
+  f->dump_unsigned("policy_generation", onode_cache_policy_generation);
+  f->dump_bool("runtime_only", true);
+  f->dump_string("buffer_cache_policy", buffer_cache_policy);
+  f->dump_unsigned("last_switch_started_ns", onode_cache_switch_started_ns);
+  f->dump_unsigned("last_switch_completed_ns", onode_cache_switch_completed_ns);
+  std::string effective_policy;
+  f->open_array_section("shards");
+  for (size_t i = 0; i < onode_cache_shards.size(); ++i) {
+    auto* shard = onode_cache_shards[i];
+    std::lock_guard l(shard->lock);
+    const std::string current = shard->_get_policy() ==
+      OnodeCacheShard::Policy::S3FIFO ? "s3fifo" : "lru";
+    if (effective_policy.empty()) {
+      effective_policy = current;
+    } else if (effective_policy != current) {
+      effective_policy = "mixed";
+    }
+    f->open_object_section("shard");
+    f->dump_unsigned("id", i);
+    shard->_dump_policy(f);
+    f->close_section();
+  }
+  f->close_section();
+  f->dump_string("effective_policy", effective_policy);
+  f->dump_unsigned("sample_time_ns", ceph_clock_now().to_nsec());
+  // Process-lifetime counters, not a percentage: consumers use window deltas.
+  f->dump_unsigned("onode_hits", logger->get(l_bluestore_onode_hits));
+  f->dump_unsigned("onode_misses", logger->get(l_bluestore_onode_misses));
+  f->close_section();
 }
 
 //---------------------------------------------
