@@ -15,6 +15,8 @@ struct PredictionSample {
     uint64_t time_since_previous_access_ns;
     double predicted_hot_probability;
     int predicted_label;
+    // Prediction-time, exposure-corrected counts projected onto the label window.
+    double slow_history_counts[2] = {};
 };
 
 struct ObjectHeatState {
@@ -25,6 +27,8 @@ struct ObjectHeatState {
     uint64_t short_window_access_count;
     uint64_t pending_evaluation_count;
     std::list<uint64_t>::iterator lru_position;
+    uint64_t first_access_time_ns = 0;
+    double slow_history[2] = {};
 };
 
 struct EvaluatedSample {

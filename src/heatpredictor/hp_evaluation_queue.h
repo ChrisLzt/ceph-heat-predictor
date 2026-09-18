@@ -235,7 +235,8 @@ private:
                     0,
                     0,
                     0,
-                    lru_list.end()});
+                    lru_list.end(),
+                    now_ns});
             ceph_assert(ok);
             state_position = inserted;
             heat_state_peak_count_value = std::max(
@@ -260,6 +261,11 @@ private:
                     state.last_access_time_ns,
                     now_ns) +
                 heat_increment;
+            for (size_t i = 0; i < 2; ++i) {
+                state.slow_history[i] *= std::exp(
+                    -hp_nanoseconds_to_seconds(item.time_since_previous_access_ns) /
+                    HP_SLOW_HISTORY_TAU_SECONDS[i]);
+            }
             state.last_access_time_ns = now_ns;
             ++state.tracked_access_count;
         }
@@ -276,6 +282,20 @@ private:
             state.tracked_access_count;
 
         ObjectHeatState& mutable_state = state_position->second;
+        const double age_seconds = hp_nanoseconds_to_seconds(
+            now_ns >= state.first_access_time_ns
+                ? now_ns - state.first_access_time_ns : 0);
+        for (size_t i = 0; i < 2; ++i) {
+            const double tau = HP_SLOW_HISTORY_TAU_SECONDS[i];
+            // Match the offline C4 zero-age convention, including tied accesses.
+            const double exposure = age_seconds > 0
+                ? -std::expm1(-age_seconds / tau) : 1.0;
+            item.slow_history_counts[i] = state.slow_history[i] *
+                (hp_nanoseconds_to_seconds(HP_FUTURE_LABEL_WINDOW_NS) / tau) /
+                std::max(exposure, 1.0 / HP_SLOW_HISTORY_MAX_MULTIPLIER);
+            // The current access is visible only to subsequent predictions.
+            mutable_state.slow_history[i] += 1.0;
+        }
         const uint64_t old_recent_count =
             mutable_state.recent_window_access_count;
         ++mutable_state.recent_window_access_count;

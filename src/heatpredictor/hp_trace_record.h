@@ -12,7 +12,7 @@
 #include "hp_trace.h"
 #include "hp_types.h"
 
-static constexpr uint64_t HP_TRACE_FEATURE_SCHEMA_VERSION = 7;
+static constexpr uint64_t HP_TRACE_FEATURE_SCHEMA_VERSION = 8;
 
 template <typename T>
 inline void hp_trace_hash_value(uint64_t& hash, const T& value)
@@ -28,8 +28,12 @@ inline void hp_trace_hash_value(uint64_t& hash, const T& value)
 inline uint64_t hp_trace_config_hash()
 {
     uint64_t hash = 1469598103934665603ULL;
-    const std::array<uint64_t, 12> integer_values = {
+    const std::array<uint64_t, 16> integer_values = {
         HP_TRACE_FEATURE_SCHEMA_VERSION,
+        HP_WARMUP_TRAINED_SAMPLES,
+        HP_LEAF_MAJORITY_ONLY,
+        HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL,
+        HP_SNAPSHOT_PUBLISH_MAX_INTERVAL_NS,
         NUM_FEATURES,
         HP_ARF_N_MODELS,
         HP_ARF_MAX_FEATURES,
@@ -42,7 +46,10 @@ inline uint64_t hp_trace_config_hash()
         HP_FUTURE_ACCESS_OTSU_RECOMPUTE_MAX_INTERVAL_NS,
         HP_FUTURE_ACCESS_OTSU_BIN_COUNT,
     };
-    const std::array<double, 5> floating_values = {
+    const std::array<double, 8> floating_values = {
+        HP_SLOW_HISTORY_TAU_SECONDS[0],
+        HP_SLOW_HISTORY_TAU_SECONDS[1],
+        HP_SLOW_HISTORY_MAX_MULTIPLIER,
         HP_HOT_PREDICT_THRESHOLD,
         HP_HEAT_INCREMENT,
         HP_HEAT_RETAINED_AFTER_DECAY_HORIZON,

@@ -7,14 +7,39 @@
 ## 状态
 
 ```bash
-# 适合脚本解析
+# 默认：五行关键摘要
+sudo ceph osd hp status
+
+# 简单模式的结构化输出
 sudo ceph osd hp status -f json
 
-# 适合人工查看
-sudo ceph osd hp status -f json-pretty
+# 详细模式：完整调试信息，默认 json-pretty
+sudo ceph osd hp status --detail
+
+# 实验采集、reset 检查及报告脚本使用完整 JSON
+sudo ceph osd hp status --detail -f json
 ```
 
-`-f` 只控制输出格式。MGR 汇总 OSD 周期上报的 PerfCounters，主要分组为：
+`--detail` 选择内容范围，`-f` 只控制格式。简单模式默认显示：
+
+- 已启用、已上报、up OSD 数；
+- 已评估 I/O 数；
+- Accuracy（首位）、Precision、Recall；
+- 预测热比例与实际热比例；
+- 累计平均预测器调用耗时，单位微秒，不是端到端 I/O 延迟。
+
+无已评估样本或指标分母为0时，对应指标显示 `N/A`；无计时样本时耗时显示
+`N/A`。简单 JSON 对应值为 `null`，延迟路径为
+`summary.latency.hp_predict_latency.avgtime_us`。
+
+无 up OSD、上报缺失、已上报 OSD 中有未启用模块，或预测错误、后台错误、评估丢弃、
+训练丢弃计数非零时，简单文本追加 `ALERT`，简单 JSON 增加 `summary.alerts`。
+错误及丢弃计数是自 reset 以来的累计值；队列非零本身不视为异常。
+上报缺失时，指标仅覆盖本次接受的 OSD 报告。
+
+详细模式保留原有 JSON 字段和层级，包括纳秒延迟字段和无样本时的零值约定。
+旧脚本必须改用 `--detail`；仅指定 `-f json` 仍然是简单内容。
+MGR 汇总 OSD 周期上报的 PerfCounters，详细模式的分组为：
 
 - `osds`：up、reporting、enabled、disabled 和 missing OSD；
 - `samples`：I/O、已完成标签、pending、awaiting 和 drop；
@@ -30,6 +55,11 @@ daemon report 后看到新状态；排查后执行 `ceph osd hp enable` 完整 r
 
 `dev` 构建还会输出 `trace`，不属于 `main` 的稳定统计契约。完整字段和聚合公式见
 [实现说明](CODEX_CEPH.md)。
+
+`model_adaptation` 的主动漂移检测当前关闭，六个计数正常均为0，仅在详细模式保留。
+`actual_behavior` 的 `*_osd_p99/p95/p50_weighted_avg` 是各 OSD 访问次数分位数的
+加权平均，不是集群分位数，也不是预测延迟分位数。`hp_heat_state_peak_count` 是各
+OSD 历史状态数量峰值之和，不表示集群同时占用峰值。
 
 正常情况下：
 
@@ -54,7 +84,7 @@ Heat Predictor 在单 OSD 内以同一个状态迁移边界发布上述计数，
 常用查询：
 
 ```bash
-sudo ceph osd hp status -f json |
+sudo ceph osd hp status --detail -f json |
   jq '.summary | {
     osds,
     samples,
@@ -81,7 +111,7 @@ sudo ceph osd hp status -f json |
 先检查：
 
 ```bash
-sudo ceph osd hp status -f json |
+sudo ceph osd hp status --detail -f json |
   jq '.summary | {
     osds,
     samples,
@@ -125,11 +155,11 @@ sudo ceph osd hp enable -f json-pretty
 ./run_test.sh
 
 # 测试期间每 10～30 秒采集
-sudo ceph osd hp status -f json-pretty \
+sudo ceph osd hp status --detail -f json-pretty \
   > hp_status_$(date +%Y%m%d_%H%M%S).json
 
 # 测试结束；等待 pending、awaiting 和训练队列排空
-sudo ceph osd hp status -f json-pretty > hp_status_final.json
+sudo ceph osd hp status --detail -f json-pretty > hp_status_final.json
 ```
 
 不同实验之间执行 `reset` 并重新确认归零。`status` 是只读命令；`reset`、`enable`

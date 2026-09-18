@@ -38,6 +38,9 @@ struct HeatPredictorStatus {
     uint64_t predict_error_count;
     uint64_t background_error_count;
     HpTraceStatus trace;
+    uint64_t trained_sample_count;
+    uint64_t snapshot_trained_sample_count;
+    uint64_t warmup_prediction_count;
 };
 
 class HeatPredictor {
@@ -94,7 +97,13 @@ private:
     std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry =
         std::make_shared<ArfAdaptationTelemetry>();
     std::shared_ptr<Classifier> train_model;
-    std::shared_ptr<Classifier> prediction_snapshot;
+    struct PredictionSnapshot {
+        std::shared_ptr<Classifier> model;
+        uint64_t trained_samples;
+    };
+    std::shared_ptr<PredictionSnapshot> prediction_snapshot;
+    std::atomic<uint64_t> trained_sample_count{0};
+    std::atomic<uint64_t> warmup_prediction_count{0};
 
     // Serializes externally visible sample-accounting transitions. Lock order:
     // reset_mutex -> evaluation_transition_mutex -> eq/stats mutex. EQ and
@@ -105,8 +114,9 @@ private:
     mutable std::mutex evaluation_stats_mutex;
     Accuracy<2> accu;
 
-    static constexpr int MODEL_UPDATE_REPORT_INTERVAL = 500;
-    int model_update_train_count{0};
+    static constexpr uint64_t MODEL_UPDATE_REPORT_INTERVAL =
+        HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL;
+    uint64_t model_update_train_count{0};
     uint64_t last_snapshot_publish_time_ns{0};
     std::atomic<uint64_t> snapshot_publish_count{0};
 
@@ -191,17 +201,19 @@ private:
         return true;
     }
 
-    std::shared_ptr<Classifier> clone_train_model_for_prediction() const {
-        return to_shared_model(train_model->clone_for_prediction());
+    std::shared_ptr<PredictionSnapshot> clone_train_model_for_prediction() const {
+        return std::make_shared<PredictionSnapshot>(PredictionSnapshot{
+            to_shared_model(train_model->clone_for_prediction()),
+            trained_sample_count.load(std::memory_order_relaxed)});
     }
 
-    void publish_prediction_snapshot(std::shared_ptr<Classifier> snapshot) {
+    void publish_prediction_snapshot(std::shared_ptr<PredictionSnapshot> snapshot) {
         std::atomic_store_explicit(
             &prediction_snapshot, std::move(snapshot),
             std::memory_order_release);
     }
 
-    std::shared_ptr<Classifier> get_prediction_snapshot() const {
+    std::shared_ptr<PredictionSnapshot> get_prediction_snapshot() const {
         return std::atomic_load_explicit(
             &prediction_snapshot, std::memory_order_acquire);
     }
@@ -421,10 +433,11 @@ private:
                 while (!batch.empty()) {
                     TrainingSample sample = std::move(batch.front());
                     batch.pop();
-                    std::shared_ptr<Classifier> next_snapshot;
+                    std::shared_ptr<PredictionSnapshot> next_snapshot;
 
                     train_model->learn_one(
                         to_feat(sample.item), sample.label);
+                    trained_sample_count.fetch_add(1, std::memory_order_relaxed);
                     if (record_model_update_batch(monotonic_now_ns())) {
                         next_snapshot =
                             clone_train_model_for_prediction();
@@ -512,8 +525,10 @@ public:
             std::queue<TrainingSample> empty;
             std::swap(train_queue, empty);
         }
-        std::shared_ptr<Classifier> next_snapshot;
+        std::shared_ptr<PredictionSnapshot> next_snapshot;
         adaptation_telemetry->reset();
+        trained_sample_count.store(0, std::memory_order_relaxed);
+        warmup_prediction_count.store(0, std::memory_order_relaxed);
         train_model.reset(make_model(adaptation_telemetry));
         next_snapshot = clone_train_model_for_prediction();
         publish_prediction_snapshot(std::move(next_snapshot));
@@ -616,7 +631,7 @@ public:
 
         int res;
         std::optional<EvaluationQueue::PredictionTicket> pending_evaluation;
-        std::shared_ptr<Classifier> snapshot;
+        std::shared_ptr<PredictionSnapshot> snapshot;
         bool maintenance_schedule_changed = false;
         uint64_t prediction_time_ns = 0;
         {
@@ -656,10 +671,17 @@ public:
 
         bool prediction_failed = false;
         bool cold_start_fallback = false;
-        if (snapshot) {
+        if (snapshot && snapshot->trained_samples < HP_WARMUP_TRAINED_SAMPLES) {
+            // Count and model are one atomic snapshot: learning ahead of the
+            // published model must not end protection prematurely.
+            res = item.past_window_access_count >=
+                item.future_access_threshold_at_prediction ? 1 : 0;
+            item.predicted_hot_probability = static_cast<double>(res);
+            warmup_prediction_count.fetch_add(1, std::memory_order_relaxed);
+        } else if (snapshot) {
             try {
                 thread_local std::vector<double> proba;
-                snapshot->predict_proba_one_into(to_feat(item), proba);
+                snapshot->model->predict_proba_one_into(to_feat(item), proba);
                 cold_start_fallback = proba.size() == 2 &&
                     proba[0] == 0.0 && proba[1] == 0.0;
                 auto hot_probability = validated_hot_probability(proba);
@@ -793,7 +815,10 @@ public:
             adaptation_telemetry->snapshot(),
             predict_error_count.load(std::memory_order_relaxed),
             background_error_count.load(std::memory_order_relaxed),
-            trace_writer.status()};
+            trace_writer.status(),
+            trained_sample_count.load(std::memory_order_relaxed),
+            get_prediction_snapshot()->trained_samples,
+            warmup_prediction_count.load(std::memory_order_relaxed)};
     }
 
     void record_predict_error() {

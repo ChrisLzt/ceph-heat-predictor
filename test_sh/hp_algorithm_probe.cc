@@ -123,7 +123,9 @@ class BlockingTrainingClassifier : public Classifier {
   void wait_until_first_sample_starts()
   {
     std::unique_lock<std::mutex> lock(mutex);
-    condition.wait(lock, [this] { return learned_sample_count == 1; });
+    require(condition.wait_for(lock, std::chrono::seconds(5),
+                               [this] { return learned_sample_count == 1; }),
+            "training worker did not start the first sample");
   }
 
   void release_first_sample()
@@ -172,13 +174,16 @@ class ThrowingTrainingClassifier : public Classifier {
   void wait_until_learn_is_called()
   {
     std::unique_lock<std::mutex> lock(mutex);
-    condition.wait(lock, [this] { return learn_called; });
+    require(condition.wait_for(lock, std::chrono::seconds(5),
+                               [this] { return learn_called; }),
+            "training worker did not reach the throwing sample");
   }
 };
 
 void test_training_shutdown_finishes_only_current_batch()
 {
   HeatPredictor predictor;
+  predictor.set_enabled(true);
   auto classifier = std::make_shared<BlockingTrainingClassifier>();
   predictor.train_model = classifier;
   predictor.last_snapshot_publish_time_ns = HeatPredictor::monotonic_now_ns();
@@ -210,6 +215,7 @@ void test_training_shutdown_finishes_only_current_batch()
 void test_training_exception_disables_predictor_without_terminating()
 {
   HeatPredictor predictor;
+  predictor.set_enabled(true);
   background_error_notification_count.store(0);
   predictor.set_background_error_callback(
       record_background_error_notification);
@@ -250,7 +256,43 @@ void test_training_exception_disables_predictor_without_terminating()
 
 void test_fixed_baseline_configuration()
 {
-  require(NUM_FEATURES == 5, "baseline must expose exactly five features");
+  require(HP_FUTURE_LABEL_WINDOW_NS == 10000000000ULL,
+          "future and historical windows must be ten seconds");
+  require(HP_SHORT_ACCESS_WINDOW_NS == 2000000000ULL,
+          "short window must be two seconds");
+  require(HP_HEAT_DECAY_HORIZON_NS == 10000000000ULL,
+          "heat decay horizon must be ten seconds");
+  require_close(HP_HEAT_RETAINED_AFTER_DECAY_HORIZON, 0.1,
+                "heat must retain ten percent per decay horizon");
+  EvaluationQueue defaults;
+  auto first = defaults.begin_prediction(make_sample(1, 7), 0);
+  defaults.complete_prediction(std::move(*first.ticket), 0.0, 0);
+  auto second = defaults.begin_prediction(make_sample(2, 7), 2000000000ULL);
+  require_close(second.sample.heat_after_current_access,
+                100.0 + 100.0 * std::pow(0.1, 0.2),
+                "heat must decay continuously over two seconds");
+  require(second.sample.past_window_access_count == 1 &&
+          second.sample.short_window_access_count == 0,
+          "two-second boundary expires only the short window");
+  defaults.complete_prediction(std::move(*second.ticket), 0.0, 0);
+  auto third = defaults.begin_prediction(make_sample(3, 7), 10000000000ULL);
+  require_close(third.sample.heat_after_current_access,
+                110.0 + 100.0 * std::pow(0.1, 0.8),
+                "heat must retain ten percent of the first access at ten seconds");
+  require(third.sample.past_window_access_count == 1 &&
+          third.sample.short_window_access_count == 0,
+          "ten-second history must exclude its left boundary");
+  defaults.complete_prediction(std::move(*third.ticket), 0.0, 0);
+  EvaluationQueue decay;
+  for (uint64_t step = 0; step < 3; ++step) {
+    auto sample = decay.begin_prediction(make_sample(step + 1, 8),
+                                          step * 10000000000ULL);
+    const double expected[] = {100.0, 110.0, 111.0};
+    require_close(sample.sample.heat_after_current_access, expected[step],
+                  "ten-second decay steps must produce heat 100, 110, 111");
+    decay.complete_prediction(std::move(*sample.ticket), 0.0, 0);
+  }
+  require(NUM_FEATURES == 7, "C4 must expose exactly seven features");
   require(HP_ARF_N_MODELS == 25, "baseline must use 25 ARF trees");
   require(HP_ARF_MAX_FEATURES == NUM_FEATURES,
           "each split must consider all baseline features");
@@ -262,6 +304,54 @@ void test_fixed_baseline_configuration()
                 "future-access histogram width must match V2");
   require(HP_EXPIRY_MAINTENANCE_BATCH_SIZE == 1000,
           "expiry maintenance must use a bounded batch");
+}
+
+// Catches current-request leakage, uncapped normalization, and lost history.
+void test_c4_history()
+{
+  EvaluationQueue queue;
+  const std::vector<uint64_t> times{0, 0, 1, 2, 3, 5, 40, 120};
+  PredictionSample saved{};
+  std::vector<double> saved_features;
+  for (size_t i = 0; i < times.size(); ++i) {
+    auto result = queue.begin_prediction(make_sample(i + 1, 77),
+                                         times[i] * 1000000000ULL);
+    const auto features = hp_to_features(result.sample);
+    require(features.size() == 7, "C4 must include both slow histories");
+    for (size_t j = 0; j < 2; ++j) {
+      const double tau = j == 0 ? 30.0 : 60.0;
+      double weighted = 0;
+      for (size_t k = 0; k < i; ++k)
+        weighted += std::exp(-double(times[i] - times[k]) / tau);
+      const double exposure = times[i] == 0 ? 1.0 :
+          1.0 - std::exp(-double(times[i]) / tau);
+      const double expected = std::log2(1 + weighted * (10 / tau) /
+          std::max(0.25, exposure)) - std::log2(1.0 +
+              result.sample.future_access_threshold_at_prediction);
+      require_close(features[5+j], expected,
+                    "slow history must match independent weighted sum");
+    }
+    if (i == 3) { saved = result.sample; saved_features = features; }
+    queue.complete_prediction(std::move(*result.ticket), 0.0, 0);
+  }
+  require(hp_to_features(saved) == saved_features,
+          "delayed training must retain prediction-time slow features");
+  auto other = queue.begin_prediction(make_sample(99, 78), 120000000000ULL);
+  require_close(hp_to_features(other.sample)[5],
+                -std::log2(1.0 + other.sample.future_access_threshold_at_prediction),
+                "different objects must not share slow history");
+  queue.complete_prediction(std::move(*other.ticket), 0.0, 0);
+  EvaluationQueue evict(HP_HEAT_DECAY_HORIZON_NS, 0);
+  auto before = evict.begin_prediction(make_sample(1, 77), 0);
+  evict.complete_prediction(std::move(*before.ticket), 0.0, 0);
+  evict.maintain_expiry(10000000000ULL);
+  require(evict.status(10000000000ULL).heat_state_count == 0,
+          "unprotected slow state must share the existing LRU limit");
+  auto after = evict.begin_prediction(make_sample(2, 77), 20000000000ULL);
+  require_close(hp_to_features(after.sample)[5], -1.0,
+                "recreated object must not inherit evicted slow history");
+  evict.complete_prediction(std::move(*after.ticket), 0.0, 0);
+
 }
 
 void test_feature_encoding()
@@ -781,6 +871,7 @@ void test_status_snapshot_preserves_sample_accounting()
   constexpr size_t producer_count = 4;
   constexpr size_t predictions_per_producer = 5000;
   HeatPredictor predictor;
+  predictor.set_enabled(true);
   predictor.eq = std::make_unique<EvaluationQueue>(
       1000 * 1000 * microsecond_ns,
       producer_count * predictions_per_producer,
@@ -821,6 +912,9 @@ void test_status_snapshot_preserves_sample_accounting()
   }
   observer.join();
 
+  require(predictor.status().evaluation.io_count ==
+              producer_count * predictions_per_producer,
+          "concurrency fixture must exercise every prediction");
   require(inconsistent_snapshots.load(std::memory_order_relaxed) == 0,
           "status must atomically account for labeled, queued, and dropped I/O");
 }
@@ -893,8 +987,8 @@ void test_arf_probability_distribution()
       HP_ARF_MAX_SHARE_TO_SPLIT,
       HP_ARF_MIN_BRANCH_FRACTION);
 
-  const std::vector<double> cold = {-2.0, 4.0, 2.0, -1.0, 0.0};
-  const std::vector<double> hot = {2.0, 1.0, 8.0, 2.0, 2.0};
+  const std::vector<double> cold = {-2.0, 4.0, 2.0, -1.0, 0.0, -1.0, -1.0};
+  const std::vector<double> hot = {2.0, 1.0, 8.0, 2.0, 2.0, 1.0, 1.0};
   for (int index = 0; index < 1000; ++index) {
     model.learn_one(cold, 0, 1.0);
     model.learn_one(hot, 1, 1.0);
@@ -950,6 +1044,7 @@ int main()
   test_training_shutdown_finishes_only_current_batch();
   test_training_exception_disables_predictor_without_terminating();
   test_fixed_baseline_configuration();
+  test_c4_history();
   test_feature_encoding();
   test_short_access_window_excludes_current_io();
   test_future_access_threshold_lifecycle();

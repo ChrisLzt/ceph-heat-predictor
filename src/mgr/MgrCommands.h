@@ -67,8 +67,8 @@ COMMAND("osd perf", \
         "print dump of OSD perf summary stats", \
         "osd", \
         "r")
-COMMAND("osd hp status", \
-        "print heat predictor status summary for all up OSDs", \
+COMMAND("osd hp status name=detail,type=CephBool,req=false", \
+        "print brief heat predictor status for all up OSDs (--detail for full diagnostics)", \
         "osd", \
         "r")
 COMMAND("osd hp reset", \

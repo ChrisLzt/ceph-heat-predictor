@@ -60,6 +60,8 @@ void test_evaluated_sample_mapping()
       0.75,
       1,
   };
+  item.slow_history_counts[0] = 6.0;
+  item.slow_history_counts[1] = 3.0;
   EvaluatedSample evaluated{
       item,
       3,
@@ -72,6 +74,8 @@ void test_evaluated_sample_mapping()
   };
 
   const HpTraceRecord record = hp_trace_record_for_evaluated(evaluated);
+  require_close(record.features[5], std::log2(7.0) - std::log2(5.0), "trace must retain C4 30s feature");
+  require_close(record.features[6], std::log2(4.0) - std::log2(5.0), "trace must retain C4 60s feature");
   require(record.io_sequence == 23 && record.object_key_hash == 456,
           "trace identity must match the prediction sample");
   require(record.prediction_time_ns == 100 &&

@@ -469,6 +469,42 @@ void test_replay_modes_apply_base_gate_and_training_scope() {
           "direct ARF replay must train all samples");
 }
 
+void test_replay_initial_history_protection() {
+  HpReplayTrace trace;
+  trace.header = make_header();
+  trace.records = {make_record(1, 100, 200, 0)};
+  trace.records[0].past_window_access_count = 2;
+  const auto result = replay_hp_trace(trace, HpReplayOptions{});
+  require(result.records[0].replayed_label == 1 &&
+              result.records[0].replayed_hot_probability == 1.0 &&
+              !result.records[0].cold_start_fallback,
+          "current replay must protect an untrained past-hot object");
+}
+
+void test_replay_guard_waits_for_published_training() {
+  HpReplayTrace trace;
+  trace.header = make_header();
+  trace.records = {make_record(1, 100, 200, 0), make_record(2, 110, 210, 0),
+                   make_record(3, 300, 400, 0), make_record(4, 500, 600, 0)};
+  for (auto& record : trace.records) record.past_window_access_count = 2;
+  HpReplayOptions options;
+  require(options.adaptation_profile == HpReplayAdaptationProfile::disabled &&
+              options.snapshot_sample_interval == HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL &&
+              options.warmup_trained_samples == HP_WARMUP_TRAINED_SAMPLES,
+          "replay defaults must track production policy");
+  options.warmup_trained_samples = 2;
+  options.snapshot_sample_interval = 3;
+  options.snapshot_max_interval_ns = 10000;
+  const auto result = replay_hp_trace(trace, options);
+  require(result.records[0].replayed_label == 1 &&
+              result.records[1].replayed_label == 1 &&
+              result.records[2].replayed_label == 1 &&
+              result.records[3].replayed_label == 0,
+          "guard must wait for published training and then use cold model");
+  require(result.trained_sample_count == 4 && result.snapshot_publish_count == 1,
+          "guard must preserve all training events");
+}
+
 void test_replay_publishes_trained_snapshot_deterministically() {
   HpReplayTrace trace;
   trace.header = make_header();
@@ -478,6 +514,7 @@ void test_replay_publishes_trained_snapshot_deterministically() {
       make_record(3, 300, 400, 1),
   };
   HpReplayOptions options;
+  options.warmup_trained_samples = 0; // Isolate empty-model snapshot behavior.
   options.snapshot_sample_interval = 2;
   options.snapshot_max_interval_ns = 1000;
 
@@ -578,6 +615,8 @@ int main(int argc, char** argv) {
       throw std::runtime_error(
           "usage: test_hp_trace_replay [--write-fixture PATH]");
     }
+    test_replay_initial_history_protection();
+    test_replay_guard_waits_for_published_training();
     test_reader_and_event_order();
     test_reader_rejects_bad_magic();
     test_snapshot_schedule_uses_count_or_time();

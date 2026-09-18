@@ -16,6 +16,7 @@ if(WITH_MGR)
     DaemonServer.cc
     DaemonState.cc
     ObjectHeatPredictorStatus.cc
+    ObjectHeatPredictorStatusFormatter.cc
     Gil.cc
     Mgr.cc
     mgr_perf_counters.cc

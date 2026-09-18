@@ -11,6 +11,7 @@
 # include "HoeffdingTreeClassifier.h"
 # include "utils.h"
 # include "GaussianSplitter.h"
+# include "../hp_config.h"
 
 template <int num_features, int num_labels>
 BranchOrLeaf<num_features, num_labels>*
@@ -72,16 +73,21 @@ std::vector<BranchFactory<num_features, num_labels> > LeafNaiveBayesAdaptive<num
     std::vector<BranchFactory<num_features, num_labels> > best_suggestions;
     double maj_class = max_value(this->stats);
     if (maj_class > 0.0 && maj_class / total_weight() > max_share_to_split) {
-        best_suggestions.push_back(BranchFactory<num_features, num_labels>());
-    } else {
-        // super
-        if (tree->merit_preprune) {
-            BranchFactory<num_features, num_labels> null_split;
-            best_suggestions.push_back(null_split);
-        }
-        for (int i=0;i<num_features;i++) {
-            if (splitters[i] != nullptr) {
-                best_suggestions.push_back(splitters[i]->best_evaluated_split_suggestion(this->stats, i, min_branch_fraction));
+        // Wait for more evidence; purity is not a prepruning decision.
+        return best_suggestions;
+    }
+    if (tree->merit_preprune) {
+        best_suggestions.push_back(
+            BranchFactory<num_features, num_labels>::make_preprune());
+    }
+    for (int i = 0; i < num_features; ++i) {
+        if (splitters[i] != nullptr) {
+            auto suggestion = splitters[i]->best_evaluated_split_suggestion(
+                this->stats, i, min_branch_fraction);
+            // Constant features and rejected branch fractions return an
+            // invalid placeholder. They must not participate in a tie.
+            if (suggestion.feature >= 0 && std::isfinite(suggestion.merit)) {
+                best_suggestions.push_back(std::move(suggestion));
             }
         }
     }
@@ -123,7 +129,8 @@ void LeafNaiveBayesAdaptive<num_features, num_labels>::update_splitters(const st
 
 template <int num_features, int num_labels>
 void LeafNaiveBayesAdaptive<num_features, num_labels>::prediction(std::vector<double>& proba, const std::vector<double>& x) {
-    if (is_active && _nb_correct_weight >= _mc_correct_weight) {
+    if (!HP_LEAF_MAJORITY_ONLY && is_active &&
+        _nb_correct_weight >= _mc_correct_weight) {
        do_naive_bayes_prediction<num_features, num_labels>(proba, x, this->stats, splitters);
     } else {
         normalize_values_in_dict(proba, this->stats);

@@ -711,6 +711,18 @@ void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
   const auto& stats = predictor_status.evaluation;
   f->open_object_section("object_hp_status");
   f->dump_bool("enabled", stats.enabled);
+  f->dump_unsigned("hp_trained_sample_count", predictor_status.trained_sample_count);
+  f->dump_unsigned("hp_snapshot_trained_sample_count", predictor_status.snapshot_trained_sample_count);
+  f->dump_unsigned("hp_warmup_prediction_count", predictor_status.warmup_prediction_count);
+  f->dump_unsigned("hp_warmup_trained_samples", HP_WARMUP_TRAINED_SAMPLES);
+  f->dump_bool("hp_leaf_majority_only", HP_LEAF_MAJORITY_ONLY);
+  f->dump_string("hp_feature_policy", "C4");
+  f->dump_unsigned("hp_feature_count", NUM_FEATURES);
+  f->dump_float("hp_slow_history_tau_30_seconds", HP_SLOW_HISTORY_TAU_SECONDS[0]);
+  f->dump_float("hp_slow_history_tau_60_seconds", HP_SLOW_HISTORY_TAU_SECONDS[1]);
+  f->dump_float("hp_slow_history_max_multiplier", HP_SLOW_HISTORY_MAX_MULTIPLIER);
+  f->dump_unsigned("hp_snapshot_sample_interval", HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL);
+  f->dump_unsigned("hp_snapshot_max_interval_ns", HP_SNAPSHOT_PUBLISH_MAX_INTERVAL_NS);
   f->dump_unsigned("hp_io_count", stats.io_count);
   f->dump_unsigned("hp_labeled_io_total", stats.labeled_io_total);
   f->dump_unsigned("hp_pending_io_count", stats.pending_io_count);

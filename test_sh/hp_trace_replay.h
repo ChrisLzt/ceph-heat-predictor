@@ -22,7 +22,8 @@
 #include "heatpredictor/heat_predictor.h"
 #include "heatpredictor/include/HoeffdingTreeClassifier.h"
 
-static constexpr uint64_t HP_REPLAY_SNAPSHOT_SAMPLE_INTERVAL = 500;
+static constexpr uint64_t HP_REPLAY_SNAPSHOT_SAMPLE_INTERVAL =
+    HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL;
 
 enum class HpReplayAdaptationProfile : uint8_t {
   baseline = 0,
@@ -133,7 +134,7 @@ inline std::unique_ptr<Classifier> make_hp_replay_model_with_detectors(
 inline std::unique_ptr<Classifier> make_hp_replay_model(
     std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry,
     HpReplayAdaptationProfile profile =
-        HpReplayAdaptationProfile::baseline) {
+        HpReplayAdaptationProfile::disabled) {
   using BaselineWarningFactory =
       DetectorFactory<ADWIN<5>, HP_ARF_WARNING_DELTA_PERMILLE>;
   using BaselineDriftFactory =
@@ -415,13 +416,14 @@ class HpReplaySnapshotSchedule {
 };
 
 struct HpReplayOptions {
+  uint64_t warmup_trained_samples = HP_WARMUP_TRAINED_SAMPLES;
   uint64_t snapshot_sample_interval =
       HP_REPLAY_SNAPSHOT_SAMPLE_INTERVAL;
   uint64_t snapshot_max_interval_ns =
       HP_SNAPSHOT_PUBLISH_MAX_INTERVAL_NS;
   bool require_matching_config = true;
   HpReplayAdaptationProfile adaptation_profile =
-      HpReplayAdaptationProfile::baseline;
+      HpReplayAdaptationProfile::disabled;
   HpReplayPredictionMode prediction_mode =
       HpReplayPredictionMode::direct_arf;
   size_t residual_tree_count = 10;
@@ -674,6 +676,7 @@ inline HpReplayResult replay_hp_trace(
       options.snapshot_sample_interval,
       options.snapshot_max_interval_ns);
 
+  uint64_t snapshot_trained_samples = 0;
   HpReplayResult result;
   result.records.resize(trace.records.size());
   const auto events = make_replay_events(trace);
@@ -684,10 +687,16 @@ inline HpReplayResult replay_hp_trace(
     if (event.type == HpReplayEventType::prediction) {
       double model_hot_probability = 0.0;
       bool model_cold_start_fallback = false;
-      const bool needs_model_prediction =
+      const bool warmup =
+          options.prediction_mode == HpReplayPredictionMode::direct_arf &&
+          snapshot_trained_samples < options.warmup_trained_samples;
+      const bool needs_model_prediction = !warmup && (
           options.prediction_mode == HpReplayPredictionMode::direct_arf ||
           (hp_replay_uses_residual_model(options.prediction_mode) &&
-           !hp_replay_base_hot(record));
+           !hp_replay_base_hot(record)));
+      if (warmup) {
+        model_hot_probability = hp_replay_base_hot(record) ? 1.0 : 0.0;
+      }
       if (needs_model_prediction) {
         if (prediction_snapshot == nullptr) {
           throw std::runtime_error(
@@ -740,6 +749,7 @@ inline HpReplayResult replay_hp_trace(
     }
     if (snapshot_schedule.record_training(event.timestamp_ns)) {
       prediction_snapshot = train_model->clone_for_prediction();
+      snapshot_trained_samples = result.trained_sample_count;
     }
   }
   result.snapshot_publish_count = snapshot_schedule.publish_count();

@@ -39,7 +39,7 @@ mkdir -p src/pybind/mgr/dashboard/frontend/dist
 ```bash
 cd "$CEPH_REPO/build"
 sudo env CCACHE_TEMPDIR=/tmp ninja -j64
-sudo ninja install
+sudo env DESTDIR=/ ninja install
 sudo ldconfig
 sudo systemctl restart ceph-osd@0 ceph-osd@1
 sudo systemctl restart ceph-mgr@${HOST}
@@ -52,6 +52,37 @@ sudo ceph -s
 sudo systemctl restart ceph-mon@${HOST} ceph-mds@${HOST}
 sudo ceph -s
 ```
+
+### s52 的库搜索路径（2026-09-14 实测修复）
+
+本机构建的库安装到 `/usr/lib` 和 `/usr/lib/ceph`。
+`cmake/modules/Distutils.cmake` 仅在定义 DESTDIR 时为 Debian 添加
+`--install-layout=deb`；因此使用 `sudo env DESTDIR=/ ninja install` 将 Python 绑定
+安装到系统 `dist-packages`。未定义 DESTDIR 时会装到
+`/usr/lib/python3.10/site-packages`，MGR 子解释器仍可能优先使用旧系统绑定。
+系统另有多架构目录和 `/usr/local` 中的旧 Ceph
+库/绑定。只更新二进制并运行 ldconfig，仍可能使 MGR 加载旧 librbd，报 fmt v7
+未定义符号，触发 `MGR_MODULE_DEPENDENCY`。
+
+本机已在 `/etc/systemd/system/ceph-mgr@s52.service.d/zz-current-build.conf` 配置：
+
+```ini
+[Service]
+Environment=LD_LIBRARY_PATH=/usr/lib:/usr/lib/ceph
+Environment=PYTHONPATH=/usr/lib/python3.10/site-packages:/usr/local/lib/python3.10/dist-packages:/usr/lib/python3/dist-packages
+```
+
+该配置文件名保证晚于原 `pythonpath.conf` 加载；保留原文件。
+本次同时完成 Debian 布局安装，系统 rbd 绑定与 site-packages 中当前产物 SHA-256
+相同；PYTHONPATH 本身不能替代这一安装步骤。此 drop-in 在本机安装布局下优先选择当前构建的库和绑定。
+安装前缀或 Python 版本改变后必须重新核对路径，不能直接套用。变更 drop-in 后执行
+`systemctl daemon-reload` 和 MGR 重启；检查 `ceph health detail`，并检查 MGR
+`/proc/<pid>/maps` 中实际加载路径。不要用关闭模块或 mute 告警代替依赖修复。
+
+全量版本更新还需重启 MON/MDS，等待全部服务恢复后用 `ceph versions` 确认五个
+守护进程版本一致、145 个 PG 为 active+clean。本机当前允许保留
+`POOL_NO_REDUNDANCY`。实验入口另比较构建与已安装二进制的 GNU build ID，并记录
+脏工作树和 SHA-256；版本里的 Git SHA 不包含未提交修改。
 
 ## 3. 初始化 MON/MGR
 
@@ -161,27 +192,34 @@ sudo chown lzt:lzt /mnt/cephfs
 sudo install -d -o "$USER" -g "$USER" -m 0755 /mnt/cephfs/vdbench
 ```
 
-## 6. 五负载测试与观测
+## 6. 五负载准备与观测
 
-正式测试位于 `/home/chris/ceph-test/new_workload/`。修改负载后先执行：
+当前五用例位于 `/home/chris/ceph-test/SINGLE_workload/`，使用 SINGLE v2；旧 v1
+入口已停用。离线检查：
 
 ```bash
 cd /home/chris/ceph-test
-./new_workload/validate_all.sh
+./SINGLE_workload/validate_all.sh
 ```
 
-以 MapReduce 为例，造数据时关闭识别，测试前重新启用；enable/disable 都会 reset：
+获得本轮造数授权后，关闭预测器并使用独立准备入口；新目录和容量检查通过才写入：
 
 ```bash
 sudo ceph osd hp disable -f json-pretty
-./new_workload/bigdata_mapreduce_vdbench_v1/prepare_data.sh
-sudo ceph osd hp enable -f json-pretty
-./new_workload/bigdata_mapreduce_vdbench_v1/run_test.sh
+python3 -m workload_common.single_v2 preflight --case all
+python3 -m workload_common.single_v2 prepare --case all --execute \
+  --results /home/chris/ceph-tool/results/single-v2-prepare-唯一批次名
+python3 -m workload_common.single_v2 verify --case all
 ```
 
-其他负载同样使用各目录的 `prepare_data.sh` 和 `run_test.sh`。容量和阶段定义以
-`/home/chris/ceph-test/new_workload/README.md`、`WORKLOAD_SUMMARY.md` 为准。
+该入口不会自动删除旧数据。容量、模型、READY 验证边界以
+`/home/chris/ceph-test/SINGLE_workload/README.md` 为准；准备成功只证明文件布局、
+数量、大小和已分配空间符合设计，不是测量结果。
 
-每轮测试前后的开关、reset、状态采集和归零判据统一见
+实验矩阵位于 `/home/chris/ceph-tool/heat_predictor/run_hp_matrix.sh`，默认只预览；
+后续获准测量时才加 `--execute`。AI 测量需要锁定的 SES 源码和隔离 Python 环境。
+当前入口协议见 `/home/chris/ceph-tool/heat_predictor/EXPERIMENT_PROTOCOL.md`。
+
+每轮开关、reset、状态采集和归零判据见
 [MGR 操作说明](MGR_HP_OPERATIONS.md)。OSD `object_hp status` 是实时状态，
-Perf/MGR 汇总可能短暂滞后。
+Perf/MGR 汇总可能短暂滞后。采集完整 JSON 必须使用 `hp status --detail -f json`。
