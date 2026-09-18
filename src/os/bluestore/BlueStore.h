@@ -1403,6 +1403,8 @@ private:
     std::array<std::pair<ghobject_t, ceph::mono_clock::time_point>, 64> dumped_onodes;
 
   public:
+    enum class Policy { LRU, S3FIFO };
+
     OnodeCacheShard(CephContext* cct) : CacheShard(cct) {}
     static OnodeCacheShard *create(CephContext* cct, std::string type,
                                    PerfCounters *logger);
@@ -1412,8 +1414,13 @@ private:
     virtual void _add(Onode* o, int level) = 0;
     virtual void _rm(Onode* o) = 0;
     virtual void _move_pinned(OnodeCacheShard *to, Onode *o) = 0;
+    virtual void _maybe_unpin(Onode* o) = 0;
+    virtual bool _supports_policy(Policy policy) const = 0;
+    virtual void _set_policy(Policy policy) = 0;
+    virtual Policy _get_policy() const = 0;
+    virtual void _dump_policy(ceph::Formatter* f) const = 0;
 
-    virtual void maybe_unpin(Onode* o) = 0;
+    void maybe_unpin(Onode* o);
     virtual void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) = 0;
     bool empty() {
       return _get_num() == 0;
@@ -1475,7 +1482,7 @@ private:
     friend struct Collection; // for split_cache()
     friend struct Onode; // for put()
     friend struct LruOnodeCacheShard;
-    friend struct S3FIFOOnodeCacheShard;
+    friend struct SwitchableOnodeCacheShard;
     void _remove(const ghobject_t& oid);
   public:
     OnodeSpace(OnodeCacheShard *c) : cache(c) {}
@@ -2230,6 +2237,15 @@ private:
 
   std::vector<OnodeCacheShard*> onode_cache_shards;
   std::vector<BufferCacheShard*> buffer_cache_shards;
+  // Serializes administrative policy changes; never taken on the I/O path.
+  ceph::mutex onode_cache_policy_lock =
+    ceph::make_mutex("BlueStore::onode_cache_policy_lock");
+  uint64_t onode_cache_policy_generation = 0;
+  uuid_d onode_cache_instance;
+  uint64_t onode_cache_switch_started_ns = 0;
+  uint64_t onode_cache_switch_completed_ns = 0;
+  std::string buffer_cache_policy;
+  void _dump_onode_cache_policy(ceph::Formatter* f);
 
   /// protect zombie_osr_set
   ceph::mutex zombie_osr_lock = ceph::make_mutex("BlueStore::zombie_osr_lock");
@@ -2928,6 +2944,9 @@ public:
   }
 
   void set_cache_shards(unsigned num) override;
+  int set_onode_cache_policy(const std::string& policy,
+                            ceph::Formatter* f) override;
+  int get_onode_cache_policy(ceph::Formatter* f) override;
   void dump_cache_stats(ceph::Formatter *f) override {
     int onode_count = 0, buffers_bytes = 0;
     for (auto i: onode_cache_shards) {

@@ -140,6 +140,12 @@ if(WITH_BLUESTORE)
   add_ceph_unittest(unittest_bluestore_types)
   target_link_libraries(unittest_bluestore_types os global)
 
+  add_executable(unittest_bluestore_onode_cache
+    test_bluestore_onode_cache.cc
+    $<TARGET_OBJECTS:unit-main>)
+  add_ceph_unittest(unittest_bluestore_onode_cache)
+  target_link_libraries(unittest_bluestore_onode_cache os global)
+
   # unittest_bdev
   add_executable(unittest_bdev
     test_bdev.cc

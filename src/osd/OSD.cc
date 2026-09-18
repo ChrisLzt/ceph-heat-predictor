@@ -2722,6 +2722,22 @@ void OSD::asok_command(
     hp_set_osd_object_heat_predictor_enabled(cct, f, true);
   } else if (prefix == "object_hp disable") {
     hp_set_osd_object_heat_predictor_enabled(cct, f, false);
+  } else if (prefix == "onode_cache status") {
+    ret = store->get_onode_cache_policy(f);
+    if (ret < 0) {
+      ss << "Onode cache status unavailable: " << cpp_strerror(ret);
+    }
+  } else if (prefix == "onode_cache policy") {
+    string policy;
+    if (!cmd_getval(cmdmap, "policy", policy)) {
+      ret = -EINVAL;
+      ss << "policy must be lru or s3fifo";
+    } else {
+      ret = store->set_onode_cache_policy(policy, f);
+      if (ret < 0) {
+        ss << "Cannot change Onode cache policy: " << cpp_strerror(ret);
+      }
+    }
   } else if (prefix == "flush_journal") {
     store->flush_journal();
   } else if (prefix == "dump_ops_in_flight" ||
@@ -4027,6 +4043,14 @@ void OSD::final_init()
   ceph_assert(r == 0);
   r = admin_socket->register_command("object_hp disable", asok_hook,
 				     "disable and reset object heat predictor");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("onode_cache status", asok_hook,
+                                     "Show effective Onode cache policy and lookup counters");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command(
+    "onode_cache policy name=policy,type=CephChoices,strings=lru|s3fifo",
+    asok_hook,
+    "Switch Onode cache policy online without dropping cached objects or counters");
   ceph_assert(r == 0);
   r = admin_socket->register_command("flush_journal",
                                      asok_hook,

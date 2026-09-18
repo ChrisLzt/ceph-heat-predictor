@@ -66,7 +66,7 @@ actual_hot = future_access_count >= K_window_at_deadline
 使用最后一个 deadline 的一次原始 Otsu 结果，阈值时间误差小于1ms，避免逐 I/O
 扫描直方图。
 
-模型固定五维 feature：
+模型采用 C4 七维 feature，前五维保持原定义：
 
 ```text
 past_access_count_margin =
@@ -91,6 +91,22 @@ short_access_count_log2p1 =
 `short_2s_access_count` 是 `(prediction_time - 2s, prediction_time)` 内同一 object
 的历史访问数。两个计数都不包含当前 I/O。feature 在预测时生成；后台训练复用该
 快照，不读取未来状态。
+
+新增第六、七维分别使用 τ=30s、60s 的指数慢历史。在当前访问记账前：
+
+```text
+A_tau(t) = sum(exp(-(t - prior_access_time) / tau))
+T = t - first_observed_access_time
+exposure = T > 0 ? 1 - exp(-T / tau) : 1
+corrected_count = A_tau(t) * (10 / tau) / max(exposure, 1/4)
+slow_feature_tau = log2(1 + corrected_count) - log2(1 + K_context)
+```
+
+慢历史不包含当前访问；同一时间戳下已记账的较早访问包含在内。
+观测年龄为本 OSD 当前保留状态的首次访问起算，不是文件年龄。
+每个对象只增加两个累加器和首次访问时间；随原有 LRU 淘汰或 reset 一起清空。
+预测时保存两个 corrected_count，延迟训练使用该时刻的值。
+旧热度继续保留；不启用文件上下文或热纠偏。
 
 ## 动态访问阈值 K
 
@@ -143,9 +159,9 @@ EQ pending 与 awaiting-prediction 合计达到100万时，新样本不再入 EQ
 `past_10s_access_count`、`K_context` 和 `K_window` 失真。
 
 热度只作为第三个 feature 和 object 状态保留。每次访问增加100，无访问10秒后保留
-`1/5`。它不再决定标签或 Otsu 阈值。
+`10%`（连续指数衰减，20秒后剩1%）。它不再决定标签或 Otsu 阈值。
 
-`heat_map` 保存共享热度、累计访问数、10秒/2秒访问数、pending 数和上次访问时间。
+`heat_map` 保存共享热度、累计访问数、10秒/2秒访问数、pending 数、访问时间和 C4 慢历史状态。
 三种保护计数均为0的 object 才进入 LRU；访问事件由同一个 expiry 线程按时间清理，
 因此无新 I/O 时也会释放状态。LRU 超过100万才删除最久未访问状态。protected
 object 不受 LRU 上限淘汰，因此 `heat_map` 总量可能高于100万。
@@ -154,15 +170,20 @@ object 不受 LRU 上限淘汰，因此 `heat_map` 总量可能高于100万。
 
 模型为 `PipelineClassifier(StandardScaler, ARFClassifier)`：
 
-- 25棵树、5个候选 feature、seed `591422`。
+- 25棵树、7个候选 feature、seed `591422`。
 - 预测阈值固定 `0.50`，冷热训练权重均为 `1.0`。
 - warning 与 drift detector 固定不触发；现有树继续在线学习，但不创建后台树或替换
   当前树。
-- 前台只读原子发布的 `prediction_snapshot`。
+- 叶节点固定输出本叶冷热累计训练权重的比例；不再按历史正确权重切换到朴素贝叶斯。
+  为保持本次快照频率实验的控制条件，叶内部原有统计更新与复制结构暂时保留。
+- 前台只读原子发布的 `prediction_snapshot`，模型与成熟训练样本数作为一个整体发布。
+- 当前快照训练样本数小于3000时，用 `past_10s_access_count >= K_context` 输出0/1概率；
+  达到3000后使用模型概率。标签和训练仍正常进行；后台尚未发布的训练不结束保护。
+  reset 同时清空训练计数、快照计数和预热输出计数。
 - 后台线程独占训练模型，每批100个样本，队列上限200,000。
-- 每500个训练样本或有新训练且最长1秒发布一次预测快照。
+- 每2000个训练样本或有新训练且最长2秒发布一次预测快照。
 - 关闭时最多完成已取出的当前训练批次。
-- 未训练森林的合法零投票按冷预测，但仍保留 EQ item 以启动训练。
+- 预热结束后模型合法零投票仍按冷预测；预热期间直接使用历史规则并保留 EQ item。
 - 非法概率或模型异常按冷返回并取消 EQ 样本，不影响已记录的10秒访问事件，也不
   影响 Ceph I/O。
 - 后台异常会禁用模块、清空训练队列并刷新状态；enable 通过完整 reset 恢复。
@@ -181,13 +202,27 @@ hp_io_count
   + hp_eval_drop_count
 ```
 
-模型预测、Trace 转换和训练入队均在迁移锁外执行。训练模型只由训练线程修改，reset
+模型预测和训练入队均在迁移锁外执行。训练模型只由训练线程修改，reset
 由 `reset_mutex(unique)` 串行化。状态查询只复制状态，不推进 EQ 或阈值。
 
 OSD 将同一个 `HeatPredictorStatus` 发布到 PerfCounters 时串行化写者，并在普通状态
 字段前后写入相同的非零发布代次。PerfCounters 按字段顺序采集；MGR 只聚合首尾代次
 一致的 OSD 报告，从而拒绝采集期间的新旧字段混合。发布代次是内部传输字段，不进入
 用户汇总输出。预测延迟使用独立的 PerfCounters 累加器，不进入该字段组。
+
+### 分裂候选与叶子停用
+
+叶子类别占比超过 `max_share_to_split` 时，本轮不尝试分裂，继续累计样本。
+常量特征或未通过 `min_branch_fraction` 的候选不参加 Hoeffding 比较；没有有效候选
+时继续学习，不能把默认 `feature=-1` 占位值解释为停用请求。
+只有显式启用 `merit_preprune` 且选中预剪枝候选时，才在分裂决策路径停用叶子。
+该候选明确标记为预剪枝，信息增益为0。当前模型默认不启用它。
+最大深度和内存限制引起的停用仍保留。
+
+在 `dev` 运行 `bash test_sh/test_hp_model_regressions.sh`，覆盖暂时无候选后恢复冷热
+学习、预测快照隔离、深度/内存限制、后台训练、并发统计和 Trace 回放契约。
+设置 `HP_SANITIZERS=address,undefined` 可执行相同用例的 sanitizer 检查。
+算法探针显式开启其训练/预测 fixture；生产默认关闭状态不变。
 
 ## 控制接口
 
@@ -200,7 +235,8 @@ sudo ceph daemon osd.0 object_hp disable
 sudo ceph daemon osd.0 perf dump object_hp_status
 
 # 集群 MGR
-sudo ceph osd hp status -f json-pretty
+sudo ceph osd hp status                  # 简单摘要
+sudo ceph osd hp status --detail -f json-pretty  # 完整统计
 sudo ceph osd hp reset
 sudo ceph osd hp enable
 sudo ceph osd hp disable
@@ -210,6 +246,10 @@ enable/disable 都执行完整 reset；reset 保持当前启用状态。reset �
 窗口、动态 `K`、heat/LRU、模型、训练队列和统计，并恢复 `sparse/K=1`。
 
 ## 统计与聚合
+
+MGR status 默认输出简单摘要；`--detail` 保留完整统计字段。两种模式的内容、
+无样本显示和脚本兼容规则见 [MGR 操作说明](MGR_HP_OPERATIONS.md)。单 OSD
+`object_hp status` 和 PerfCounters 接口保持原有格式。
 
 OSD 暴露当前实际生效的 `K`、阈值状态、正 object 数、归零次数、上限 clamp 数及
 sparse 样本数。MGR 输出上报 OSD 的 `K` 最小值、最大值、平均值及 sparse/tracking
@@ -236,3 +276,11 @@ actual_hot_percent = (TP + FN) / labeled
 冷热标签的未来访问数分位数采用容量40万的滑动固定对数直方图近似维护：
 `log2(1+x)`、bin width `0.01`、2101个 bin。每个保留样本只保存一个16位 bin
 下标，更新为 `O(1)`；状态查询最多扫描2101个 bin。
+
+单OSD `object_hp status` 额外报告 `hp_trained_sample_count`、
+`hp_snapshot_trained_sample_count`、`hp_warmup_prediction_count`，以及当前预热门槛、
+固定多数类开关、快照样本门槛和最长间隔。这些是现场诊断字段，不改变MGR简要输出。
+训练完成计数可在后台继续增长；状态中的各训练字段不构成停止训练的事务快照。
+
+单 OSD 状态还报告 `hp_feature_policy=C4`、`hp_feature_count=7`、两个慢历史时间常数
+及归一化倍率上限，用于核对实际加载版本。离线候选收益不代表部署后的线上验收结果。

@@ -7,7 +7,7 @@
 
 #include "common/debug.h"
 
-static constexpr size_t NUM_FEATURES = 5;
+static constexpr size_t NUM_FEATURES = 7;
 
 // Adaptive Random Forest model.
 static constexpr int HP_ARF_N_MODELS = 25;
@@ -33,8 +33,11 @@ static_assert(HP_ARF_DRIFT_DELTA_PERMILLE > 0 &&
 
 // Prediction and training policy.
 static constexpr double HP_HOT_PREDICT_THRESHOLD = 0.50;
+static constexpr uint64_t HP_WARMUP_TRAINED_SAMPLES = 3000;
+static constexpr bool HP_LEAF_MAJORITY_ONLY = true;
+static constexpr uint64_t HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL = 2000;
 static constexpr uint64_t HP_SNAPSHOT_PUBLISH_MAX_INTERVAL_NS =
-    1ULL * 1000 * 1000 * 1000;
+    2ULL * 1000 * 1000 * 1000;
 
 // Evaluation and retained object state.
 static constexpr uint64_t HP_FUTURE_LABEL_WINDOW_NS =
@@ -58,9 +61,13 @@ static constexpr size_t HP_FUTURE_ACCESS_OTSU_BIN_COUNT = 2000;
 
 // Heat model.
 static constexpr double HP_HEAT_INCREMENT = 100.0;
-static constexpr double HP_HEAT_RETAINED_AFTER_DECAY_HORIZON = 1.0 / 5.0;
+static constexpr double HP_HEAT_RETAINED_AFTER_DECAY_HORIZON = 0.1;
 static constexpr uint64_t HP_HEAT_DECAY_HORIZON_NS =
-    HP_FUTURE_LABEL_WINDOW_NS;
+    10ULL * 1000 * 1000 * 1000;
+
+// C4 slow history: exponential time constants, exposure correction capped at 4.
+static constexpr double HP_SLOW_HISTORY_TAU_SECONDS[2] = {30.0, 60.0};
+static constexpr double HP_SLOW_HISTORY_MAX_MULTIPLIER = 4.0;
 
 // Reporting windows.
 static constexpr size_t HP_REPORT_SAMPLE_WINDOW_CAPACITY = 400000;

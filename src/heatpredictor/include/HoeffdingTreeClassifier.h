@@ -66,11 +66,11 @@ protected:
             }
             if (should_split) {
                 const BranchFactory<num_features, num_labels>& split_decision = best_split_suggestions[best_split_suggestions.size() - 1];
-                if (split_decision.feature < 0) {
+                if (split_decision.is_preprune && this->merit_preprune) {
                     leaf->deactivate();
                     this->_n_active_leaves--;
                     this->_n_inactive_leaves++;
-                } else {
+                } else if (split_decision.feature >= 0) {
                     std::unique_ptr<BranchOrLeaf<num_features, num_labels>> left(
                         _new_leaf(leaf));
                     std::unique_ptr<BranchOrLeaf<num_features, num_labels>> right(

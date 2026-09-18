@@ -58,6 +58,9 @@ inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
         threshold_log2p1);
     features[next++] =
         hp_log2p1(static_cast<double>(item.short_window_access_count));
+    for (double count : item.slow_history_counts) {
+        features[next++] = hp_log2p1(count) - threshold_log2p1;
+    }
     ceph_assert(next == features.size());
     return features;
 }
