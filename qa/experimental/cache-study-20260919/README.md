@@ -1,5 +1,10 @@
 # CloudLab Cache Study, 2026-09-19
 
+**Historical evidence only, not the deployment guide for a colleague's server.**
+Use the [existing-cluster test and integration guide](../../../codex_docs/EXISTING_CLUSTER_CACHE_TEST.md)
+for that environment. This directory's controller is still lab-specific; the new
+guide does not make these scripts portable or claim validation on another cluster.
+
 This directory preserves the scripts used for the completed five-workload
 CloudLab study. It is an experimental branch addition, not a Ceph production
 change, a teuthology suite, or a general-purpose cluster installer.

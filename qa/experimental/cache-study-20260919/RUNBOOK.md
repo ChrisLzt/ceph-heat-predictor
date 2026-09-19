@@ -1,5 +1,10 @@
 # CloudLab cache study runbook
 
+This runbook is only for the recorded historical lab. For another server, use
+the [existing-cluster test and integration guide](../../../codex_docs/EXISTING_CLUSTER_CACHE_TEST.md).
+Do not copy the host names, storage provisioning, cache budget, or three-OSD
+assumptions below into an existing cluster.
+
 ## Locations
 
 - Server/MON/MGR/MDS/OSD0: `wzp@hp117.utah.cloudlab.us`.
