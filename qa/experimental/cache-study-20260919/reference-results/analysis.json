@@ -1,0 +1,1558 @@
+{
+  "complete_suite": true,
+  "cases": {
+    "ai_inference_ses_v2": {
+      "timing": {
+        "nominal_seconds": 600,
+        "switch_target_seconds": 180,
+        "start_wall": 1789793490.01,
+        "switch_request_wall": 1789793671.1690319,
+        "switch_confirmed_wall": 1789793671.1842158,
+        "phases": [
+          {
+            "rd": "p000_measure",
+            "seconds": 600,
+            "start_wall": 1789793490.01
+          }
+        ],
+        "exit_wall": 1789794094.2473087,
+        "returncode": 0,
+        "nominal_end_wall": 1789794090.01,
+        "last_rd_nominal_end_wall": 1789794090.01
+      },
+      "nominal600": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1448572,
+            "onode_misses": 6380,
+            "onode_shard_hits": 1403881,
+            "onode_shard_misses": 65466,
+            "extent_valid_windows": 76,
+            "buffer_hit_bytes": 1346705698,
+            "buffer_miss_bytes": 115214974976,
+            "buffer_valid_windows": 76,
+            "object_ctx_cache_hit": 1059068,
+            "object_ctx_cache_total": 1191016,
+            "object_context_valid_windows": 76,
+            "op_r": 1191054,
+            "op_w": 4,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 76,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 76,
+            "seconds": 178.92197622598917,
+            "windows": 76,
+            "onode_percent": 99.56149756143158,
+            "extent_query_percent": 95.54455142318322,
+            "buffer_byte_percent": 1.155358853967171,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 88.92139148424539,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 20046,
+            "onode_misses": 16,
+            "onode_shard_hits": 19969,
+            "onode_shard_misses": 341,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 29818880,
+            "buffer_miss_bytes": 1585250304,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 14651,
+            "object_ctx_cache_total": 16460,
+            "object_context_valid_windows": 1,
+            "op_r": 16450,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.33273358567385,
+            "windows": 1,
+            "onode_percent": 99.92024723357592,
+            "extent_query_percent": 98.32102412604628,
+            "buffer_byte_percent": 1.8462911864956988,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 89.00972053462941,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 3344327,
+            "onode_misses": 1680,
+            "onode_shard_hits": 3365378,
+            "onode_shard_misses": 25963,
+            "extent_valid_windows": 163,
+            "buffer_hit_bytes": 5575344128,
+            "buffer_miss_bytes": 263368343552,
+            "buffer_valid_windows": 163,
+            "object_ctx_cache_hit": 2451638,
+            "object_ctx_cache_total": 2749756,
+            "object_context_valid_windows": 163,
+            "op_r": 2749764,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 163,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 163,
+            "seconds": 416.0613182903326,
+            "windows": 163,
+            "onode_percent": 99.94979090001904,
+            "extent_query_percent": 99.2344326329909,
+            "buffer_byte_percent": 2.073052606698012,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 89.15838350748211,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 5
+        }
+      },
+      "full_rd_schedule": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1448572,
+            "onode_misses": 6380,
+            "onode_shard_hits": 1403881,
+            "onode_shard_misses": 65466,
+            "extent_valid_windows": 76,
+            "buffer_hit_bytes": 1346705698,
+            "buffer_miss_bytes": 115214974976,
+            "buffer_valid_windows": 76,
+            "object_ctx_cache_hit": 1059068,
+            "object_ctx_cache_total": 1191016,
+            "object_context_valid_windows": 76,
+            "op_r": 1191054,
+            "op_w": 4,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 76,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 76,
+            "seconds": 178.92197622598917,
+            "windows": 76,
+            "onode_percent": 99.56149756143158,
+            "extent_query_percent": 95.54455142318322,
+            "buffer_byte_percent": 1.155358853967171,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 88.92139148424539,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 20046,
+            "onode_misses": 16,
+            "onode_shard_hits": 19969,
+            "onode_shard_misses": 341,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 29818880,
+            "buffer_miss_bytes": 1585250304,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 14651,
+            "object_ctx_cache_total": 16460,
+            "object_context_valid_windows": 1,
+            "op_r": 16450,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.33273358567385,
+            "windows": 1,
+            "onode_percent": 99.92024723357592,
+            "extent_query_percent": 98.32102412604628,
+            "buffer_byte_percent": 1.8462911864956988,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 89.00972053462941,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 3344327,
+            "onode_misses": 1680,
+            "onode_shard_hits": 3365378,
+            "onode_shard_misses": 25963,
+            "extent_valid_windows": 163,
+            "buffer_hit_bytes": 5575344128,
+            "buffer_miss_bytes": 263368343552,
+            "buffer_valid_windows": 163,
+            "object_ctx_cache_hit": 2451638,
+            "object_ctx_cache_total": 2749756,
+            "object_context_valid_windows": 163,
+            "op_r": 2749764,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 163,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 163,
+            "seconds": 416.0613182903326,
+            "windows": 163,
+            "onode_percent": 99.94979090001904,
+            "extent_query_percent": 99.2344326329909,
+            "buffer_byte_percent": 2.073052606698012,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 89.15838350748211,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 5
+        }
+      },
+      "hot_cold": {
+        "hp_true_positive_count": 1582930,
+        "hp_false_positive_count": 81579,
+        "hp_true_negative_count": 1005213,
+        "hp_false_negative_count": 105061,
+        "hp_eval_drop_count": 0,
+        "hp_predict_error_count": 0,
+        "hp_train_drop_count": 0,
+        "hp_background_error_count": 0,
+        "per_osd_accounting": {
+          "0": {
+            "labeled": 810178,
+            "confusion_total": 810178,
+            "trained": 810178,
+            "io_count": 810178,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "1": {
+            "labeled": 1041795,
+            "confusion_total": 1041795,
+            "trained": 1041795,
+            "io_count": 1041795,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "2": {
+            "labeled": 922810,
+            "confusion_total": 922810,
+            "trained": 922810,
+            "io_count": 922810,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          }
+        },
+        "accuracy_percent": 93.27370825033886,
+        "precision_percent": 95.09891505543077,
+        "recall_percent": 93.77597392403159,
+        "specificity_percent": 92.49359583066493
+      },
+      "sampled_memory": {
+        "0": {
+          "resident_onodes": {
+            "min": 14572,
+            "max": 19106
+          },
+          "tracked_mempool_bytes": {
+            "min": 561696119,
+            "max": 566229996
+          },
+          "onode_struct_bytes": {
+            "min": 10025536,
+            "max": 13144928
+          }
+        },
+        "1": {
+          "resident_onodes": {
+            "min": 72197,
+            "max": 72197
+          },
+          "tracked_mempool_bytes": {
+            "min": 2446174640,
+            "max": 2448809947
+          },
+          "onode_struct_bytes": {
+            "min": 49671536,
+            "max": 49671536
+          }
+        },
+        "2": {
+          "resident_onodes": {
+            "min": 61821,
+            "max": 61821
+          },
+          "tracked_mempool_bytes": {
+            "min": 2163574524,
+            "max": 2165420698
+          },
+          "onode_struct_bytes": {
+            "min": 42532848,
+            "max": 42532848
+          }
+        }
+      }
+    },
+    "ai_training_ses_v2": {
+      "timing": {
+        "nominal_seconds": 600,
+        "switch_target_seconds": 180,
+        "start_wall": 1789792839.008,
+        "switch_request_wall": 1789793019.2324345,
+        "switch_confirmed_wall": 1789793019.2493386,
+        "phases": [
+          {
+            "rd": "p000_measure",
+            "seconds": 600,
+            "start_wall": 1789792839.008
+          }
+        ],
+        "exit_wall": 1789793444.8210793,
+        "returncode": 0,
+        "nominal_end_wall": 1789793439.008,
+        "last_rd_nominal_end_wall": 1789793439.008
+      },
+      "nominal600": {
+        "stages": {
+          "lru": {
+            "onode_hits": 717947,
+            "onode_misses": 5743,
+            "onode_shard_hits": 706995,
+            "onode_shard_misses": 33375,
+            "extent_valid_windows": 79,
+            "buffer_hit_bytes": 2036802056,
+            "buffer_miss_bytes": 75017643686,
+            "buffer_valid_windows": 79,
+            "object_ctx_cache_hit": 650296,
+            "object_ctx_cache_total": 673596,
+            "object_context_valid_windows": 79,
+            "op_r": 669999,
+            "op_w": 3618,
+            "op_rw": 1,
+            "osd_ops_valid_windows": 79,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 79,
+            "seconds": 177.59592395500422,
+            "windows": 79,
+            "onode_percent": 99.20642816675648,
+            "extent_query_percent": 95.49211880546213,
+            "buffer_byte_percent": 2.6433284106925994,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 96.54095333107679,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 8944,
+            "onode_misses": 38,
+            "onode_shard_hits": 9175,
+            "onode_shard_misses": 282,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 26757482,
+            "buffer_miss_bytes": 957685760,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 8297,
+            "object_ctx_cache_total": 8524,
+            "object_context_valid_windows": 1,
+            "op_r": 8524,
+            "op_w": 2,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.5494824226625497,
+            "windows": 1,
+            "onode_percent": 99.5769316410599,
+            "extent_query_percent": 97.01808184413662,
+            "buffer_byte_percent": 2.71803196552392,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 97.33693101830127,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 1506282,
+            "onode_misses": 4502,
+            "onode_shard_hits": 1516940,
+            "onode_shard_misses": 23619,
+            "extent_valid_windows": 158,
+            "buffer_hit_bytes": 5030970125,
+            "buffer_miss_bytes": 155499785819,
+            "buffer_valid_windows": 158,
+            "object_ctx_cache_hit": 1359625,
+            "object_ctx_cache_total": 1405996,
+            "object_context_valid_windows": 158,
+            "op_r": 1393654,
+            "op_w": 12328,
+            "op_rw": 3,
+            "osd_ops_valid_windows": 158,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 158,
+            "seconds": 406.5948647730063,
+            "windows": 158,
+            "onode_percent": 99.70200902312972,
+            "extent_query_percent": 98.46685521294543,
+            "buffer_byte_percent": 3.133960277839231,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 96.7019109584949,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 15,
+          "collection-gap": 1
+        }
+      },
+      "full_rd_schedule": {
+        "stages": {
+          "lru": {
+            "onode_hits": 717947,
+            "onode_misses": 5743,
+            "onode_shard_hits": 706995,
+            "onode_shard_misses": 33375,
+            "extent_valid_windows": 79,
+            "buffer_hit_bytes": 2036802056,
+            "buffer_miss_bytes": 75017643686,
+            "buffer_valid_windows": 79,
+            "object_ctx_cache_hit": 650296,
+            "object_ctx_cache_total": 673596,
+            "object_context_valid_windows": 79,
+            "op_r": 669999,
+            "op_w": 3618,
+            "op_rw": 1,
+            "osd_ops_valid_windows": 79,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 79,
+            "seconds": 177.59592395500422,
+            "windows": 79,
+            "onode_percent": 99.20642816675648,
+            "extent_query_percent": 95.49211880546213,
+            "buffer_byte_percent": 2.6433284106925994,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 96.54095333107679,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 8944,
+            "onode_misses": 38,
+            "onode_shard_hits": 9175,
+            "onode_shard_misses": 282,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 26757482,
+            "buffer_miss_bytes": 957685760,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 8297,
+            "object_ctx_cache_total": 8524,
+            "object_context_valid_windows": 1,
+            "op_r": 8524,
+            "op_w": 2,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.5494824226625497,
+            "windows": 1,
+            "onode_percent": 99.5769316410599,
+            "extent_query_percent": 97.01808184413662,
+            "buffer_byte_percent": 2.71803196552392,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 97.33693101830127,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 1506282,
+            "onode_misses": 4502,
+            "onode_shard_hits": 1516940,
+            "onode_shard_misses": 23619,
+            "extent_valid_windows": 158,
+            "buffer_hit_bytes": 5030970125,
+            "buffer_miss_bytes": 155499785819,
+            "buffer_valid_windows": 158,
+            "object_ctx_cache_hit": 1359625,
+            "object_ctx_cache_total": 1405996,
+            "object_context_valid_windows": 158,
+            "op_r": 1393654,
+            "op_w": 12328,
+            "op_rw": 3,
+            "osd_ops_valid_windows": 158,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 158,
+            "seconds": 406.5948647730063,
+            "windows": 158,
+            "onode_percent": 99.70200902312972,
+            "extent_query_percent": 98.46685521294543,
+            "buffer_byte_percent": 3.133960277839231,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 96.7019109584949,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 15,
+          "collection-gap": 1
+        }
+      },
+      "hot_cold": {
+        "hp_true_positive_count": 877192,
+        "hp_false_positive_count": 43765,
+        "hp_true_negative_count": 492294,
+        "hp_false_negative_count": 33466,
+        "hp_eval_drop_count": 0,
+        "hp_predict_error_count": 0,
+        "hp_train_drop_count": 0,
+        "hp_background_error_count": 0,
+        "per_osd_accounting": {
+          "0": {
+            "labeled": 416648,
+            "confusion_total": 416648,
+            "trained": 416648,
+            "io_count": 416648,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "1": {
+            "labeled": 557092,
+            "confusion_total": 557092,
+            "trained": 557092,
+            "io_count": 557092,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "2": {
+            "labeled": 472977,
+            "confusion_total": 472977,
+            "trained": 472977,
+            "io_count": 472977,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          }
+        },
+        "accuracy_percent": 94.6616373485623,
+        "precision_percent": 95.24787802253526,
+        "recall_percent": 96.32507483599771,
+        "specificity_percent": 91.83578673243058
+      },
+      "sampled_memory": {
+        "0": {
+          "resident_onodes": {
+            "min": 13497,
+            "max": 17137
+          },
+          "tracked_mempool_bytes": {
+            "min": 561582008,
+            "max": 565785547
+          },
+          "onode_struct_bytes": {
+            "min": 9288000,
+            "max": 11790256
+          }
+        },
+        "1": {
+          "resident_onodes": {
+            "min": 71920,
+            "max": 72157
+          },
+          "tracked_mempool_bytes": {
+            "min": 2444580525,
+            "max": 2447900967
+          },
+          "onode_struct_bytes": {
+            "min": 49480960,
+            "max": 49644016
+          }
+        },
+        "2": {
+          "resident_onodes": {
+            "min": 61724,
+            "max": 61782
+          },
+          "tracked_mempool_bytes": {
+            "min": 2162723351,
+            "max": 2165098109
+          },
+          "onode_struct_bytes": {
+            "min": 42466112,
+            "max": 42506016
+          }
+        }
+      }
+    },
+    "bigdata_baleen_v2": {
+      "timing": {
+        "nominal_seconds": 600,
+        "switch_target_seconds": 180,
+        "start_wall": 1789790725.007,
+        "switch_request_wall": 1789790905.248243,
+        "switch_confirmed_wall": 1789790905.2669988,
+        "phases": [
+          {
+            "rd": "p000_native_all",
+            "seconds": 600,
+            "start_wall": 1789790725.007
+          }
+        ],
+        "exit_wall": 1789791331.9905016,
+        "returncode": 0,
+        "nominal_end_wall": 1789791325.007,
+        "last_rd_nominal_end_wall": 1789791325.007
+      },
+      "nominal600": {
+        "stages": {
+          "lru": {
+            "onode_hits": 175739,
+            "onode_misses": 177,
+            "onode_shard_hits": 222953,
+            "onode_shard_misses": 2475,
+            "extent_valid_windows": 68,
+            "buffer_hit_bytes": 8354582528,
+            "buffer_miss_bytes": 13917495296,
+            "buffer_valid_windows": 68,
+            "object_ctx_cache_hit": 172669,
+            "object_ctx_cache_total": 173745,
+            "object_context_valid_windows": 68,
+            "op_r": 173765,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 68,
+            "mds_traverse": 716,
+            "mds_traverse_hit": 716,
+            "mds_valid_windows": 68,
+            "seconds": 176.46465410866952,
+            "windows": 68,
+            "onode_percent": 99.89938379681212,
+            "extent_query_percent": 98.90208847170716,
+            "buffer_byte_percent": 37.51146432775683,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.38070160292382,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 2294,
+            "onode_misses": 2,
+            "onode_shard_hits": 2923,
+            "onode_shard_misses": 33,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 104566784,
+            "buffer_miss_bytes": 186322944,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 2278,
+            "object_ctx_cache_total": 2284,
+            "object_context_valid_windows": 1,
+            "op_r": 2284,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 6,
+            "mds_traverse_hit": 6,
+            "mds_valid_windows": 1,
+            "seconds": 3.155712214662344,
+            "windows": 1,
+            "onode_percent": 99.91289198606272,
+            "extent_query_percent": 98.88362652232748,
+            "buffer_byte_percent": 35.94722464727252,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.73730297723293,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 352228,
+            "onode_misses": 293,
+            "onode_shard_hits": 448909,
+            "onode_shard_misses": 3774,
+            "extent_valid_windows": 182,
+            "buffer_hit_bytes": 16593915904,
+            "buffer_miss_bytes": 28074725376,
+            "buffer_valid_windows": 182,
+            "object_ctx_cache_hit": 348284,
+            "object_ctx_cache_total": 349697,
+            "object_context_valid_windows": 182,
+            "op_r": 349697,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 182,
+            "mds_traverse": 1020,
+            "mds_traverse_hit": 1020,
+            "mds_valid_windows": 182,
+            "seconds": 417.75104899000144,
+            "windows": 182,
+            "onode_percent": 99.91688438419271,
+            "extent_query_percent": 99.16630401406724,
+            "buffer_byte_percent": 37.14891572363492,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.59593591023086,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 20
+        }
+      },
+      "full_rd_schedule": {
+        "stages": {
+          "lru": {
+            "onode_hits": 175739,
+            "onode_misses": 177,
+            "onode_shard_hits": 222953,
+            "onode_shard_misses": 2475,
+            "extent_valid_windows": 68,
+            "buffer_hit_bytes": 8354582528,
+            "buffer_miss_bytes": 13917495296,
+            "buffer_valid_windows": 68,
+            "object_ctx_cache_hit": 172669,
+            "object_ctx_cache_total": 173745,
+            "object_context_valid_windows": 68,
+            "op_r": 173765,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 68,
+            "mds_traverse": 716,
+            "mds_traverse_hit": 716,
+            "mds_valid_windows": 68,
+            "seconds": 176.46465410866952,
+            "windows": 68,
+            "onode_percent": 99.89938379681212,
+            "extent_query_percent": 98.90208847170716,
+            "buffer_byte_percent": 37.51146432775683,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.38070160292382,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 2294,
+            "onode_misses": 2,
+            "onode_shard_hits": 2923,
+            "onode_shard_misses": 33,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 104566784,
+            "buffer_miss_bytes": 186322944,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 2278,
+            "object_ctx_cache_total": 2284,
+            "object_context_valid_windows": 1,
+            "op_r": 2284,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 6,
+            "mds_traverse_hit": 6,
+            "mds_valid_windows": 1,
+            "seconds": 3.155712214662344,
+            "windows": 1,
+            "onode_percent": 99.91289198606272,
+            "extent_query_percent": 98.88362652232748,
+            "buffer_byte_percent": 35.94722464727252,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.73730297723293,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 352228,
+            "onode_misses": 293,
+            "onode_shard_hits": 448909,
+            "onode_shard_misses": 3774,
+            "extent_valid_windows": 182,
+            "buffer_hit_bytes": 16593915904,
+            "buffer_miss_bytes": 28074725376,
+            "buffer_valid_windows": 182,
+            "object_ctx_cache_hit": 348284,
+            "object_ctx_cache_total": 349697,
+            "object_context_valid_windows": 182,
+            "op_r": 349697,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 182,
+            "mds_traverse": 1020,
+            "mds_traverse_hit": 1020,
+            "mds_valid_windows": 182,
+            "seconds": 417.75104899000144,
+            "windows": 182,
+            "onode_percent": 99.91688438419271,
+            "extent_query_percent": 99.16630401406724,
+            "buffer_byte_percent": 37.14891572363492,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.59593591023086,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 20
+        }
+      },
+      "hot_cold": {
+        "hp_true_positive_count": 323556,
+        "hp_false_positive_count": 17470,
+        "hp_true_negative_count": 6357,
+        "hp_false_negative_count": 5678,
+        "hp_eval_drop_count": 0,
+        "hp_predict_error_count": 0,
+        "hp_train_drop_count": 0,
+        "hp_background_error_count": 0,
+        "per_osd_accounting": {
+          "0": {
+            "labeled": 224684,
+            "confusion_total": 224684,
+            "trained": 224684,
+            "io_count": 224684,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "1": {
+            "labeled": 100352,
+            "confusion_total": 100352,
+            "trained": 100352,
+            "io_count": 100352,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "2": {
+            "labeled": 28025,
+            "confusion_total": 28025,
+            "trained": 28025,
+            "io_count": 28025,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          }
+        },
+        "accuracy_percent": 93.44362588901068,
+        "precision_percent": 94.87722343750916,
+        "recall_percent": 98.27539075551128,
+        "specificity_percent": 26.679817014311496
+      },
+      "sampled_memory": {
+        "0": {
+          "resident_onodes": {
+            "min": 15682,
+            "max": 15819
+          },
+          "tracked_mempool_bytes": {
+            "min": 559248690,
+            "max": 561045336
+          },
+          "onode_struct_bytes": {
+            "min": 10789216,
+            "max": 10883472
+          }
+        },
+        "1": {
+          "resident_onodes": {
+            "min": 71609,
+            "max": 71609
+          },
+          "tracked_mempool_bytes": {
+            "min": 2330206136,
+            "max": 2444720051
+          },
+          "onode_struct_bytes": {
+            "min": 49266992,
+            "max": 49266992
+          }
+        },
+        "2": {
+          "resident_onodes": {
+            "min": 61439,
+            "max": 61439
+          },
+          "tracked_mempool_bytes": {
+            "min": 2058313058,
+            "max": 2162880314
+          },
+          "onode_struct_bytes": {
+            "min": 42270032,
+            "max": 42270032
+          }
+        }
+      }
+    },
+    "graph_graphchi_psw_v2": {
+      "timing": {
+        "nominal_seconds": 600,
+        "switch_target_seconds": 180,
+        "start_wall": 1789791470.018,
+        "switch_request_wall": 1789791650.2424898,
+        "switch_confirmed_wall": 1789791650.26392,
+        "phases": [
+          {
+            "rd": "p000_psw_interval_0",
+            "seconds": 150,
+            "start_wall": 1789791470.018
+          },
+          {
+            "rd": "p001_psw_interval_1",
+            "seconds": 150,
+            "start_wall": 1789791624.006
+          },
+          {
+            "rd": "p002_psw_interval_2",
+            "seconds": 150,
+            "start_wall": 1789791777.006
+          },
+          {
+            "rd": "p003_psw_interval_3",
+            "seconds": 150,
+            "start_wall": 1789791930.006
+          }
+        ],
+        "exit_wall": 1789792084.9065588,
+        "returncode": 0,
+        "nominal_end_wall": 1789792070.018,
+        "last_rd_nominal_end_wall": 1789792080.006
+      },
+      "nominal600": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1397690,
+            "onode_misses": 2927,
+            "onode_shard_hits": 1772352,
+            "onode_shard_misses": 32475,
+            "extent_valid_windows": 80,
+            "buffer_hit_bytes": 1210527045,
+            "buffer_miss_bytes": 179025936384,
+            "buffer_valid_windows": 80,
+            "object_ctx_cache_hit": 1362352,
+            "object_ctx_cache_total": 1375102,
+            "object_context_valid_windows": 80,
+            "op_r": 1375104,
+            "op_w": 10,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 80,
+            "mds_traverse": 440,
+            "mds_traverse_hit": 440,
+            "mds_valid_windows": 80,
+            "seconds": 177.54923147966718,
+            "windows": 80,
+            "onode_percent": 99.79102067160402,
+            "extent_query_percent": 98.20065856727543,
+            "buffer_byte_percent": 0.6716327107011059,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.07279605440178,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 16622,
+            "onode_misses": 38,
+            "onode_shard_hits": 21035,
+            "onode_shard_misses": 410,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 21364736,
+            "buffer_miss_bytes": 2119827456,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 16175,
+            "object_ctx_cache_total": 16341,
+            "object_context_valid_windows": 1,
+            "op_r": 16327,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.1867295206611743,
+            "windows": 1,
+            "onode_percent": 99.77190876350541,
+            "extent_query_percent": 98.08813243180228,
+            "buffer_byte_percent": 0.997796278158668,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 98.98415029679946,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 3265850,
+            "onode_misses": 2840,
+            "onode_shard_hits": 4197638,
+            "onode_shard_misses": 31273,
+            "extent_valid_windows": 190,
+            "buffer_hit_bytes": 4199809024,
+            "buffer_miss_bytes": 418117713920,
+            "buffer_valid_windows": 190,
+            "object_ctx_cache_hit": 3198694,
+            "object_ctx_cache_total": 3222023,
+            "object_context_valid_windows": 190,
+            "op_r": 3222033,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 190,
+            "mds_traverse": 888,
+            "mds_traverse_hit": 888,
+            "mds_valid_windows": 190,
+            "seconds": 417.6507308960038,
+            "windows": 190,
+            "onode_percent": 99.91311503997014,
+            "extent_query_percent": 99.26049519604456,
+            "buffer_byte_percent": 0.9944671475440771,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.27595178557074,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 13
+        }
+      },
+      "full_rd_schedule": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1397690,
+            "onode_misses": 2927,
+            "onode_shard_hits": 1772352,
+            "onode_shard_misses": 32475,
+            "extent_valid_windows": 80,
+            "buffer_hit_bytes": 1210527045,
+            "buffer_miss_bytes": 179025936384,
+            "buffer_valid_windows": 80,
+            "object_ctx_cache_hit": 1362352,
+            "object_ctx_cache_total": 1375102,
+            "object_context_valid_windows": 80,
+            "op_r": 1375104,
+            "op_w": 10,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 80,
+            "mds_traverse": 440,
+            "mds_traverse_hit": 440,
+            "mds_valid_windows": 80,
+            "seconds": 177.54923147966718,
+            "windows": 80,
+            "onode_percent": 99.79102067160402,
+            "extent_query_percent": 98.20065856727543,
+            "buffer_byte_percent": 0.6716327107011059,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.07279605440178,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 16622,
+            "onode_misses": 38,
+            "onode_shard_hits": 21035,
+            "onode_shard_misses": 410,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 21364736,
+            "buffer_miss_bytes": 2119827456,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 16175,
+            "object_ctx_cache_total": 16341,
+            "object_context_valid_windows": 1,
+            "op_r": 16327,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.1867295206611743,
+            "windows": 1,
+            "onode_percent": 99.77190876350541,
+            "extent_query_percent": 98.08813243180228,
+            "buffer_byte_percent": 0.997796278158668,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 98.98415029679946,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 3357512,
+            "onode_misses": 2883,
+            "onode_shard_hits": 4316376,
+            "onode_shard_misses": 31762,
+            "extent_valid_windows": 195,
+            "buffer_hit_bytes": 4315807744,
+            "buffer_miss_bytes": 429908688896,
+            "buffer_valid_windows": 195,
+            "object_ctx_cache_hit": 3289111,
+            "object_ctx_cache_total": 3312869,
+            "object_context_valid_windows": 195,
+            "op_r": 3312875,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 195,
+            "mds_traverse": 888,
+            "mds_traverse_hit": 888,
+            "mds_valid_windows": 195,
+            "seconds": 429.2456780283343,
+            "windows": 195,
+            "onode_percent": 99.91420651441274,
+            "extent_query_percent": 99.26952640417576,
+            "buffer_byte_percent": 0.9939116234563988,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.28285724548722,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 8
+        }
+      },
+      "hot_cold": {
+        "hp_true_positive_count": 1197036,
+        "hp_false_positive_count": 210927,
+        "hp_true_negative_count": 1580794,
+        "hp_false_negative_count": 337197,
+        "hp_eval_drop_count": 0,
+        "hp_predict_error_count": 0,
+        "hp_train_drop_count": 0,
+        "hp_background_error_count": 0,
+        "per_osd_accounting": {
+          "0": {
+            "labeled": 993681,
+            "confusion_total": 993681,
+            "trained": 993681,
+            "io_count": 993681,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "1": {
+            "labeled": 1252621,
+            "confusion_total": 1252621,
+            "trained": 1252621,
+            "io_count": 1252621,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "2": {
+            "labeled": 1079652,
+            "confusion_total": 1079652,
+            "trained": 1079652,
+            "io_count": 1079652,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          }
+        },
+        "accuracy_percent": 83.51979612466077,
+        "precision_percent": 85.01899552758134,
+        "recall_percent": 78.02178678205983,
+        "specificity_percent": 88.22768723478711
+      },
+      "sampled_memory": {
+        "0": {
+          "resident_onodes": {
+            "min": 14692,
+            "max": 15955
+          },
+          "tracked_mempool_bytes": {
+            "min": 559091798,
+            "max": 566573438
+          },
+          "onode_struct_bytes": {
+            "min": 10108096,
+            "max": 10977040
+          }
+        },
+        "1": {
+          "resident_onodes": {
+            "min": 71723,
+            "max": 71723
+          },
+          "tracked_mempool_bytes": {
+            "min": 2444125305,
+            "max": 2446299377
+          },
+          "onode_struct_bytes": {
+            "min": 49345424,
+            "max": 49345424
+          }
+        },
+        "2": {
+          "resident_onodes": {
+            "min": 61538,
+            "max": 61538
+          },
+          "tracked_mempool_bytes": {
+            "min": 2162444919,
+            "max": 2164378803
+          },
+          "onode_struct_bytes": {
+            "min": 42338144,
+            "max": 42338144
+          }
+        }
+      }
+    },
+    "hpc_wrf_continuous_v2": {
+      "timing": {
+        "nominal_seconds": 600,
+        "switch_target_seconds": 180,
+        "start_wall": 1789792135.009,
+        "switch_request_wall": 1789792315.2530873,
+        "switch_confirmed_wall": 1789792315.2730784,
+        "phases": [
+          {
+            "rd": "p000_cold_start",
+            "seconds": 80,
+            "start_wall": 1789792135.009
+          },
+          {
+            "rd": "p001_history_01_04",
+            "seconds": 100,
+            "start_wall": 1789792217.005
+          },
+          {
+            "rd": "p002_history_05_08",
+            "seconds": 100,
+            "start_wall": 1789792319.005
+          },
+          {
+            "rd": "p003_restart_08h_output",
+            "seconds": 60,
+            "start_wall": 1789792421.005
+          },
+          {
+            "rd": "p004_history_09_12",
+            "seconds": 100,
+            "start_wall": 1789792483.005
+          },
+          {
+            "rd": "p005_history_13_16",
+            "seconds": 100,
+            "start_wall": 1789792585.005
+          },
+          {
+            "rd": "p006_restart_16h_output",
+            "seconds": 60,
+            "start_wall": 1789792687.004
+          }
+        ],
+        "exit_wall": 1789792750.1614966,
+        "returncode": 0,
+        "nominal_end_wall": 1789792735.009,
+        "last_rd_nominal_end_wall": 1789792747.004
+      },
+      "nominal600": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1146087,
+            "onode_misses": 1570,
+            "onode_shard_hits": 1473784,
+            "onode_shard_misses": 17457,
+            "extent_valid_windows": 66,
+            "buffer_hit_bytes": 21186884758,
+            "buffer_miss_bytes": 127732154368,
+            "buffer_valid_windows": 66,
+            "object_ctx_cache_hit": 1130428,
+            "object_ctx_cache_total": 1136163,
+            "object_context_valid_windows": 66,
+            "op_r": 1136175,
+            "op_w": 8,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 66,
+            "mds_traverse": 128,
+            "mds_traverse_hit": 128,
+            "mds_valid_windows": 66,
+            "seconds": 178.1486882613342,
+            "windows": 66,
+            "onode_percent": 99.86319954481174,
+            "extent_query_percent": 98.82936426774747,
+            "buffer_byte_percent": 14.227116211832278,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.49523087796382,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 12419,
+            "onode_misses": 0,
+            "onode_shard_hits": 16299,
+            "onode_shard_misses": 0,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 415694848,
+            "buffer_miss_bytes": 1211826176,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 12416,
+            "object_ctx_cache_total": 12419,
+            "object_context_valid_windows": 1,
+            "op_r": 12413,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.4580136316702315,
+            "windows": 1,
+            "onode_percent": 100.0,
+            "extent_query_percent": 100.0,
+            "buffer_byte_percent": 25.541596198759766,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 99.97584346565746,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 2776973,
+            "onode_misses": 4576,
+            "onode_shard_hits": 3555388,
+            "onode_shard_misses": 50446,
+            "extent_valid_windows": 184,
+            "buffer_hit_bytes": 46888583168,
+            "buffer_miss_bytes": 313206046720,
+            "buffer_valid_windows": 184,
+            "object_ctx_cache_hit": 2730180,
+            "object_ctx_cache_total": 2747305,
+            "object_context_valid_windows": 184,
+            "op_r": 2747302,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 184,
+            "mds_traverse": 736,
+            "mds_traverse_hit": 736,
+            "mds_valid_windows": 184,
+            "seconds": 417.34061964266607,
+            "windows": 184,
+            "onode_percent": 99.83548734895557,
+            "extent_query_percent": 98.6009893966278,
+            "buffer_byte_percent": 13.021183676797326,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.3766618558915,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 12
+        }
+      },
+      "full_rd_schedule": {
+        "stages": {
+          "lru": {
+            "onode_hits": 1146087,
+            "onode_misses": 1570,
+            "onode_shard_hits": 1473784,
+            "onode_shard_misses": 17457,
+            "extent_valid_windows": 66,
+            "buffer_hit_bytes": 21186884758,
+            "buffer_miss_bytes": 127732154368,
+            "buffer_valid_windows": 66,
+            "object_ctx_cache_hit": 1130428,
+            "object_ctx_cache_total": 1136163,
+            "object_context_valid_windows": 66,
+            "op_r": 1136175,
+            "op_w": 8,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 66,
+            "mds_traverse": 128,
+            "mds_traverse_hit": 128,
+            "mds_valid_windows": 66,
+            "seconds": 178.1486882613342,
+            "windows": 66,
+            "onode_percent": 99.86319954481174,
+            "extent_query_percent": 98.82936426774747,
+            "buffer_byte_percent": 14.227116211832278,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.49523087796382,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "transition": {
+            "onode_hits": 12419,
+            "onode_misses": 0,
+            "onode_shard_hits": 16299,
+            "onode_shard_misses": 0,
+            "extent_valid_windows": 1,
+            "buffer_hit_bytes": 415694848,
+            "buffer_miss_bytes": 1211826176,
+            "buffer_valid_windows": 1,
+            "object_ctx_cache_hit": 12416,
+            "object_ctx_cache_total": 12419,
+            "object_context_valid_windows": 1,
+            "op_r": 12413,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 1,
+            "mds_traverse": 0,
+            "mds_traverse_hit": 0,
+            "mds_valid_windows": 1,
+            "seconds": 2.4580136316702315,
+            "windows": 1,
+            "onode_percent": 100.0,
+            "extent_query_percent": 100.0,
+            "buffer_byte_percent": 25.541596198759766,
+            "mds_traversal_percent": null,
+            "object_context_query_percent": 99.97584346565746,
+            "strict_gt95": true,
+            "strict_gt96": true
+          },
+          "s3fifo": {
+            "onode_hits": 2859223,
+            "onode_misses": 4628,
+            "onode_shard_hits": 3662109,
+            "onode_shard_misses": 51018,
+            "extent_valid_windows": 189,
+            "buffer_hit_bytes": 48895688704,
+            "buffer_miss_bytes": 321913421824,
+            "buffer_valid_windows": 189,
+            "object_ctx_cache_hit": 2811649,
+            "object_ctx_cache_total": 2829051,
+            "object_context_valid_windows": 189,
+            "op_r": 2829052,
+            "op_w": 0,
+            "op_rw": 0,
+            "osd_ops_valid_windows": 189,
+            "mds_traverse": 736,
+            "mds_traverse_hit": 736,
+            "mds_valid_windows": 189,
+            "seconds": 429.2223527896617,
+            "windows": 189,
+            "onode_percent": 99.83839941393599,
+            "extent_query_percent": 98.62600982945102,
+            "buffer_byte_percent": 13.18621557986447,
+            "mds_traversal_percent": 100.0,
+            "object_context_query_percent": 99.38488206822711,
+            "strict_gt95": true,
+            "strict_gt96": true
+          }
+        },
+        "rejected_intervals": {
+          "outside-measurement-window": 7
+        }
+      },
+      "hot_cold": {
+        "hp_true_positive_count": 956664,
+        "hp_false_positive_count": 149323,
+        "hp_true_negative_count": 1392886,
+        "hp_false_negative_count": 348847,
+        "hp_eval_drop_count": 0,
+        "hp_predict_error_count": 0,
+        "hp_train_drop_count": 0,
+        "hp_background_error_count": 0,
+        "per_osd_accounting": {
+          "0": {
+            "labeled": 810834,
+            "confusion_total": 810834,
+            "trained": 810834,
+            "io_count": 810834,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "1": {
+            "labeled": 1102246,
+            "confusion_total": 1102246,
+            "trained": 1102246,
+            "io_count": 1102246,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          },
+          "2": {
+            "labeled": 934640,
+            "confusion_total": 934640,
+            "trained": 934640,
+            "io_count": 934640,
+            "pending": 0,
+            "awaiting_prediction": 0,
+            "training_queue": 0,
+            "status_generation_coherent": true,
+            "labels_match_confusion": true
+          }
+        },
+        "accuracy_percent": 82.50635596196256,
+        "precision_percent": 86.49866589751959,
+        "recall_percent": 73.27889232645302,
+        "specificity_percent": 90.31758989864538
+      },
+      "sampled_memory": {
+        "0": {
+          "resident_onodes": {
+            "min": 13368,
+            "max": 14632
+          },
+          "tracked_mempool_bytes": {
+            "min": 562945130,
+            "max": 566229063
+          },
+          "onode_struct_bytes": {
+            "min": 9197184,
+            "max": 10066816
+          }
+        },
+        "1": {
+          "resident_onodes": {
+            "min": 71827,
+            "max": 71827
+          },
+          "tracked_mempool_bytes": {
+            "min": 2443887385,
+            "max": 2445825094
+          },
+          "onode_struct_bytes": {
+            "min": 49416976,
+            "max": 49416976
+          }
+        },
+        "2": {
+          "resident_onodes": {
+            "min": 61633,
+            "max": 61633
+          },
+          "tracked_mempool_bytes": {
+            "min": 2162122501,
+            "max": 2163747951
+          },
+          "onode_struct_bytes": {
+            "min": 42403504,
+            "max": 42403504
+          }
+        }
+      }
+    }
+  },
+  "pooled_onode_percent": 99.87662918352606
+}

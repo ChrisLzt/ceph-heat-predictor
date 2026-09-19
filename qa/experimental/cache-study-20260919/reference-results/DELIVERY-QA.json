@@ -1,0 +1,23 @@
+{
+  "run_id": "fixed8g-ses-postprepare-001",
+  "cases": 5,
+  "independent_csv_recalculation": true,
+  "all_application_returncodes_zero": true,
+  "all_file_inventories_unchanged": true,
+  "csv_row_counts": {
+    "cache-diagnostics": 5,
+    "hot-cold-results": 5,
+    "sampling-quality": 5,
+    "workload-distribution": 14,
+    "realtime-diagnostics": 5
+  },
+  "remote_archive_sha256": "6bd5e9dc84dd14f2459291f2ae02c1f1f589efecbb8a3b911e23ce2c3506169a",
+  "remote_archive_members": 7441,
+  "packaged_files": 132,
+  "archived_histogram_audits_match": 5,
+  "ses_completed_reports": 2,
+  "certification_claim": false,
+  "bundle": "cache-study-results-20260919.tar.gz",
+  "bundle_sha256": "c354410b71a1c1df59f1b8aaac3e4d16286f60c419cd59a69b697ad0c26b08e4",
+  "roundtrip_hashes_valid": true
+}
