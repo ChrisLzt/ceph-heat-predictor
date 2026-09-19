@@ -158,6 +158,83 @@ TEST_F(OnodeCacheSwitch, MainGhostAndIdempotentSwitch)
   EXPECT_EQ(0u, cache->sum_bins(0, 1));
 }
 
+TEST_F(OnodeCacheSwitch, OverlappingHitsPromoteReusedOnode)
+{
+  switch_to(Policy::S3FIFO);
+  for (int i = 0; i < 20; ++i) {
+    add(i);
+  }
+  // Keep both lookup references alive: two hits, only one final unpin.
+  auto first = coll->onode_space.lookup(oid(0));
+  auto second = coll->onode_space.lookup(oid(0));
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  auto* reused = first.get();
+  EXPECT_EQ(2, reused->s3fifo_freq);
+  second.reset();
+  first.reset();
+  EXPECT_EQ(2, reused->s3fifo_freq);
+  {
+    std::lock_guard l(cache->lock);
+    cache->_trim_to(19);
+  }
+  EXPECT_EQ(1, snapshot().at("main_entries").get_int());
+  EXPECT_EQ(19u, cache->_get_num());
+  EXPECT_EQ(19u, cache->sum_bins(0, 1));
+  EXPECT_TRUE(coll->onode_space.lookup(oid(0)));
+  EXPECT_EQ(3u, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
+}
+
+TEST_F(OnodeCacheSwitch, ReferenceReleaseIsNotAnotherHit)
+{
+  switch_to(Policy::S3FIFO);
+  auto inserted = add(0);
+  auto* raw = inserted.get();
+  inserted.reset();
+  EXPECT_EQ(0, raw->s3fifo_freq);
+  {
+    auto hit = coll->onode_space.lookup(oid(0));
+    auto copy = hit;
+    EXPECT_EQ(1, raw->s3fifo_freq);
+  }
+  EXPECT_EQ(1, raw->s3fifo_freq);
+  {
+    BlueStore::OnodeRef internal_reference(raw);
+  }
+  EXPECT_EQ(1, raw->s3fifo_freq);
+  EXPECT_EQ(1u, logger->get(l_bluestore_onode_hits));
+  for (int i = 0; i < 10; ++i) {
+    auto hit = coll->onode_space.lookup(oid(0));
+    EXPECT_LE(raw->s3fifo_freq, 3);
+  }
+  EXPECT_EQ(3, raw->s3fifo_freq);
+}
+
+TEST_F(OnodeCacheSwitch, GhostShrinkKeepsMostRecentEvictions)
+{
+  switch_to(Policy::S3FIFO);
+  for (int i = 0; i < 10; ++i) {
+    add(i);
+  }
+  {
+    std::lock_guard l(cache->lock);
+    cache->_trim_to(5);
+  }
+  EXPECT_EQ(4, snapshot().at("ghost_entries").get_int());
+  // Remove residents so a subsequent shrink does not add new ghosts.
+  coll->onode_space.clear();
+  {
+    std::lock_guard l(cache->lock);
+    cache->_trim_to(2);
+  }
+  EXPECT_EQ(1, snapshot().at("ghost_entries").get_int());
+  add(4);
+  EXPECT_EQ(1, snapshot().at("main_entries").get_int());
+  add(1);
+  EXPECT_EQ(1, snapshot().at("small_entries").get_int());
+}
+
 TEST_F(OnodeCacheSwitch, StaleUnpinDispatchesToDestinationShard)
 {
   auto other_cache = std::unique_ptr<BlueStore::OnodeCacheShard>(

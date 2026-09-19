@@ -1474,6 +1474,16 @@ struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
              << num << dendl;
   }
 
+  void _touch(BlueStore::Onode* o) override {
+    // Count reuse while the entry is in an eviction queue, not when the
+    // last reference is released. Overlapping lookups must count separately.
+    // Unlinked entries still start their admission history when unpinned.
+    if (policy == Policy::S3FIFO && o->lru_item.is_linked() &&
+        o->s3fifo_freq < 3) {
+      ++o->s3fifo_freq;
+    }
+  }
+
   void _maybe_unpin(BlueStore::Onode* o) override {
     if (policy == Policy::LRU) {
       return LruOnodeCacheShard::_maybe_unpin(o);
@@ -1506,19 +1516,15 @@ struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
           o->c->onode_space._remove(o->oid);
         }
       } else {
-        // Already in a list: update frequency (S3FIFO does NOT move position)
-        uint8_t old_freq = o->s3fifo_freq;
-        if (old_freq < 3) {
-          o->s3fifo_freq = static_cast<uint8_t>(old_freq + 1);
-        }
-        // Update age bin (move to current bin)
+        // Lookup already recorded reuse. Reference release only updates age;
+        // it must not count as another hit or change FIFO position.
         if (o->cache_age_bin != age_bins.front()) {
           *(o->cache_age_bin) -= 1;
           o->cache_age_bin = age_bins.front();
           *(o->cache_age_bin) += 1;
         }
         dout(20) << __func__ << " " << this << " " << o->oid
-                 << " freq updated to " << static_cast<int>(o->s3fifo_freq)
+                 << " freq " << static_cast<int>(o->s3fifo_freq)
                  << dendl;
       }
     }
@@ -1531,7 +1537,9 @@ struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
     // Dynamically resize ghost queue based on current target capacity
     uint64_t ghost_cap = static_cast<uint64_t>(new_size * ghost_capacity_ratio);
     if (ghost_cap < 1) ghost_cap = 1;
-    ghost_q.set_capacity(ghost_cap);
+    // push_back appends the newest eviction. When autotuning shrinks the
+    // budget, discard the oldest ghosts, as normal FIFO insertion does.
+    ghost_q.rset_capacity(ghost_cap);
 
     uint64_t total = small_q.size() + main_q.size();
     if (new_size >= total) {
@@ -2359,9 +2367,10 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
                             << " " << p->second->nref
                             << " " << p->second->cached
 			    << dendl;
-      // This will pin onode and implicitly touch the cache when Onode
-      // eventually will become unpinned
+      // S3FIFO records each lookup under the shard lock; LRU still updates
+      // recency when the onode eventually becomes unpinned.
       o = p->second;
+      cache->_touch(o.get());
 
       cache->logger->inc(l_bluestore_onode_hits);
     }

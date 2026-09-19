@@ -1414,6 +1414,7 @@ private:
     virtual void _add(Onode* o, int level) = 0;
     virtual void _rm(Onode* o) = 0;
     virtual void _move_pinned(OnodeCacheShard *to, Onode *o) = 0;
+    virtual void _touch(Onode* o) {}
     virtual void _maybe_unpin(Onode* o) = 0;
     virtual bool _supports_policy(Policy policy) const = 0;
     virtual void _set_policy(Policy policy) = 0;
