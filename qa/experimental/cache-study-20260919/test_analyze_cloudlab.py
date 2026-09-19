@@ -4,7 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from collections import Counter
-from analyze_cloudlab import analyze_case, classify, delta, interval, metrics, percent
+from analyze_cloudlab import analyze_case, classify, delta, interval, metrics, percent, suite_completion
+from run_cloudlab_study import CASES
 
 
 def sample(wall, hits=10, misses=2, policy='lru', generation=0):
@@ -122,6 +123,37 @@ class AnalysisTests(unittest.TestCase):
             self.assertIsNone(report['hot_cold']['accuracy_percent'])
             self.assertTrue(report['hot_cold']['per_osd_accounting']['0']['labels_match_confusion'])
             self.assertEqual((root / 'intervals.csv').read_text().strip(), 'begin_wall,end_wall,stage')
+
+
+class SuiteCompletionTests(unittest.TestCase):
+    def check(self, requested, completed):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            if requested is not None:
+                (root / 'COMPLETE.json').write_text(json.dumps({'cases': requested}))
+            return suite_completion(root, completed)
+
+    def test_selected_cases_are_not_a_full_suite(self):
+        result = self.check(CASES[:3], CASES[:3])
+        self.assertTrue(result['requested_cases_complete'])
+        self.assertFalse(result['complete_suite'])
+
+    def test_all_five_complete(self):
+        result = self.check(CASES, CASES)
+        self.assertTrue(result['requested_cases_complete'])
+        self.assertTrue(result['complete_suite'])
+
+    def test_missing_case_is_incomplete(self):
+        result = self.check(CASES, CASES[:3])
+        self.assertFalse(result['requested_cases_complete'])
+        self.assertFalse(result['complete_suite'])
+
+    def test_missing_marker_is_incomplete(self):
+        self.assertFalse(self.check(None, CASES)['complete_suite'])
+
+    def test_invalid_selection_is_not_complete(self):
+        self.assertFalse(self.check([CASES[0], CASES[0]], [CASES[0]])['requested_cases_complete'])
+        self.assertFalse(self.check(['unknown'], ['unknown'])['requested_cases_complete'])
 
 
 if __name__ == '__main__':

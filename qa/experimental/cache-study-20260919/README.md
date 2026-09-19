@@ -57,9 +57,10 @@ From this directory, Python 3 with the standard library is sufficient for:
 python3 -m unittest test_analyze_cloudlab test_audit_vdbench test_export_results -q
 ```
 
-These 20 tests exercise zero denominators, strict thresholds, query weighting,
+These 25 tests exercise zero denominators, strict thresholds, query weighting,
 switch boundaries, missing/reset counters, telemetry gaps, independent optional
-diagnostics, histogram counts, and short-window exports. They do not start
+diagnostics, histogram counts, short-window exports, and partial/full suite
+completion. They do not start
 containers, contact nodes, or generate storage I/O.
 
 With the external pinned `workload_common` package on `PYTHONPATH`, run the
@@ -82,6 +83,13 @@ Use `RUNBOOK.md` only after checking the existing lab is idle. The controller
 samples three OSDs, starts each case serially, requests LRU-to-S3FIFO/HP switching
 at 180 seconds, records acknowledgements, drains HP labels, and restores baseline
 settings. Dataset preparation is separate. Concurrent controllers are unsupported.
+
+`--cases` selects an ordered, non-repeated subset and `--output-root` changes the
+local evidence directory. Defaults still run all five cases. A selected three-case
+run is `requested_cases_complete`, not `complete_suite`; neither flag certifies
+metric thresholds or telemetry quality. The implementation-fix comparison using
+these options is recorded separately in
+[the S3FIFO regression report](../onode-s3fifo-hit-accounting-20260919/README.md).
 
 For offline recomputation, restore the separately delivered evidence package and
 point the scripts to its completed run, not to `reference-results`:

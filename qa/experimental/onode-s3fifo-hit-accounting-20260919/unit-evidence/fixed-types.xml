@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="27" failures="0" disabled="0" errors="0" time="10.897" timestamp="2026-09-19T11:35:55.426" name="AllTests">
+  <testsuite name="bluestore" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:35:55.426">
+    <testcase name="sizeof" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore" />
+  </testsuite>
+  <testsuite name="sb_info_space_efficient_map_t" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:35:55.426">
+    <testcase name="basic" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="sb_info_space_efficient_map_t" />
+  </testsuite>
+  <testsuite name="bluestore_extent_ref_map_t" tests="5" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:35:55.426">
+    <testcase name="add" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_extent_ref_map_t" />
+    <testcase name="get" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_extent_ref_map_t" />
+    <testcase name="put" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_extent_ref_map_t" />
+    <testcase name="contains" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_extent_ref_map_t" />
+    <testcase name="intersects" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_extent_ref_map_t" />
+  </testsuite>
+  <testsuite name="bluestore_blob_t" tests="6" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:35:55.426">
+    <testcase name="calc_csum" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+    <testcase name="can_split" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+    <testcase name="can_split_at" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+    <testcase name="prune_tail" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+    <testcase name="unused" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+    <testcase name="wrong_map_bl_in_51682" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.426" classname="bluestore_blob_t" />
+  </testsuite>
+  <testsuite name="Blob" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.001" timestamp="2026-09-19T11:35:55.426">
+    <testcase name="put_ref" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:35:55.426" classname="Blob" />
+    <testcase name="split" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.427" classname="Blob" />
+    <testcase name="legacy_decode" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.427" classname="Blob" />
+  </testsuite>
+  <testsuite name="ExtentMap" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:35:55.427">
+    <testcase name="seek_lextent" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.427" classname="ExtentMap" />
+    <testcase name="has_any_lextents" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.427" classname="ExtentMap" />
+    <testcase name="compress_extent_map" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:55.427" classname="ExtentMap" />
+  </testsuite>
+  <testsuite name="GarbageCollector" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0.001" timestamp="2026-09-19T11:35:55.427">
+    <testcase name="BasicTest" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:35:55.427" classname="GarbageCollector" />
+  </testsuite>
+  <testsuite name="BlueStoreRepairer" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="1.265" timestamp="2026-09-19T11:35:55.428">
+    <testcase name="StoreSpaceTracker" status="run" result="completed" time="1.265" timestamp="2026-09-19T11:35:55.428" classname="BlueStoreRepairer" />
+  </testsuite>
+  <testsuite name="SimpleBitmap" tests="4" failures="0" disabled="0" skipped="0" errors="0" time="9.629" timestamp="2026-09-19T11:35:56.693">
+    <testcase name="basic" status="run" result="completed" time="3.161" timestamp="2026-09-19T11:35:56.693" classname="SimpleBitmap" />
+    <testcase name="intersection" status="run" result="completed" time="6.343" timestamp="2026-09-19T11:35:59.854" classname="SimpleBitmap" />
+    <testcase name="boundaries" status="run" result="completed" time="0.093" timestamp="2026-09-19T11:36:06.197" classname="SimpleBitmap" />
+    <testcase name="boundaries2" status="run" result="completed" time="0.032" timestamp="2026-09-19T11:36:06.290" classname="SimpleBitmap" />
+  </testsuite>
+  <testsuite name="shared_blob_2hash_tracker_t" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0.001" timestamp="2026-09-19T11:36:06.322">
+    <testcase name="basic_test" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:36:06.322" classname="shared_blob_2hash_tracker_t" />
+  </testsuite>
+  <testsuite name="bluestore_blob_use_tracker_t" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-19T11:36:06.323">
+    <testcase name="mempool_stats_test" status="run" result="completed" time="0" timestamp="2026-09-19T11:36:06.323" classname="bluestore_blob_use_tracker_t" />
+  </testsuite>
+</testsuites>

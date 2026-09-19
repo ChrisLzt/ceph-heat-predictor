@@ -1,0 +1,1 @@
+{"before": {"target": "/mnt/ceph-lab/cephfs", "fstype": "ceph", "source": "10.10.1.1:6789:/", "options": "rw,relatime,name=hp118,secret=<hidden>,acl,mds_namespace=labfs"}, "after": {"target": "/mnt/ceph-lab/cephfs", "fstype": "ceph", "source": "10.10.1.1:6789:/", "options": "rw,relatime,name=hp118,acl,mds_namespace=labfs"}, "kernel": "6.8.0-138-generic"}

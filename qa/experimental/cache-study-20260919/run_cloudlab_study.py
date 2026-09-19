@@ -62,8 +62,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--run-id', required=True)
     ap.add_argument('--check-only', action='store_true')
+    ap.add_argument('--cases', nargs='+', choices=CASES, default=CASES)
+    ap.add_argument('--output-root', type=Path,
+                    default=Path(__file__).resolve().parent / 'cloudlab-runs')
     args = ap.parse_args()
-    root = Path(__file__).resolve().parent / 'cloudlab-runs' / args.run_id
+    if len(args.cases) != len(set(args.cases)):
+        ap.error('--cases must not contain duplicates')
+    root = args.output_root / args.run_id
     root.mkdir(parents=True, exist_ok=False)
     agents = [Agent(i) for i in range(3)]
     pool = ThreadPoolExecutor(max_workers=3)
@@ -90,7 +95,7 @@ def main():
         while not agents[1].call('preparation')['all_ready']:
             stage('all', 'waiting-for-all-five-persistent-datasets')
             time.sleep(60)
-        for case in CASES:
+        for case in args.cases:
             out = root / case
             out.mkdir()
             initial = agents[0].call('cluster')
@@ -159,7 +164,7 @@ def main():
             write(out / 'final-cluster.json', agents[0].call('cluster'))
             write(out / 'COMPLETE.json', {'case': case, 'wall': time.time(), 'samples': count})
             stage(case, 'measurement-complete')
-        write(root / 'COMPLETE.json', {'cases': CASES, 'wall': time.time()})
+        write(root / 'COMPLETE.json', {'cases': args.cases, 'wall': time.time()})
     except BaseException:
         (root / 'FAILURE.txt').write_text(traceback.format_exc())
         raise

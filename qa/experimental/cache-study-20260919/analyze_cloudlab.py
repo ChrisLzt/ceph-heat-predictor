@@ -5,6 +5,7 @@ from collections import Counter
 import csv
 import json
 from pathlib import Path
+from run_cloudlab_study import CASES
 
 OSDS = ('0', '1', '2')
 
@@ -174,6 +175,15 @@ def analyze_case(root):
     return report
 
 
+def suite_completion(root, cases):
+    marker = root / 'COMPLETE.json'
+    requested = json.loads(marker.read_text()).get('cases', []) if marker.is_file() else []
+    complete = (bool(requested) and len(requested) == len(set(requested))
+                and set(requested) <= set(CASES) and set(cases) == set(requested))
+    return {'requested_cases': requested, 'requested_cases_complete': complete,
+            'complete_suite': complete and set(requested) == set(CASES)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run', type=Path)
@@ -184,7 +194,7 @@ def main():
         s = case['nominal600']['stages']['s3fifo']
         for key in ('onode_hits', 'onode_misses'):
             pooled[key] += s.get(key, 0)
-    result = {'complete_suite': (args.run / 'COMPLETE.json').exists(), 'cases': cases,
+    result = {**suite_completion(args.run, cases), 'cases': cases,
               'pooled_onode_percent': percent(pooled['onode_hits'], pooled['onode_hits'] + pooled['onode_misses'])}
     (args.run / 'analysis.json').write_text(json.dumps(result, indent=2))
     print(json.dumps({k: v['nominal600']['stages']['s3fifo'] for k, v in cases.items()}, indent=2))

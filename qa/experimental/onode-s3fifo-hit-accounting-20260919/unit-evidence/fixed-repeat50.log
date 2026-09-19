@@ -1,0 +1,2109 @@
+did not load config file, using default settings.
+2026-09-19T11:35:52.904+0000 7c197ef6a6c0 -1 Errors while parsing config file!
+
+2026-09-19T11:35:52.904+0000 7c197ef6a6c0 -1 can't open ceph.conf: (2) No such file or directory
+
+2026-09-19T11:35:52.904+0000 7c197ef6a6c0 -1 Errors while parsing config file!
+
+2026-09-19T11:35:52.904+0000 7c197ef6a6c0 -1 can't open ceph.conf: (2) No such file or directory
+
+
+Repeating all tests (iteration 1) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (23 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (38 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:52.943+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:52.943+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (0 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (3 ms)
+[----------] 3 tests from OnodeCachePolicy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (41 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 2) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (28 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (44 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:52.989+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:52.990+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (5 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 3) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (1 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (23 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (39 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.033+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.034+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (45 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 4) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.082+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.082+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 5) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.129+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.130+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 6) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (1 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (40 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.175+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.176+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (0 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (3 ms)
+[----------] 3 tests from OnodeCachePolicy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (43 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 7) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.221+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.222+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 8) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.269+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.269+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 9) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (12 ms)
+[----------] 9 tests from OnodeCacheSwitch (40 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.315+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.315+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (46 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 10) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (1 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (42 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (58 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.379+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.380+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (64 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 11) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (27 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (12 ms)
+[----------] 9 tests from OnodeCacheSwitch (41 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.426+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.426+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (2 ms)
+[----------] 3 tests from OnodeCachePolicy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (44 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 12) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (28 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.471+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.472+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 13) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (27 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (44 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.521+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.521+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (50 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 14) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.569+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.569+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 15) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.618+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.619+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 16) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.667+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.667+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 17) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (1 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (21 ms)
+[----------] 9 tests from OnodeCacheSwitch (48 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.721+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.722+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (54 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 18) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.769+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.769+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 19) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (41 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.816+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.816+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (0 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (3 ms)
+[----------] 3 tests from OnodeCachePolicy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (44 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 20) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (32 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (17 ms)
+[----------] 9 tests from OnodeCacheSwitch (50 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.869+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.869+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (56 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 21) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.917+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.918+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 22) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (25 ms)
+[----------] 9 tests from OnodeCacheSwitch (52 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:53.975+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:53.976+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (58 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 23) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (27 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.024+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.025+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 24) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.072+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.073+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (2 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 25) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (28 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (44 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.123+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.123+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (50 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 26) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.171+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.172+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (2 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 27) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (1 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (29 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (45 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.223+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.223+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (51 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 28) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (16 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.272+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.272+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 29) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (40 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.318+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.318+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (2 ms)
+[----------] 3 tests from OnodeCachePolicy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (43 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 30) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (30 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (44 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.365+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.366+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (2 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (50 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 31) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.413+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.414+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (2 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (4 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 32) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (21 ms)
+[----------] 9 tests from OnodeCacheSwitch (48 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.467+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.467+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (54 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 33) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.515+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.515+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 34) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.563+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.563+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 35) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (42 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (60 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.629+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.629+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (66 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 36) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (27 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (44 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.679+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.679+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (50 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 37) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (30 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (47 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.732+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.732+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (53 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 38) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (11 ms)
+[----------] 9 tests from OnodeCacheSwitch (39 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.777+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.778+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (2 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (46 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 39) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.826+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.827+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 40) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.875+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.875+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 41) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (25 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.923+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.924+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 42) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (31 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (47 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:54.976+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:54.976+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (53 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 43) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (14 ms)
+[----------] 9 tests from OnodeCacheSwitch (42 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.024+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.025+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (48 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 44) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (12 ms)
+[----------] 9 tests from OnodeCacheSwitch (40 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.070+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.070+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (46 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 45) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (1 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (28 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (13 ms)
+[----------] 9 tests from OnodeCacheSwitch (43 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.119+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.120+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (49 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 46) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (12 ms)
+[----------] 9 tests from OnodeCacheSwitch (40 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.165+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.166+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (46 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 47) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (24 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (24 ms)
+[----------] 9 tests from OnodeCacheSwitch (50 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.221+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.221+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (56 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 48) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (26 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (24 ms)
+[----------] 9 tests from OnodeCacheSwitch (52 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.279+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.280+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (58 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 49) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (1 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (1 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (0 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (29 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (19 ms)
+[----------] 9 tests from OnodeCacheSwitch (50 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.335+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.335+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (56 ms total)
+[  PASSED  ] 12 tests.
+
+Repeating all tests (iteration 50) . . .
+
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from OnodeCacheSwitch
+[ RUN      ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters
+[       OK ] OnodeCacheSwitch.WarmRoundTripPreservesEntriesBinsAndCounters (0 ms)
+[ RUN      ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch
+[       OK ] OnodeCacheSwitch.PinnedAndNonexistentOnodesSurviveSwitch (1 ms)
+[ RUN      ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch
+[       OK ] OnodeCacheSwitch.MainGhostAndIdempotentSwitch (0 ms)
+[ RUN      ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode
+[       OK ] OnodeCacheSwitch.OverlappingHitsPromoteReusedOnode (0 ms)
+[ RUN      ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit
+[       OK ] OnodeCacheSwitch.ReferenceReleaseIsNotAnotherHit (0 ms)
+[ RUN      ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions
+[       OK ] OnodeCacheSwitch.GhostShrinkKeepsMostRecentEvictions (1 ms)
+[ RUN      ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard
+[       OK ] OnodeCacheSwitch.StaleUnpinDispatchesToDestinationShard (0 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches
+[       OK ] OnodeCacheSwitch.ConcurrentLookupsAndRepeatedSwitches (33 ms)
+[ RUN      ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch
+[       OK ] OnodeCacheSwitch.ConcurrentEvictionInsertionAndSwitch (15 ms)
+[----------] 9 tests from OnodeCacheSwitch (50 ms total)
+
+[----------] 3 tests from OnodeCachePolicy
+[ RUN      ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy
+2026-09-19T11:35:55.391+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=s3fifo generation=1
+
+2026-09-19T11:35:55.391+0000 7c197ef6a6c0  1 bluestore() set_onode_cache_policy effective_policy=lru generation=2
+
+[       OK ] OnodeCachePolicy.StoreFanoutStatusAndInvalidPolicy (1 ms)
+[ RUN      ] OnodeCachePolicy.FactoryKeepsStartupCompatibility
+[       OK ] OnodeCachePolicy.FactoryKeepsStartupCompatibility (0 ms)
+[ RUN      ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged
+[       OK ] OnodeCachePolicy.InvalidS3fifoTunablesLeaveLruUnchanged (5 ms)
+[----------] 3 tests from OnodeCachePolicy (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (56 ms total)
+[  PASSED  ] 12 tests.

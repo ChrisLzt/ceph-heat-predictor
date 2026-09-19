@@ -1,0 +1,11 @@
+{
+  "phase": "baseline",
+  "onode_failures": [
+    "OverlappingHitsPromoteReusedOnode",
+    "ReferenceReleaseIsNotAnotherHit",
+    "GhostShrinkKeepsMostRecentEvictions"
+  ],
+  "binary_sha256": "fab74239f8e461a1ef86156545550f0410aad6a1d58285b82bd49e50f8403b5d",
+  "version": "ceph version bfd711 (fbfd7114508d14b7e582263bd8a4fbc3883fa39f) quincy (stable)",
+  "note": "Uncommitted source patch; version alone does not identify the fixed binary."
+}

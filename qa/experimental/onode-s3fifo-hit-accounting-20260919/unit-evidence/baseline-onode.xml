@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="12" failures="3" disabled="0" errors="0" time="0.042" timestamp="2026-09-19T11:32:44.737" name="AllTests">
+  <testsuite name="OnodeCacheSwitch" tests="9" failures="3" disabled="0" skipped="0" errors="0" time="0.039" timestamp="2026-09-19T11:32:44.737">
+    <testcase name="WarmRoundTripPreservesEntriesBinsAndCounters" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.737" classname="OnodeCacheSwitch" />
+    <testcase name="PinnedAndNonexistentOnodesSurviveSwitch" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:32:44.737" classname="OnodeCacheSwitch" />
+    <testcase name="MainGhostAndIdempotentSwitch" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.738" classname="OnodeCacheSwitch" />
+    <testcase name="OverlappingHitsPromoteReusedOnode" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.738" classname="OnodeCacheSwitch">
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:173&#x0A;Expected equality of these values:&#x0A;  2&#x0A;  reused-&gt;s3fifo_freq&#x0A;    Which is: &apos;\0&apos;" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:173
+Expected equality of these values:
+  2
+  reused->s3fifo_freq
+    Which is: '\0']]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:176&#x0A;Expected equality of these values:&#x0A;  2&#x0A;  reused-&gt;s3fifo_freq&#x0A;    Which is: &apos;\x1&apos; (1)" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:176
+Expected equality of these values:
+  2
+  reused->s3fifo_freq
+    Which is: '\x1' (1)]]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:181&#x0A;Expected equality of these values:&#x0A;  1&#x0A;  snapshot().at(&quot;main_entries&quot;).get_int()&#x0A;    Which is: 0" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:181
+Expected equality of these values:
+  1
+  snapshot().at("main_entries").get_int()
+    Which is: 0]]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:184&#x0A;Value of: coll-&gt;onode_space.lookup(oid(0))&#x0A;  Actual: false&#x0A;Expected: true" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:184
+Value of: coll->onode_space.lookup(oid(0))
+  Actual: false
+Expected: true]]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:185&#x0A;Expected equality of these values:&#x0A;  3u&#x0A;    Which is: 3&#x0A;  logger-&gt;get(l_bluestore_onode_hits)&#x0A;    Which is: 2" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:185
+Expected equality of these values:
+  3u
+    Which is: 3
+  logger->get(l_bluestore_onode_hits)
+    Which is: 2]]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:186&#x0A;Expected equality of these values:&#x0A;  0u&#x0A;    Which is: 0&#x0A;  logger-&gt;get(l_bluestore_onode_misses)&#x0A;    Which is: 1" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:186
+Expected equality of these values:
+  0u
+    Which is: 0
+  logger->get(l_bluestore_onode_misses)
+    Which is: 1]]></failure>
+    </testcase>
+    <testcase name="ReferenceReleaseIsNotAnotherHit" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.738" classname="OnodeCacheSwitch">
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:199&#x0A;Expected equality of these values:&#x0A;  1&#x0A;  raw-&gt;s3fifo_freq&#x0A;    Which is: &apos;\0&apos;" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:199
+Expected equality of these values:
+  1
+  raw->s3fifo_freq
+    Which is: '\0']]></failure>
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:205&#x0A;Expected equality of these values:&#x0A;  1&#x0A;  raw-&gt;s3fifo_freq&#x0A;    Which is: &apos;\x2&apos; (2)" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:205
+Expected equality of these values:
+  1
+  raw->s3fifo_freq
+    Which is: '\x2' (2)]]></failure>
+    </testcase>
+    <testcase name="GhostShrinkKeepsMostRecentEvictions" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.738" classname="OnodeCacheSwitch">
+      <failure message="/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:233&#x0A;Expected equality of these values:&#x0A;  1&#x0A;  snapshot().at(&quot;main_entries&quot;).get_int()&#x0A;    Which is: 0" type=""><![CDATA[/lab/src/src/test/objectstore/test_bluestore_onode_cache.cc:233
+Expected equality of these values:
+  1
+  snapshot().at("main_entries").get_int()
+    Which is: 0]]></failure>
+    </testcase>
+    <testcase name="StaleUnpinDispatchesToDestinationShard" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:32:44.738" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentLookupsAndRepeatedSwitches" status="run" result="completed" time="0.023" timestamp="2026-09-19T11:32:44.739" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentEvictionInsertionAndSwitch" status="run" result="completed" time="0.014" timestamp="2026-09-19T11:32:44.762" classname="OnodeCacheSwitch" />
+  </testsuite>
+  <testsuite name="OnodeCachePolicy" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.003" timestamp="2026-09-19T11:32:44.776">
+    <testcase name="StoreFanoutStatusAndInvalidPolicy" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.776" classname="OnodeCachePolicy" />
+    <testcase name="FactoryKeepsStartupCompatibility" status="run" result="completed" time="0" timestamp="2026-09-19T11:32:44.776" classname="OnodeCachePolicy" />
+    <testcase name="InvalidS3fifoTunablesLeaveLruUnchanged" status="run" result="completed" time="0.003" timestamp="2026-09-19T11:32:44.776" classname="OnodeCachePolicy" />
+  </testsuite>
+</testsuites>

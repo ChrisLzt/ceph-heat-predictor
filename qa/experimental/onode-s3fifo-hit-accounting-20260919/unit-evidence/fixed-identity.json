@@ -1,0 +1,7 @@
+{
+  "phase": "fixed",
+  "onode_failures": [],
+  "binary_sha256": "dc39db8fbf8879cccce2e48d85e8f2757d1745d7dedba1776bea219c245a15b4",
+  "version": "ceph version bfd711 (fbfd7114508d14b7e582263bd8a4fbc3883fa39f) quincy (stable)",
+  "note": "Uncommitted source patch; version alone does not identify the fixed binary."
+}
