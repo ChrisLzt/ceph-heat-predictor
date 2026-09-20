@@ -1580,6 +1580,34 @@ struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
     }
   }
 
+  PrefetchReclaimResult _reclaim_for_prefetch(uint64_t max_steps) override {
+    PrefetchReclaimResult result;
+    if (policy != Policy::S3FIFO || cct->_conf->objectstore_blackhole) {
+      return result;
+    }
+    const auto before = num.load();
+    const auto capacity = max.load();
+    const auto target_main = capacity - static_cast<uint64_t>(capacity * small_ratio);
+    // Reuse normal eviction and pin handling, but bound clock rotations and
+    // stop after one eviction so the worker can recheck actual metadata bytes.
+    while (result.examined < max_steps && (!small_q.empty() || !main_q.empty())) {
+      ++result.examined;
+      if (!small_q.empty() && small_q.back().prefetched) {
+        _evict_small();
+      } else if (!main_q.empty() &&
+                 (main_q.size() > target_main || small_q.empty())) {
+        _evict_main();
+      } else {
+        _evict_small();
+      }
+      if (num.load() < before) {
+        result.evicted = before - num.load();
+        break;
+      }
+    }
+    return result;
+  }
+
   void _move_pinned(OnodeCacheShard *to, BlueStore::Onode *o) override {
     if (to == this) {
       return;
@@ -2357,13 +2385,19 @@ void BlueStore::OnodeSpace::_remove(const ghobject_t& oid)
   onode_map.erase(oid);
 }
 
-bool BlueStore::OnodeSpace::can_prefetch(const ghobject_t& oid)
+BlueStore::OnodeSpace::PrefetchAdmission
+BlueStore::OnodeSpace::prefetch_admission(const ghobject_t& oid)
 {
   std::lock_guard l(cache->lock);
+  if (cache->_get_policy() != OnodeCacheShard::Policy::S3FIFO) {
+    return PrefetchAdmission::inactive;
+  }
+  if (onode_map.find(oid) != onode_map.end()) {
+    return PrefetchAdmission::resident;
+  }
   const auto limit = cache->max.load();
-  return cache->_get_policy() == OnodeCacheShard::Policy::S3FIFO &&
-    cache->_get_num() < limit - limit / 10 &&
-    onode_map.find(oid) == onode_map.end();
+  return cache->_get_num() < limit - limit / 10 ?
+    PrefetchAdmission::ready : PrefetchAdmission::full;
 }
 
 bool BlueStore::OnodeSpace::add_prefetched(
@@ -5071,6 +5105,7 @@ void BlueStore::OnodePrefetchThread::init()
 {
   std::lock_guard policy_guard(store->onode_cache_policy_lock);
   configured = store->cct->_conf.get_val<bool>("bluestore_onode_prefetch");
+  reclaim_enabled = store->cct->_conf.get_val<bool>("bluestore_onode_prefetch_reclaim");
   if (!configured) {
     return;
   }
@@ -5144,15 +5179,74 @@ bool BlueStore::OnodePrefetchThread::memory_available() const
     limit - limit / 5;
 }
 
+void BlueStore::OnodePrefetchThread::reclaim_space(
+  uint64_t epoch, OnodeCacheShard* target)
+{
+  const auto now = std::chrono::steady_clock::now();
+  if (!reclaim_enabled || generation.load() != epoch || !meta_limit.load() ||
+      now < next_reclaim || store->onode_cache_shards.empty()) {
+    return;
+  }
+  next_reclaim = now + std::chrono::milliseconds(100);
+  ++reclaim_passes;
+  const auto used_before = store->mempool_thread.meta_cache->_get_used_bytes();
+  const auto limit_before = meta_limit.load();
+  const bool need_bytes = used_before >= limit_before - limit_before / 5;
+  uint64_t evicted = 0;
+  // At most 128 queue operations per pass, independent of the scan rate.
+  // Leave a small hysteresis margin if this bounded pass can reach it.
+  for (unsigned i = 0; i < 32 && generation.load() == epoch; ++i) {
+    const auto limit = meta_limit.load();
+    if (!limit) {
+      break;
+    }
+    const bool byte_pressure = store->mempool_thread.meta_cache->_get_used_bytes() >=
+      limit - limit / 4;
+    if (!byte_pressure && !target) {
+      break;
+    }
+    auto* shard = byte_pressure ? store->onode_cache_shards[
+      reclaim_shard++ % store->onode_cache_shards.size()] : target;
+    std::unique_lock l(shard->lock, std::try_to_lock);
+    if (!l.owns_lock()) {
+      ++reclaim_lock_skips;
+      continue;
+    }
+    if (generation.load() != epoch) {
+      break;
+    }
+    const auto quota = shard->max.load();
+    if (!byte_pressure &&
+        (!quota || shard->_get_num() < quota - quota / 10 - quota / 20)) {
+      break;
+    }
+    auto result = shard->_reclaim_for_prefetch(4);
+    reclaim_examined.fetch_add(result.examined);
+    evicted += result.evicted;
+    // Destruction can release extents/blobs as well as the Onode itself.
+    // Do not estimate freed bytes as evicted_count * sizeof(Onode).
+  }
+  reclaim_evicted.fetch_add(evicted);
+  if (!evicted || (need_bytes &&
+      store->mempool_thread.meta_cache->_get_used_bytes() >= used_before)) {
+    ++reclaim_no_progress;
+    // Shared/pinned metadata or concurrent demand can defeat byte recovery.
+    // Back off instead of continuously churning demand entries for no relief.
+    next_reclaim = now + std::chrono::seconds(1);
+  }
+}
+
 void BlueStore::OnodePrefetchThread::dump(Formatter* f)
 {
   std::lock_guard l(lock);
   f->dump_bool("configured", configured);
+  f->dump_bool("reclaim_enabled", reclaim_enabled);
   f->dump_bool("active", generation.load() != 0);
   f->dump_unsigned("generation", generation.load());
   f->dump_unsigned("queued_pgs", queue.size());
   f->dump_unsigned("rate", rate);
   f->dump_unsigned("meta_budget_bytes", meta_limit.load());
+  f->dump_unsigned("meta_used_bytes", store->mempool_thread.meta_cache->_get_used_bytes());
   f->dump_unsigned("scanned", scanned.load());
   f->dump_unsigned("db_reads", reads.load());
   f->dump_unsigned("encoded_bytes", encoded_bytes.load());
@@ -5160,6 +5254,15 @@ void BlueStore::OnodePrefetchThread::dump(Formatter* f)
   f->dump_unsigned("oversized", oversized.load());
   f->dump_unsigned("queue_full", queue_full.load());
   f->dump_unsigned("pressure_pauses", pressure_pauses.load());
+  f->dump_unsigned("shard_pressure_pauses", shard_pressure_pauses.load());
+  f->dump_unsigned("resident_skips", resident_skips.load());
+  f->dump_unsigned("lock_retries", lock_retries.load());
+  f->dump_unsigned("candidate_retries", candidate_retries.load());
+  f->dump_unsigned("reclaim_passes", reclaim_passes.load());
+  f->dump_unsigned("reclaim_examined", reclaim_examined.load());
+  f->dump_unsigned("reclaim_evicted", reclaim_evicted.load());
+  f->dump_unsigned("reclaim_no_progress", reclaim_no_progress.load());
+  f->dump_unsigned("reclaim_lock_skips", reclaim_lock_skips.load());
 }
 
 void* BlueStore::OnodePrefetchThread::entry()
@@ -5181,37 +5284,84 @@ void* BlueStore::OnodePrefetchThread::entry()
     bool again = false;
     std::vector<ghobject_t> objects;
     ghobject_t next;
-    if (generation.load() == work.generation && memory_available()) {
+    if (generation.load() == work.generation) {
       // A split can invalidate the cursor. Do not pass it to collection_list.
       std::shared_lock l(c->lock, std::try_to_lock);
       if (!l.owns_lock()) {
+        ++lock_retries;
         again = true;
       } else if (c->exists && c->cnode.bits == work.bits) {
-        // Raw-key order avoids the sorted iterator's unbounded hash-collision
-        // chunk. Ordering is irrelevant for this opportunistic metadata pass.
-        int r = store->_collection_list(c.get(), work.next, ghobject_t::get_max(),
-                                       batch, true, &objects, &next);
-        if (r < 0) {
-          ++errors;
+        // Validate the queued collection before reclaiming for it. A deleted
+        // or split PG must not keep driving cache eviction under pressure.
+        if (!memory_available()) {
+          ++pressure_pauses;
+          reclaim_space(work.generation);
+        }
+        if (memory_available()) {
+          // Raw-key order avoids the sorted iterator's unbounded collision chunk.
+          int r = store->_collection_list(c.get(), work.next, ghobject_t::get_max(),
+                                         batch, true, &objects, &next);
+          if (r < 0) {
+            ++errors;
+          } else {
+            work.next = next;
+            again = !next.is_max();
+          }
         } else {
-          work.next = next;
-          again = !next.is_max();
+          again = true;
         }
       } else {
         auto expected = work.generation;
         c->prefetch_generation.compare_exchange_strong(expected, 0);
       }
-    } else if (generation.load() == work.generation) {
-      ++pressure_pauses;
-      again = true;
     }
     for (const auto& oid : objects) {
       ++scanned;
+      // collection_list uses an inclusive cursor. A temporary rejection must
+      // not advance past this object (or the rest of this bounded batch).
+      auto retry = [&] {
+        work.next = oid;
+        again = true;
+        ++candidate_retries;
+      };
       std::shared_lock l(c->lock, std::try_to_lock);
-      if (!l.owns_lock() || generation.load() != work.generation ||
-          !c->exists || !c->contains(oid) || !memory_available() ||
-          !c->onode_space.can_prefetch(oid)) {
+      if (generation.load() != work.generation) {
+        break;
+      }
+      if (!l.owns_lock()) {
+        ++lock_retries;
+        retry();
+        break;
+      }
+      if (!c->exists || c->cnode.bits != work.bits) {
+        auto expected = work.generation;
+        c->prefetch_generation.compare_exchange_strong(expected, 0);
+        again = false;
+        break;
+      }
+      if (!c->contains(oid)) {
         continue;
+      }
+      using Admission = OnodeSpace::PrefetchAdmission;
+      const auto admission = c->onode_space.prefetch_admission(oid);
+      if (admission == Admission::resident) {
+        ++resident_skips;
+        continue;
+      }
+      if (admission == Admission::inactive) {
+        retry();
+        break;
+      }
+      if (!memory_available() || admission == Admission::full) {
+        if (!memory_available()) {
+          ++pressure_pauses;
+        }
+        if (admission == Admission::full) {
+          ++shard_pressure_pauses;
+        }
+        reclaim_space(work.generation, c->get_onode_cache());
+        retry();
+        break;
       }
       std::string key;
       get_object_key(store->cct, oid, &key);
@@ -5233,8 +5383,21 @@ void* BlueStore::OnodePrefetchThread::entry()
       // Decode the same metadata as demand I/O, under the same collection lock.
       // No extent faults, object data reads, or demand lookup accounting here.
       OnodeRef o(Onode::create_decode(c, oid, key, value));
-      if (memory_available()) {
-        c->onode_space.add_prefetched(o, &generation, work.generation);
+      if (!memory_available()) {
+        ++pressure_pauses;
+        // Account the decoded candidate while reclaiming. Otherwise releasing
+        // it before every retry could hide the headroom needed to admit it.
+        reclaim_space(work.generation, c->get_onode_cache());
+      }
+      if (!memory_available() ||
+          !c->onode_space.add_prefetched(o, &generation, work.generation)) {
+        if (c->onode_space.prefetch_admission(oid) == Admission::resident) {
+          ++resident_skips;
+        } else {
+          // Release the decoded candidate before the next pressure check.
+          retry();
+          break;
+        }
       }
     }
     {

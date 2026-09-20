@@ -4,6 +4,11 @@ Experimental cache-side metadata prefetch. Default off. This is not a claim
 that the 128-node acceptance target has been met. Predictor source and fixed
 `SINGLE_workload` data are unchanged.
 
+The pressure-recovery revision is documented in
+[Onode prefetch pressure recovery](../onode-prefetch-pressure-20260921/README.md).
+The observed benchmark results below describe the original implementation,
+not a benchmark of that revision.
+
 ## Behavior
 
 - Start with `bluestore_onode_prefetch=true`. This is a startup option.
@@ -18,12 +23,18 @@ that the 128-node acceptance target has been met. Predictor source and fixed
 - Read Onode metadata from the existing KV database; do not read object data or
   fault external extent shards. Reject records over 1 MiB before decoding.
 - Admit only below 90% of the shard entry quota and below 80% of the existing
-  tracked metadata budget. Do not evict demand entries to admit speculation.
+  tracked metadata budget. The original implementation only used spare space;
+  the pressure-recovery revision can reclaim evictable S3FIFO entries with
+  bounded work when `bluestore_onode_prefetch_reclaim=true` (default true).
   These are admission guards, not hard process RSS limits. Reading one oversized
   DB value and concurrent demand allocations can temporarily exceed them.
 - Existing/dirty resident Onodes are never replaced. Collection locks, shard
   locks and activation generations protect deletion, splits, policy changes
   and shutdown. No persistent object or data format changes.
+
+Admission never overwrites an existing object with a speculative decode.
+Pressure reclamation may evict clean, unpinned demand entries through the cache's
+normal eviction path; it does not guarantee that prefetch improves every workload.
 
 Startup tunables: `bluestore_onode_prefetch_rate` (1..16384),
 `bluestore_onode_prefetch_max_queued` (1..4096), and

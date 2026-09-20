@@ -1433,6 +1433,14 @@ private:
     virtual Policy _get_policy() const = 0;
     virtual void _dump_policy(ceph::Formatter* f) const = 0;
 
+    struct PrefetchReclaimResult {
+      uint64_t examined = 0;
+      uint64_t evicted = 0;
+    };
+    virtual PrefetchReclaimResult _reclaim_for_prefetch(uint64_t max_steps) {
+      return {};
+    }
+
     void maybe_unpin(Onode* o);
     virtual void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) = 0;
     bool empty() {
@@ -1504,7 +1512,11 @@ private:
     }
 
     OnodeRef add_onode(const ghobject_t& oid, OnodeRef& o);
-    bool can_prefetch(const ghobject_t& oid);
+    enum class PrefetchAdmission { ready, resident, inactive, full };
+    PrefetchAdmission prefetch_admission(const ghobject_t& oid);
+    bool can_prefetch(const ghobject_t& oid) {
+      return prefetch_admission(oid) == PrefetchAdmission::ready;
+    }
     bool add_prefetched(OnodeRef& o,
                         const std::atomic<uint64_t>* generation = nullptr,
                         uint64_t expected_generation = 0);
@@ -2634,6 +2646,7 @@ private:
     void _resize_shards(bool interval_stats);
   } mempool_thread;
 
+  friend struct OnodePrefetchTestPeer;
   struct OnodePrefetchThread : public Thread {
     struct Work {
       CollectionRef collection;
@@ -2647,6 +2660,7 @@ private:
     std::deque<Work> queue;
     bool stop = false;
     bool configured = false;
+    bool reclaim_enabled = false;
     uint64_t rate = 1024;
     uint64_t max_queued = 256;
     uint64_t max_record = 1048576;
@@ -2656,6 +2670,13 @@ private:
     std::atomic<uint64_t> scanned{0}, reads{0}, encoded_bytes{0};
     std::atomic<uint64_t> errors{0}, oversized{0}, queue_full{0};
     std::atomic<uint64_t> pressure_pauses{0};
+    std::atomic<uint64_t> shard_pressure_pauses{0}, resident_skips{0};
+    std::atomic<uint64_t> lock_retries{0}, candidate_retries{0};
+    std::atomic<uint64_t> reclaim_passes{0}, reclaim_examined{0};
+    std::atomic<uint64_t> reclaim_evicted{0}, reclaim_no_progress{0};
+    std::atomic<uint64_t> reclaim_lock_skips{0};
+    size_t reclaim_shard = 0;
+    std::chrono::steady_clock::time_point next_reclaim{};
 
     explicit OnodePrefetchThread(BlueStore* s) : store(s) {}
     void init();
@@ -2663,6 +2684,7 @@ private:
     void set_active(bool active); // called under onode_cache_policy_lock
     void schedule(Collection* collection);
     bool memory_available() const;
+    void reclaim_space(uint64_t epoch, OnodeCacheShard* target = nullptr);
     void dump(ceph::Formatter* f);
     void* entry() override;
   } onode_prefetch;

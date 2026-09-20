@@ -18,6 +18,43 @@
 #include <sstream>
 #include <thread>
 
+// A separate worker lets tests control its budget without racing the mounted
+// store's autotuner or adding a production budget-override command.
+struct OnodePrefetchTestPeer {
+  BlueStore::OnodePrefetchThread worker;
+  explicit OnodePrefetchTestPeer(BlueStore* store) : worker(store) {}
+  ~OnodePrefetchTestPeer() { worker.shutdown(); }
+
+  void start(uint64_t budget) {
+    worker.init();
+    worker.meta_limit.store(budget);
+  }
+  void schedule(ObjectStore::CollectionHandle& ch) {
+    auto* c = static_cast<BlueStore::Collection*>(ch.get());
+    std::shared_lock l(c->lock);
+    worker.schedule(c);
+  }
+  uint64_t used_bytes() const {
+    return worker.store->mempool_thread.meta_cache->_get_used_bytes();
+  }
+  auto pause_resizing() {
+    return std::unique_lock(worker.store->mempool_thread.lock);
+  }
+  void set_shard_quotas(uint64_t quota) {
+    for (auto* shard : worker.store->onode_cache_shards) {
+      shard->set_max(quota);
+    }
+  }
+  uint64_t loaded() const {
+    uint64_t count = 0;
+    for (auto* shard : worker.store->onode_cache_shards) {
+      std::lock_guard l(shard->lock);
+      count += shard->prefetch_loaded;
+    }
+    return count;
+  }
+};
+
 namespace {
 using Policy = BlueStore::OnodeCacheShard::Policy;
 
@@ -84,9 +121,11 @@ json_spirit::mObject decode_status(ceph::JSONFormatter& f)
 class OnodePrefetchStore : public StoreTestFixture {
 protected:
   OnodePrefetchStore() : StoreTestFixture("bluestore") {}
+  virtual bool automatic_prefetch() const { return true; }
   void SetUp() override {
     g_conf()._clear_safe_to_start_threads();
-    SetVal(g_conf(), "bluestore_onode_prefetch", "true");
+    SetVal(g_conf(), "bluestore_onode_prefetch", automatic_prefetch() ? "true" : "false");
+    SetVal(g_conf(), "bluestore_onode_prefetch_reclaim", "true");
     SetVal(g_conf(), "bluestore_block_size", "1073741824");
     SetVal(g_conf(), "bluestore_cache_autotune", "false");
     SetVal(g_conf(), "bluestore_cache_size", "134217728");
@@ -194,6 +233,172 @@ TEST_F(OnodePrefetchStore, RealMetadataPrefetchPreservesReadsWritesDeletesAndGat
   ch.reset();
 }
 
+class OnodePrefetchPressureStore : public OnodePrefetchStore {
+protected:
+  bool automatic_prefetch() const override { return false; }
+
+  void prepare(bool reclaim) {
+    coll_t cid(spg_t(pg_t(0, 1), shard_id_t::NO_SHARD));
+    ch = store->create_new_collection(cid);
+    bufferlist value, attr;
+    value.append("data");
+    attr.append(std::string(16384, 'x'));
+    ObjectStore::Transaction t;
+    t.create_collection(cid, 0);
+    for (int i = 0; i < 256; ++i) {
+      t.write(cid, oid(i), 0, value.length(), value);
+      t.setattr(cid, oid(i), "payload", attr);
+    }
+    ASSERT_EQ(0, store->queue_transaction(ch, std::move(t)));
+    ch->flush();
+    ch.reset();
+    CloseAndReopen();
+    ch = store->open_collection(cid);
+    ASSERT_TRUE(ch);
+    ASSERT_TRUE(wait_for([&] {
+      const auto current = status();
+      for (const auto& shard : current.at("shards").get_array()) {
+        if (shard.get_obj().at("target_onodes").get_int64() <= 512) {
+          return false;
+        }
+      }
+      return true;
+    }));
+    // Keep a previous case's metadata resident; do not restart at activation.
+    for (int i = 0; i < 128; ++i) {
+      bufferlist actual;
+      ASSERT_EQ(4, store->read(ch, oid(i), 0, 4, actual));
+    }
+    status("s3fifo");
+    g_conf()._clear_safe_to_start_threads();
+    SetVal(g_conf(), "bluestore_onode_prefetch", "true");
+    SetVal(g_conf(), "bluestore_onode_prefetch_reclaim", reclaim ? "true" : "false");
+    g_conf().apply_changes(nullptr);
+  }
+
+  template<typename Predicate>
+  bool wait_for(Predicate predicate) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    do {
+      if (predicate()) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+  }
+
+  void check_data() {
+    for (int i = 0; i < 256; ++i) {
+      bufferlist actual;
+      ASSERT_EQ(4, store->read(ch, oid(i), 0, 4, actual));
+      ASSERT_EQ("data", actual.to_str());
+      bufferptr attr;
+      ASSERT_EQ(0, store->getattr(ch, oid(i), "payload", attr));
+      ASSERT_EQ(16384u, attr.length());
+      ASSERT_EQ(std::string(16384, 'x'), std::string(attr.c_str(), attr.length()));
+    }
+  }
+};
+
+TEST_F(OnodePrefetchPressureStore, ReclaimsResidentMetadataAndLoadsWithoutRestart)
+{
+  prepare(true);
+  ASSERT_FALSE(HasFatalFailure());
+  const auto before = status();
+  {
+    OnodePrefetchTestPeer peer(static_cast<BlueStore*>(store.get()));
+    auto pause = peer.pause_resizing();
+    peer.set_shard_quotas(1024);
+    const auto budget = peer.used_bytes();
+    ASSERT_GT(budget, 1048576u);
+    peer.start(budget);
+    peer.schedule(ch);
+    ASSERT_TRUE(wait_for([&] { return peer.loaded() > 0; }));
+    EXPECT_GT(peer.worker.pressure_pauses.load(), 0u);
+    EXPECT_GT(peer.worker.reclaim_evicted.load(), 0u);
+    EXPECT_LE(peer.worker.reclaim_examined.load(), peer.worker.reclaim_passes.load() * 128);
+    EXPECT_EQ(before.at("onode_hits").get_int64(), status().at("onode_hits").get_int64());
+    EXPECT_EQ(before.at("onode_misses").get_int64(), status().at("onode_misses").get_int64());
+    EXPECT_EQ(budget, peer.worker.meta_limit.load());
+    EXPECT_EQ(1u, peer.worker.generation.load());
+  }
+  check_data();
+  coll_t cid(spg_t(pg_t(0, 1), shard_id_t::NO_SHARD));
+  bufferlist replacement;
+  replacement.append("next");
+  ObjectStore::Transaction t;
+  t.write(cid, oid(1), 0, 4, replacement);
+  t.remove(cid, oid(2));
+  ASSERT_EQ(0, store->queue_transaction(ch, std::move(t)));
+  ch->flush();
+  ch.reset();
+  CloseAndReopen();
+  ch = store->open_collection(cid);
+  bufferlist actual;
+  ASSERT_EQ(4, store->read(ch, oid(1), 0, 4, actual));
+  EXPECT_EQ("next", actual.to_str());
+  actual.clear();
+  EXPECT_EQ(-ENOENT, store->read(ch, oid(2), 0, 4, actual));
+}
+
+TEST_F(OnodePrefetchPressureStore, DisabledReclaimWaitsAndResumesAtSameGeneration)
+{
+  prepare(false);
+  ASSERT_FALSE(HasFatalFailure());
+  {
+    OnodePrefetchTestPeer peer(static_cast<BlueStore*>(store.get()));
+    auto pause = peer.pause_resizing();
+    peer.set_shard_quotas(1024);
+    peer.start(0);
+    peer.schedule(ch);
+    ASSERT_TRUE(wait_for([&] { return peer.worker.pressure_pauses.load() >= 3; }));
+    EXPECT_EQ(0u, peer.loaded());
+    EXPECT_EQ(0u, peer.worker.reclaim_evicted.load());
+    peer.worker.meta_limit.store(peer.used_bytes());
+    const auto pauses = peer.worker.pressure_pauses.load();
+    ASSERT_TRUE(wait_for([&] { return peer.worker.pressure_pauses.load() > pauses + 3; }));
+    EXPECT_EQ(0u, peer.loaded());
+    EXPECT_EQ(0u, peer.worker.reclaim_passes.load());
+    peer.worker.meta_limit.store(peer.used_bytes() * 4);
+    ASSERT_TRUE(wait_for([&] { return peer.loaded() > 0; }));
+    EXPECT_EQ(1u, peer.worker.generation.load());
+  }
+  check_data();
+}
+
+TEST_F(OnodePrefetchPressureStore, ShardPressureRetriesTheRejectedCandidate)
+{
+  prepare(true);
+  ASSERT_FALSE(HasFatalFailure());
+  {
+    OnodePrefetchTestPeer peer(static_cast<BlueStore*>(store.get()));
+    auto pause = peer.pause_resizing();
+    auto* c = static_cast<BlueStore::Collection*>(ch.get());
+    auto* shard = c->get_onode_cache();
+    uint64_t missing = 0;
+    for (int i = 0; i < 256; ++i) {
+      missing += c->onode_space.prefetch_admission(oid(i)) !=
+        BlueStore::OnodeSpace::PrefetchAdmission::resident;
+    }
+    shard->set_max(0);
+    peer.start(peer.used_bytes() * 4);
+    peer.schedule(ch);
+    const bool blocked = wait_for([&] {
+      return peer.worker.shard_pressure_pauses.load() >= 3;
+    });
+    const auto blocked_loads = peer.loaded();
+    peer.set_shard_quotas(1024);
+    ASSERT_TRUE(blocked);
+    EXPECT_EQ(0u, blocked_loads);
+    EXPECT_GE(peer.worker.candidate_retries.load(), 3u);
+    ASSERT_TRUE(wait_for([&] { return peer.loaded() == missing; }));
+    EXPECT_EQ(1u, peer.worker.generation.load());
+    EXPECT_EQ(0u, peer.worker.reclaim_evicted.load());
+  }
+  check_data();
+}
+
 class OnodeCacheSwitch : public ::testing::Test {
 protected:
   BlueStore store{g_ceph_context, "", 4096};
@@ -287,7 +492,7 @@ TEST_F(OnodeCacheSwitch, PrefetchRejectsLruAbsentObjectsAndCanceledWork)
   EXPECT_TRUE(coll->onode_space.add_prefetched(o, &epoch, 2));
 }
 
-TEST_F(OnodeCacheSwitch, PrefetchReservesCapacityAndNeverEvictsDemandEntries)
+TEST_F(OnodeCacheSwitch, AdmissionDoesNotEvictWithoutWorkerReclamation)
 {
   switch_to(Policy::S3FIFO);
   cache->set_max(10);
@@ -305,6 +510,79 @@ TEST_F(OnodeCacheSwitch, PrefetchReservesCapacityAndNeverEvictsDemandEntries)
   EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
   cache->set_max(0);
   EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+}
+
+TEST_F(OnodeCacheSwitch, PressureReclaimMakesRoomWithoutChangingQuotaOrDemandCounters)
+{
+  switch_to(Policy::S3FIFO);
+  cache->set_max(10);
+  for (int i = 0; i < 9; ++i) {
+    add(i);
+  }
+  ASSERT_FALSE(coll->onode_space.can_prefetch(oid(99)));
+  {
+    std::lock_guard l(cache->lock);
+    auto result = cache->_reclaim_for_prefetch(4);
+    EXPECT_LE(result.examined, 4u);
+    EXPECT_EQ(1u, result.evicted);
+    EXPECT_EQ(8u, cache->_get_num());
+  }
+  EXPECT_EQ(10u, cache->max.load());
+  EXPECT_TRUE(coll->onode_space.can_prefetch(oid(99)));
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
+}
+
+TEST_F(OnodeCacheSwitch, PressureReclaimProtectsPinnedMetadataAndBoundsClockWork)
+{
+  switch_to(Policy::S3FIFO);
+  auto pinned = add(1);
+  pinned->onode.size = 4096;
+  for (int i = 2; i < 18; ++i) {
+    add(i);
+    coll->onode_space.lookup(oid(i));
+    coll->onode_space.lookup(oid(i));
+  }
+  const auto hits = logger->get(l_bluestore_onode_hits);
+  {
+    std::lock_guard l(cache->lock);
+    EXPECT_EQ(0u, cache->_reclaim_for_prefetch(0).examined);
+    auto first = cache->_reclaim_for_prefetch(1);
+    EXPECT_LE(first.examined, 1u);
+    EXPECT_EQ(0u, first.evicted);
+    for (int i = 0; i < 100; ++i) {
+      auto result = cache->_reclaim_for_prefetch(4);
+      EXPECT_LE(result.examined, 4u);
+      EXPECT_LE(result.evicted, 1u);
+    }
+    EXPECT_EQ(1u, cache->_get_num());
+  }
+  EXPECT_EQ(hits, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(4096u, coll->onode_space.lookup(oid(1))->onode.size);
+}
+
+TEST_F(OnodeCacheSwitch, PressureReclaimIsInactiveUnderLruAndAccountsUnusedOnce)
+{
+  add(1);
+  {
+    std::lock_guard l(cache->lock);
+    EXPECT_EQ(0u, cache->_reclaim_for_prefetch(128).examined);
+    EXPECT_EQ(1u, cache->_get_num());
+  }
+  coll->onode_space.clear();
+  switch_to(Policy::S3FIFO);
+  {
+    BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(2), ""));
+    o->exists = true;
+    ASSERT_TRUE(coll->onode_space.add_prefetched(o));
+  }
+  {
+    std::lock_guard l(cache->lock);
+    EXPECT_EQ(1u, cache->_reclaim_for_prefetch(4).evicted);
+    EXPECT_EQ(1u, cache->prefetch_unused);
+    EXPECT_EQ(0u, cache->_reclaim_for_prefetch(4).evicted);
+    EXPECT_EQ(1u, cache->prefetch_unused);
+  }
 }
 
 TEST_F(OnodeCacheSwitch, UnusedPrefetchIsCountedOnceOnEvictionOrClear)

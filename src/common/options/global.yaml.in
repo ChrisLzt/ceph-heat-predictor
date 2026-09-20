@@ -4705,8 +4705,17 @@ options:
   desc: Experimental bounded metadata prefetch for active PGs while using S3FIFO
   long_desc: Disabled under LRU. Scans each demand-accessed PG once per S3FIFO
     activation, without changing demand lookup counters or Heat Predictor.
-    Uses spare metadata capacity only; does not prefetch object data.
+    Does not prefetch object data. Bounded pressure reclamation is controlled
+    separately by bluestore_onode_prefetch_reclaim.
   default: false
+- name: bluestore_onode_prefetch_reclaim
+  type: bool
+  level: dev
+  desc: Reclaim evictable S3FIFO metadata under Onode prefetch pressure
+  long_desc: Only used when Onode prefetch is configured and active. Reuses
+    normal cache eviction with bounded work, without raising metadata budgets
+    or changing demand hit counters. Disable for an opportunistic-only control.
+  default: true
 - name: bluestore_onode_prefetch_rate
   type: uint
   level: dev
