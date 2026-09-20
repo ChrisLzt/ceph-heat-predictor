@@ -24,6 +24,7 @@
 #include <ratio>
 #include <mutex>
 #include <condition_variable>
+#include <deque>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/unordered_set.hpp>
@@ -1191,6 +1192,7 @@ public:
       Q_MAIN = 2,              ///< in main FIFO
     };
     uint8_t s3fifo_queue = Q_NONE; ///< which S3FIFO queue this Onode resides in
+    bool prefetched = false;     ///< protected by the onode shard lock
 
     bluestore_onode_t onode;  ///< metadata stored as value in kv store
     bool exists;              ///< true if object logically exists
@@ -1404,6 +1406,16 @@ private:
 
   public:
     enum class Policy { LRU, S3FIFO };
+    uint64_t prefetch_loaded = 0;
+    uint64_t prefetch_used = 0;
+    uint64_t prefetch_unused = 0;
+
+    void _prefetch_removed(Onode* o) {
+      if (o->prefetched) {
+        o->prefetched = false;
+        ++prefetch_unused;
+      }
+    }
 
     OnodeCacheShard(CephContext* cct) : CacheShard(cct) {}
     static OnodeCacheShard *create(CephContext* cct, std::string type,
@@ -1492,6 +1504,10 @@ private:
     }
 
     OnodeRef add_onode(const ghobject_t& oid, OnodeRef& o);
+    bool can_prefetch(const ghobject_t& oid);
+    bool add_prefetched(OnodeRef& o,
+                        const std::atomic<uint64_t>* generation = nullptr,
+                        uint64_t expected_generation = 0);
     OnodeRef lookup(const ghobject_t& o);
     void rename(OnodeRef& o, const ghobject_t& old_oid,
 		const ghobject_t& new_oid,
@@ -1518,6 +1534,8 @@ private:
       ceph::make_shared_mutex("BlueStore::Collection::lock", true, false);
 
     bool exists;
+
+    std::atomic<uint64_t> prefetch_generation{0};
 
     SharedBlobSet shared_blob_set;      ///< open SharedBlobs
 
@@ -2615,6 +2633,39 @@ private:
     void _update_cache_settings();
     void _resize_shards(bool interval_stats);
   } mempool_thread;
+
+  struct OnodePrefetchThread : public Thread {
+    struct Work {
+      CollectionRef collection;
+      ghobject_t next;
+      uint64_t generation;
+      uint32_t bits;
+    };
+    BlueStore* store;
+    ceph::mutex lock = ceph::make_mutex("BlueStore::OnodePrefetchThread");
+    ceph::condition_variable cond;
+    std::deque<Work> queue;
+    bool stop = false;
+    bool configured = false;
+    uint64_t rate = 1024;
+    uint64_t max_queued = 256;
+    uint64_t max_record = 1048576;
+    uint64_t next_generation = 0;
+    std::atomic<uint64_t> generation{0};
+    std::atomic<uint64_t> meta_limit{0};
+    std::atomic<uint64_t> scanned{0}, reads{0}, encoded_bytes{0};
+    std::atomic<uint64_t> errors{0}, oversized{0}, queue_full{0};
+    std::atomic<uint64_t> pressure_pauses{0};
+
+    explicit OnodePrefetchThread(BlueStore* s) : store(s) {}
+    void init();
+    void shutdown();
+    void set_active(bool active); // called under onode_cache_policy_lock
+    void schedule(Collection* collection);
+    bool memory_available() const;
+    void dump(ceph::Formatter* f);
+    void* entry() override;
+  } onode_prefetch;
 
 #ifdef WITH_BLKIN
   ZTracer::Endpoint trace_endpoint {"0.0.0.0", 0, "BlueStore"};

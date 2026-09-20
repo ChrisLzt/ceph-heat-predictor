@@ -1,0 +1,15 @@
+case,prefetch,rd,seconds,scope,total_iops,response_ms,read_percent,read_iops,read_response_ms,write_iops,write_response_ms,reported_average_transfer_bytes
+bigdata_baleen_v2,off,p000_native_all,600,avg_2-600,342.0,7.849,100.0,342.0,7.849,0.0,0.0,3705816
+bigdata_baleen_v2,on,p000_native_all,600,avg_2-600,337.1,7.041,100.0,337.1,7.041,0.0,0.0,3720466
+graph_graphchi_psw_v2,off,p000_psw_interval_0,150,avg_2-150,281.1,395.87,100.0,281.1,395.87,0.0,0.0,4194304
+graph_graphchi_psw_v2,off,p001_psw_interval_1,150,avg_2-150,290.7,355.26,100.0,290.7,355.26,0.0,0.0,4194207
+graph_graphchi_psw_v2,off,p002_psw_interval_2,150,avg_2-150,276.5,385.25,100.0,276.5,385.25,0.0,0.0,4194405
+graph_graphchi_psw_v2,off,p003_psw_interval_3,150,avg_2-150,275.5,386.4,100.0,275.5,386.4,0.0,0.0,4194304
+graph_graphchi_psw_v2,on,p000_psw_interval_0,150,avg_2-150,273.5,405.19,100.0,273.5,405.19,0.0,0.0,4194201
+graph_graphchi_psw_v2,on,p001_psw_interval_1,150,avg_2-150,289.8,360.84,100.0,289.8,360.84,0.0,0.0,4194401
+graph_graphchi_psw_v2,on,p002_psw_interval_2,150,avg_2-150,280.1,379.27,100.0,280.1,379.27,0.0,0.0,4194304
+graph_graphchi_psw_v2,on,p003_psw_interval_3,150,avg_2-150,272.1,387.29,100.0,272.1,387.29,0.0,0.0,4194304
+ai_training_ses_v2,off,p000_measure,600,avg_2-600,1669.1,8.969,100.0,1669.1,8.969,0.0,0.0,436206
+ai_training_ses_v2,on,p000_measure,600,avg_2-601,1642.7,8.465,100.0,1642.7,8.465,0.0,0.0,436035
+ai_inference_ses_v2,off,p000_measure,600,avg_2-600,6106.2,2.669,100.0,6106.2,2.669,0.0,0.0,98459
+ai_inference_ses_v2,on,p000_measure,600,avg_2-600,6106.3,2.644,100.0,6106.3,2.644,0.0,0.0,98461

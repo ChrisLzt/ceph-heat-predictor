@@ -3,18 +3,74 @@
 #include "include/types.h"
 #include "common/Formatter.h"
 #include "common/ceph_context.h"
+#include "common/config.h"
 #include "common/perf_counters.h"
 #include "global/global_context.h"
 #include "json_spirit/json_spirit.h"
 #include "os/bluestore/BlueStore.h"
+#include "os/bluestore/OnodeCacheBudget.h"
 #include "gtest/gtest.h"
+#include "store_test_fixture.h"
 
 #include <memory>
+#include <limits>
+#include <numeric>
 #include <sstream>
 #include <thread>
 
 namespace {
 using Policy = BlueStore::OnodeCacheShard::Policy;
+
+TEST(OnodeCacheBudget, DisabledOrMixedPoliciesKeepOriginalQuotas)
+{
+  using bluestore_cache::onode_quotas;
+  EXPECT_EQ((std::vector<uint64_t>{100, 100}),
+            onode_quotas(200, {{0, true}, {100, true}}, false));
+  EXPECT_EQ((std::vector<uint64_t>{100, 100}),
+            onode_quotas(200, {{0, false}, {100, true}}, true));
+}
+
+TEST(OnodeCacheBudget, BorrowIdleQuotasWithoutIncreasingBudget)
+{
+  EXPECT_EQ((std::vector<uint64_t>{6, 6, 194, 194}),
+            bluestore_cache::onode_quotas(
+                400, {{0, true}, {0, true}, {100, true}, {100, true}}, true));
+  EXPECT_EQ((std::vector<uint64_t>{100, 100, 100, 100}),
+            bluestore_cache::onode_quotas(
+                400, {{100, true}, {100, true}, {100, true}, {100, true}}, true));
+}
+
+TEST(OnodeCacheBudget, UnderusedShardsRetainResidentsAndAdmissionReserve)
+{
+  auto quotas = bluestore_cache::onode_quotas(
+      400, {{50, true}, {0, true}, {100, true}, {100, true}}, true);
+  EXPECT_EQ((std::vector<uint64_t>{56, 6, 169, 169}), quotas);
+  EXPECT_EQ(400u, std::accumulate(quotas.begin(), quotas.end(), uint64_t{0}));
+  EXPECT_EQ((std::vector<uint64_t>{6, 6}),
+            bluestore_cache::onode_quotas(200, {{0, true}, {0, true}}, true));
+}
+
+TEST(OnodeCacheBudget, ZeroSmallAndLargeBudgetsDoNotOverflow)
+{
+  using bluestore_cache::onode_quotas;
+  EXPECT_TRUE(onode_quotas(100, {}, true).empty());
+  EXPECT_EQ((std::vector<uint64_t>{0, 0}),
+            onode_quotas(1, {{10, true}, {0, true}}, true));
+  const auto largest = std::numeric_limits<uint64_t>::max();
+  auto quotas = onode_quotas(largest, {{0, true}, {largest, true}}, true);
+  EXPECT_EQ(largest, quotas[0] + quotas[1]);
+}
+
+TEST(OnodeCacheBudget, RecomputingForMigratedPressurePreservesTotal)
+{
+  auto a = bluestore_cache::onode_quotas(
+      400, {{100, true}, {0, true}, {100, true}, {0, true}}, true);
+  auto b = bluestore_cache::onode_quotas(
+      400, {{0, true}, {100, true}, {0, true}, {100, true}}, true);
+  EXPECT_EQ(a[0], b[1]);
+  EXPECT_EQ(a[2], b[3]);
+  EXPECT_EQ(400u, std::accumulate(b.begin(), b.end(), uint64_t{0}));
+}
 
 json_spirit::mObject decode_status(ceph::JSONFormatter& f)
 {
@@ -23,6 +79,119 @@ json_spirit::mObject decode_status(ceph::JSONFormatter& f)
   json_spirit::mValue value;
   EXPECT_TRUE(json_spirit::read(out.str(), value)) << out.str();
   return value.get_obj();
+}
+
+class OnodePrefetchStore : public StoreTestFixture {
+protected:
+  OnodePrefetchStore() : StoreTestFixture("bluestore") {}
+  void SetUp() override {
+    g_conf()._clear_safe_to_start_threads();
+    SetVal(g_conf(), "bluestore_onode_prefetch", "true");
+    SetVal(g_conf(), "bluestore_block_size", "1073741824");
+    SetVal(g_conf(), "bluestore_cache_autotune", "false");
+    SetVal(g_conf(), "bluestore_cache_size", "134217728");
+    SetVal(g_conf(), "bluestore_cache_type", "2q");
+    g_conf().apply_changes(nullptr);
+    StoreTestFixture::SetUp();
+  }
+  json_spirit::mObject status(const char* policy = nullptr) {
+    ceph::JSONFormatter f;
+    auto* s = static_cast<BlueStore*>(store.get());
+    EXPECT_EQ(0, policy ? s->set_onode_cache_policy(policy, &f) :
+                          s->get_onode_cache_policy(&f));
+    return decode_status(f);
+  }
+  static ghobject_t oid(int n) {
+    return ghobject_t(hobject_t(object_t("prefetch-" + std::to_string(n)),
+                                "", CEPH_NOSNAP, 0, 1, ""));
+  }
+};
+
+TEST_F(OnodePrefetchStore, RealMetadataPrefetchPreservesReadsWritesDeletesAndGating)
+{
+  coll_t cid(spg_t(pg_t(0, 1), shard_id_t::NO_SHARD));
+  ch = store->create_new_collection(cid);
+  bufferlist value;
+  value.append("original");
+  ObjectStore::Transaction t;
+  t.create_collection(cid, 0);
+  for (int i = 0; i < 128; ++i) {
+    t.write(cid, oid(i), 0, value.length(), value);
+  }
+  ASSERT_EQ(0, store->queue_transaction(ch, std::move(t)));
+  ch->flush();
+  CloseAndReopen();
+  ch = store->open_collection(cid);
+  ASSERT_TRUE(ch);
+  const auto allocation_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+  bool allocated = false;
+  do {
+    allocated = true;
+    const auto current = status();
+    for (const auto& shard : current.at("shards").get_array()) {
+      allocated &= shard.get_obj().at("target_onodes").get_int64() > 256;
+    }
+    if (allocated) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  } while (std::chrono::steady_clock::now() < allocation_deadline);
+  ASSERT_TRUE(allocated);
+  auto initial = status();
+  ASSERT_FALSE(initial.at("prefetch").get_obj().at("active").get_bool());
+  bufferlist actual;
+  ASSERT_EQ(8, store->read(ch, oid(0), 0, 8, actual));
+  EXPECT_EQ("original", actual.to_str());
+  EXPECT_EQ(0, status().at("prefetch").get_obj().at("loaded").get_int64());
+  status("s3fifo");
+  actual.clear();
+  ASSERT_EQ(8, store->read(ch, oid(0), 0, 8, actual));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+  json_spirit::mObject ready;
+  do {
+    ready = status();
+    if (ready.at("prefetch").get_obj().at("loaded").get_int64() >= 127) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  } while (std::chrono::steady_clock::now() < deadline);
+  EXPECT_EQ(127, ready.at("prefetch").get_obj().at("loaded").get_int64());
+  EXPECT_EQ(initial.at("onode_misses").get_int64() + 1,
+            ready.at("onode_misses").get_int64());
+  const auto misses = ready.at("onode_misses").get_int64();
+  for (int i = 1; i < 128; ++i) {
+    actual.clear();
+    ASSERT_EQ(8, store->read(ch, oid(i), 0, 8, actual));
+    ASSERT_EQ("original", actual.to_str());
+  }
+  EXPECT_EQ(misses, status().at("onode_misses").get_int64());
+  EXPECT_EQ(127, status().at("prefetch").get_obj().at("used").get_int64());
+  bufferlist replacement;
+  replacement.append("modified");
+  ObjectStore::Transaction update;
+  update.write(cid, oid(1), 0, 8, replacement);
+  update.remove(cid, oid(2));
+  ASSERT_EQ(0, store->queue_transaction(ch, std::move(update)));
+  ch->flush();
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_FALSE(status("lru").at("prefetch").get_obj().at("active").get_bool());
+    status("s3fifo");
+    actual.clear();
+    ASSERT_EQ(8, store->read(ch, oid(1), 0, 8, actual));
+    EXPECT_EQ("modified", actual.to_str());
+    actual.clear();
+    EXPECT_EQ(-ENOENT, store->read(ch, oid(2), 0, 8, actual));
+  }
+  // Remount while a scan may be queued, then check persisted data.
+  ch.reset();
+  CloseAndReopen();
+  ch = store->open_collection(cid);
+  actual.clear();
+  ASSERT_EQ(8, store->read(ch, oid(1), 0, 8, actual));
+  EXPECT_EQ("modified", actual.to_str());
+  actual.clear();
+  EXPECT_EQ(-ENOENT, store->read(ch, oid(2), 0, 8, actual));
+  ch.reset();
 }
 
 class OnodeCacheSwitch : public ::testing::Test {
@@ -81,6 +250,116 @@ protected:
   }
 };
 
+TEST_F(OnodeCacheSwitch, PrefetchDoesNotManufactureDemandHits)
+{
+  switch_to(Policy::S3FIFO);
+  BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(1), ""));
+  o->exists = true;
+  ASSERT_TRUE(coll->onode_space.can_prefetch(oid(1)));
+  ASSERT_TRUE(coll->onode_space.add_prefetched(o));
+  EXPECT_FALSE(coll->onode_space.can_prefetch(oid(1)));
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+  EXPECT_EQ(1u, cache->prefetch_loaded);
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
+  ASSERT_EQ(o, coll->onode_space.lookup(oid(1)));
+  ASSERT_EQ(o, coll->onode_space.lookup(oid(1)));
+  EXPECT_EQ(1u, cache->prefetch_used);
+  EXPECT_EQ(2u, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
+  EXPECT_FALSE(o->prefetched);
+}
+
+TEST_F(OnodeCacheSwitch, PrefetchRejectsLruAbsentObjectsAndCanceledWork)
+{
+  BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(1), ""));
+  o->exists = true;
+  EXPECT_FALSE(coll->onode_space.can_prefetch(oid(1)));
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+  switch_to(Policy::S3FIFO);
+  o->exists = false;
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+  o->exists = true;
+  std::atomic<uint64_t> epoch{0};
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o, &epoch, 1));
+  epoch = 2;
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o, &epoch, 1));
+  EXPECT_TRUE(coll->onode_space.add_prefetched(o, &epoch, 2));
+}
+
+TEST_F(OnodeCacheSwitch, PrefetchReservesCapacityAndNeverEvictsDemandEntries)
+{
+  switch_to(Policy::S3FIFO);
+  cache->set_max(10);
+  for (int i = 0; i < 9; ++i) {
+    add(i);
+  }
+  BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(99), ""));
+  o->exists = true;
+  EXPECT_FALSE(coll->onode_space.can_prefetch(oid(99)));
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+  EXPECT_EQ(9u, cache->_get_num());
+  for (int i = 0; i < 9; ++i) {
+    EXPECT_TRUE(coll->onode_space.lookup(oid(i)));
+  }
+  EXPECT_EQ(0u, logger->get(l_bluestore_onode_misses));
+  cache->set_max(0);
+  EXPECT_FALSE(coll->onode_space.add_prefetched(o));
+}
+
+TEST_F(OnodeCacheSwitch, UnusedPrefetchIsCountedOnceOnEvictionOrClear)
+{
+  switch_to(Policy::S3FIFO);
+  for (int i = 0; i < 16; ++i) {
+    BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(i), ""));
+    o->exists = true;
+    ASSERT_TRUE(coll->onode_space.add_prefetched(o));
+  }
+  {
+    std::lock_guard l(cache->lock);
+    cache->_trim_to(8);
+  }
+  EXPECT_GT(cache->prefetch_unused, 0u);
+  coll->onode_space.clear();
+  EXPECT_EQ(16u, cache->prefetch_unused);
+  EXPECT_EQ(0u, cache->prefetch_used);
+  coll->onode_space.clear();
+  EXPECT_EQ(16u, cache->prefetch_unused);
+}
+
+TEST_F(OnodeCacheSwitch, DuplicatePrefetchCannotReplaceDirtyDemandOnode)
+{
+  switch_to(Policy::S3FIFO);
+  auto resident = add(1);
+  resident->onode.size = 1024;
+  BlueStore::OnodeRef disk(new BlueStore::Onode(coll.get(), oid(1), ""));
+  disk->exists = true;
+  disk->onode.size = 64;
+  EXPECT_FALSE(coll->onode_space.add_prefetched(disk));
+  EXPECT_EQ(1024u, coll->onode_space.lookup(oid(1))->onode.size);
+  EXPECT_EQ(0u, cache->prefetch_loaded);
+}
+
+TEST_F(OnodeCacheSwitch, ConcurrentPrefetchAndPolicyChangesPreserveDemandAccounting)
+{
+  std::thread worker([&] {
+    for (int i = 0; i < 1000; ++i) {
+      BlueStore::OnodeRef o(new BlueStore::Onode(coll.get(), oid(i), ""));
+      o->exists = true;
+      coll->onode_space.add_prefetched(o);
+    }
+  });
+  for (int i = 0; i < 1000; ++i) {
+    switch_to(i % 2 ? Policy::LRU : Policy::S3FIFO);
+    coll->onode_space.lookup(oid(i));
+  }
+  worker.join();
+  EXPECT_EQ(1000u, logger->get(l_bluestore_onode_hits) +
+                     logger->get(l_bluestore_onode_misses));
+  coll->onode_space.clear();
+  EXPECT_EQ(cache->prefetch_loaded, cache->prefetch_used + cache->prefetch_unused);
+}
+
 TEST_F(OnodeCacheSwitch, WarmRoundTripPreservesEntriesBinsAndCounters)
 {
   for (int i = 0; i < 32; ++i) {
@@ -106,6 +385,34 @@ TEST_F(OnodeCacheSwitch, WarmRoundTripPreservesEntriesBinsAndCounters)
   }
   EXPECT_EQ(96u, logger->get(l_bluestore_onode_hits));
   EXPECT_EQ(1u, logger->get(l_bluestore_onode_misses));
+}
+
+TEST_F(OnodeCacheSwitch, BorrowedQuotaRetainsRealOnodes)
+{
+  switch_to(Policy::S3FIFO);
+  cache->set_max(4);
+  for (int i = 0; i < 6; ++i) {
+    add(i);
+  }
+  auto quotas = bluestore_cache::onode_quotas(
+      16, {{cache->_get_num(), true}, {0, true}, {0, true}, {0, true}}, true);
+  ASSERT_EQ(13u, quotas[0]);
+  EXPECT_EQ(16u, std::accumulate(quotas.begin(), quotas.end(), uint64_t{0}));
+  cache->set_max(quotas[0]);
+  for (int i = 0; i < 6; ++i) {
+    if (!coll->onode_space.lookup(oid(i))) {
+      add(i);
+    }
+  }
+  const auto hits = logger->get(l_bluestore_onode_hits);
+  const auto misses = logger->get(l_bluestore_onode_misses);
+  for (int i = 0; i < 60; ++i) {
+    ASSERT_TRUE(coll->onode_space.lookup(oid(i % 6)));
+  }
+  EXPECT_EQ(hits + 60, logger->get(l_bluestore_onode_hits));
+  EXPECT_EQ(misses, logger->get(l_bluestore_onode_misses));
+  EXPECT_EQ(6u, cache->_get_num());
+  EXPECT_EQ(13u, snapshot().at("target_onodes").get_uint64());
 }
 
 TEST_F(OnodeCacheSwitch, PinnedAndNonexistentOnodesSurviveSwitch)

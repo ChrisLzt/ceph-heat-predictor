@@ -175,6 +175,7 @@ def dispatch(req):
     if action == 'cluster':
         return {k: cli(*args) for k, args in {
             'status': ['status'], 'versions': ['versions'], 'osd_df': ['osd', 'df'],
+            'osdmap': ['osd', 'dump'],
             'hp_mgr': ['osd', 'hp', 'status', '--detail'],
         }.items()}
     if action == 'budget':
@@ -218,19 +219,24 @@ def terminate_owned_tree(pid):
         pass
 
 
-try:
-    for line in sys.stdin:
-        try:
-            response = {'ok': True, 'data': dispatch(json.loads(line))}
-        except Exception:
-            response = {'ok': False, 'error': traceback.format_exc()}
-        print(json.dumps(response), flush=True)
-finally:
-    if WORKLOAD is not None and WORKLOAD.poll() is None:
-        terminate_owned_tree(WORKLOAD.pid)
-        os.killpg(WORKLOAD.pid, signal.SIGTERM)
-        try:
-            WORKLOAD.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            os.killpg(WORKLOAD.pid, signal.SIGKILL)
-            WORKLOAD.wait()
+def serve(handler=dispatch):
+    try:
+        for line in sys.stdin:
+            try:
+                response = {'ok': True, 'data': handler(json.loads(line))}
+            except Exception:
+                response = {'ok': False, 'error': traceback.format_exc()}
+            print(json.dumps(response), flush=True)
+    finally:
+        if WORKLOAD is not None and WORKLOAD.poll() is None:
+            terminate_owned_tree(WORKLOAD.pid)
+            os.killpg(WORKLOAD.pid, signal.SIGTERM)
+            try:
+                WORKLOAD.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                os.killpg(WORKLOAD.pid, signal.SIGKILL)
+                WORKLOAD.wait()
+
+
+if __name__ == '__main__':
+    serve()

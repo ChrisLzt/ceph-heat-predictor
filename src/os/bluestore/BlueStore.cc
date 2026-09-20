@@ -28,6 +28,7 @@
 #include "include/cpp-btree/btree_set.h"
 
 #include "BlueStore.h"
+#include "OnodeCacheBudget.h"
 #include "bluestore_common.h"
 #include "simple_bitmap.h"
 #include "os/kv.h"
@@ -1309,6 +1310,7 @@ struct SwitchableOnodeCacheShard : public LruOnodeCacheShard {
   void _dump_policy(ceph::Formatter* f) const override {
     f->dump_string("effective_policy", policy == Policy::S3FIFO ? "s3fifo" : "lru");
     f->dump_unsigned("resident_onodes", num.load());
+    f->dump_unsigned("target_onodes", max.load());
     f->dump_unsigned("unlinked_onodes", num - lru.size() - small_q.size() - main_q.size());
     f->dump_unsigned("lru_entries", lru.size());
     f->dump_unsigned("small_entries", small_q.size());
@@ -2348,7 +2350,39 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::add_onode(const ghobject_t& oid,
 void BlueStore::OnodeSpace::_remove(const ghobject_t& oid)
 {
   ldout(cache->cct, 20) << __func__ << " " << oid << " " << dendl;
+  auto p = onode_map.find(oid);
+  if (p != onode_map.end()) {
+    cache->_prefetch_removed(p->second.get());
+  }
   onode_map.erase(oid);
+}
+
+bool BlueStore::OnodeSpace::can_prefetch(const ghobject_t& oid)
+{
+  std::lock_guard l(cache->lock);
+  const auto limit = cache->max.load();
+  return cache->_get_policy() == OnodeCacheShard::Policy::S3FIFO &&
+    cache->_get_num() < limit - limit / 10 &&
+    onode_map.find(oid) == onode_map.end();
+}
+
+bool BlueStore::OnodeSpace::add_prefetched(
+  OnodeRef& o, const std::atomic<uint64_t>* generation,
+  uint64_t expected_generation)
+{
+  std::lock_guard l(cache->lock);
+  const auto limit = cache->max.load();
+  if ((generation && generation->load() != expected_generation) ||
+      !o->exists || cache->_get_policy() != OnodeCacheShard::Policy::S3FIFO ||
+      cache->_get_num() >= limit - limit / 10 ||
+      !onode_map.emplace(o->oid, o).second) {
+    return false;
+  }
+  o->prefetched = true;
+  cache->_add(o.get(), 1);
+  ++cache->prefetch_loaded;
+  // No demand touch/counter, and no eviction to make room for speculation.
+  return true;
 }
 
 BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
@@ -2370,6 +2404,10 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
       // S3FIFO records each lookup under the shard lock; LRU still updates
       // recency when the onode eventually becomes unpinned.
       o = p->second;
+      if (o->prefetched) {
+        o->prefetched = false;
+        ++cache->prefetch_used;
+      }
       cache->_touch(o.get());
 
       cache->logger->inc(l_bluestore_onode_hits);
@@ -2384,6 +2422,7 @@ void BlueStore::OnodeSpace::clear()
   std::lock_guard l(cache->lock);
   ldout(cache->cct, 10) << __func__ << " " << onode_map.size()<< dendl;
   for (auto &p : onode_map) {
+    cache->_prefetch_removed(p.second.get());
     cache->_rm(p.second.get());
   }
   onode_map.clear();
@@ -2413,6 +2452,7 @@ void BlueStore::OnodeSpace::rename(
   if (pn != onode_map.end()) {
     ldout(cache->cct, 30) << __func__ << "  removing target " << pn->second
 			  << dendl;
+    cache->_prefetch_removed(pn->second.get());
     cache->_rm(pn->second.get());
     onode_map.erase(pn);
   }
@@ -4479,6 +4519,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   }
 
   OnodeRef o = onode_space.lookup(oid);
+  store->onode_prefetch.schedule(this);
   if (o)
     return o;
 
@@ -4761,6 +4802,7 @@ void BlueStore::MempoolThread::_resize_shards(bool interval_stats)
       kv_onode_alloc = binned_kv_onode_cache->get_committed_size();
     }
   }
+  store->onode_prefetch.meta_limit.store(std::max<int64_t>(0, meta_alloc));
   
   if (interval_stats) {
     dout(5) << __func__  << " cache_size: " << cache_size
@@ -4791,8 +4833,26 @@ void BlueStore::MempoolThread::_resize_shards(bool interval_stats)
   dout(30) << __func__ << " max_shard_onodes: " << max_shard_onodes
                  << " max_shard_buffer: " << max_shard_buffer << dendl;
 
-  for (auto i : store->onode_cache_shards) {
-    i->set_max(max_shard_onodes);
+  if (store->cct->_conf.get_val<bool>("bluestore_cache_s3fifo_rebalance_shards")) {
+    // Serialize snapshots and target updates with online policy changes.
+    // Reuse the same total entry budget; never borrow from the buffer cache.
+    std::lock_guard policy_guard(store->onode_cache_policy_lock);
+    std::vector<bluestore_cache::OnodeShardDemand> demand;
+    demand.reserve(onode_shards);
+    for (auto* shard : store->onode_cache_shards) {
+      std::lock_guard l(shard->lock);
+      demand.push_back({shard->_get_num(),
+                       shard->_get_policy() == OnodeCacheShard::Policy::S3FIFO});
+    }
+    auto quotas = bluestore_cache::onode_quotas(
+        max_shard_onodes * onode_shards, demand, true);
+    for (size_t i = 0; i < onode_shards; ++i) {
+      store->onode_cache_shards[i]->set_max(quotas[i]);
+    }
+  } else {
+    for (auto* shard : store->onode_cache_shards) {
+      shard->set_max(max_shard_onodes);
+    }
   }
   for (auto i : store->buffer_cache_shards) {
     i->set_max(max_shard_buffer);
@@ -5007,6 +5067,198 @@ void BlueStore::handle_discard(interval_set<uint64_t>& to_release)
 BlueStore::BlueStore(CephContext *cct, const string& path)
   : BlueStore(cct, path, 0) {}
 
+void BlueStore::OnodePrefetchThread::init()
+{
+  std::lock_guard policy_guard(store->onode_cache_policy_lock);
+  configured = store->cct->_conf.get_val<bool>("bluestore_onode_prefetch");
+  if (!configured) {
+    return;
+  }
+  rate = store->cct->_conf.get_val<uint64_t>("bluestore_onode_prefetch_rate");
+  max_queued = store->cct->_conf.get_val<uint64_t>("bluestore_onode_prefetch_max_queued");
+  max_record = store->cct->_conf.get_val<Option::size_t>("bluestore_onode_prefetch_max_record");
+  stop = false;
+  bool active = !store->onode_cache_shards.empty();
+  for (auto* shard : store->onode_cache_shards) {
+    std::lock_guard l(shard->lock);
+    active = active && shard->_get_policy() == OnodeCacheShard::Policy::S3FIFO;
+  }
+  set_active(active);
+  create("bstore_prefetch");
+}
+
+void BlueStore::OnodePrefetchThread::set_active(bool active)
+{
+  std::lock_guard l(lock);
+  if (!active || !configured) {
+    generation.store(0);
+    queue.clear();
+  } else if (!generation.load()) {
+    generation.store(++next_generation);
+  }
+  cond.notify_all();
+}
+
+void BlueStore::OnodePrefetchThread::shutdown()
+{
+  if (!configured) {
+    return;
+  }
+  {
+    std::lock_guard policy_guard(store->onode_cache_policy_lock);
+    set_active(false);
+    std::lock_guard l(lock);
+    stop = true;
+    cond.notify_all();
+  }
+  join();
+}
+
+void BlueStore::OnodePrefetchThread::schedule(Collection* collection)
+{
+  const auto epoch = generation.load();
+  if (!epoch || collection->prefetch_generation.load() == epoch ||
+      !collection->cid.is_pg() || !collection->exists) {
+    return;
+  }
+  // Called with the collection lock held. Never wait for the work queue.
+  std::unique_lock l(lock, std::try_to_lock);
+  if (!l.owns_lock() || generation.load() != epoch ||
+      collection->prefetch_generation.load() == epoch) {
+    return;
+  }
+  if (queue.size() >= max_queued) {
+    ++queue_full;
+    return;
+  }
+  queue.push_back({CollectionRef(collection), ghobject_t(), epoch,
+                   collection->cnode.bits});
+  collection->prefetch_generation.store(epoch);
+  cond.notify_one();
+}
+
+bool BlueStore::OnodePrefetchThread::memory_available() const
+{
+  const auto limit = meta_limit.load();
+  return limit && store->mempool_thread.meta_cache->_get_used_bytes() <
+    limit - limit / 5;
+}
+
+void BlueStore::OnodePrefetchThread::dump(Formatter* f)
+{
+  std::lock_guard l(lock);
+  f->dump_bool("configured", configured);
+  f->dump_bool("active", generation.load() != 0);
+  f->dump_unsigned("generation", generation.load());
+  f->dump_unsigned("queued_pgs", queue.size());
+  f->dump_unsigned("rate", rate);
+  f->dump_unsigned("meta_budget_bytes", meta_limit.load());
+  f->dump_unsigned("scanned", scanned.load());
+  f->dump_unsigned("db_reads", reads.load());
+  f->dump_unsigned("encoded_bytes", encoded_bytes.load());
+  f->dump_unsigned("errors", errors.load());
+  f->dump_unsigned("oversized", oversized.load());
+  f->dump_unsigned("queue_full", queue_full.load());
+  f->dump_unsigned("pressure_pauses", pressure_pauses.load());
+}
+
+void* BlueStore::OnodePrefetchThread::entry()
+{
+  constexpr int batch = 32;
+  while (true) {
+    Work work;
+    {
+      std::unique_lock l(lock);
+      cond.wait(l, [&] { return stop || !queue.empty(); });
+      if (stop) {
+        return nullptr;
+      }
+      work = std::move(queue.front());
+      queue.pop_front();
+    }
+    const auto started = std::chrono::steady_clock::now();
+    auto c = work.collection;
+    bool again = false;
+    std::vector<ghobject_t> objects;
+    ghobject_t next;
+    if (generation.load() == work.generation && memory_available()) {
+      // A split can invalidate the cursor. Do not pass it to collection_list.
+      std::shared_lock l(c->lock, std::try_to_lock);
+      if (!l.owns_lock()) {
+        again = true;
+      } else if (c->exists && c->cnode.bits == work.bits) {
+        // Raw-key order avoids the sorted iterator's unbounded hash-collision
+        // chunk. Ordering is irrelevant for this opportunistic metadata pass.
+        int r = store->_collection_list(c.get(), work.next, ghobject_t::get_max(),
+                                       batch, true, &objects, &next);
+        if (r < 0) {
+          ++errors;
+        } else {
+          work.next = next;
+          again = !next.is_max();
+        }
+      } else {
+        auto expected = work.generation;
+        c->prefetch_generation.compare_exchange_strong(expected, 0);
+      }
+    } else if (generation.load() == work.generation) {
+      ++pressure_pauses;
+      again = true;
+    }
+    for (const auto& oid : objects) {
+      ++scanned;
+      std::shared_lock l(c->lock, std::try_to_lock);
+      if (!l.owns_lock() || generation.load() != work.generation ||
+          !c->exists || !c->contains(oid) || !memory_available() ||
+          !c->onode_space.can_prefetch(oid)) {
+        continue;
+      }
+      std::string key;
+      get_object_key(store->cct, oid, &key);
+      bufferlist value;
+      ++reads;
+      int r = store->db->get(PREFIX_OBJ, key.c_str(), key.size(), &value);
+      if (r == -ENOENT) {
+        continue;
+      }
+      if (r < 0 || !value.length()) {
+        ++errors;
+        continue;
+      }
+      encoded_bytes.fetch_add(value.length());
+      if (value.length() > max_record) {
+        ++oversized;
+        continue;
+      }
+      // Decode the same metadata as demand I/O, under the same collection lock.
+      // No extent faults, object data reads, or demand lookup accounting here.
+      OnodeRef o(Onode::create_decode(c, oid, key, value));
+      if (memory_available()) {
+        c->onode_space.add_prefetched(o, &generation, work.generation);
+      }
+    }
+    {
+      std::unique_lock l(lock);
+      if (again && generation.load() == work.generation) {
+        if (queue.size() < max_queued) {
+          queue.push_back(std::move(work));
+        } else {
+          ++queue_full;
+          c->prefetch_generation.store(0);
+        }
+      }
+      // Charge a full batch even for skipped candidates; no catch-up bursts.
+      const auto delay = std::chrono::microseconds((batch * 1000000ULL + rate - 1) / rate);
+      cond.wait_until(l, started + delay, [&] {
+        return stop || generation.load() != work.generation;
+      });
+      if (stop) {
+        return nullptr;
+      }
+    }
+  }
+}
+
 BlueStore::BlueStore(CephContext *cct,
   const string& path,
   uint64_t _min_alloc_size)
@@ -5020,7 +5272,8 @@ BlueStore::BlueStore(CephContext *cct,
 #endif
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
-    mempool_thread(this)
+    mempool_thread(this),
+    onode_prefetch(this)
 {
   _init_logger();
   onode_cache_instance.generate_random();
@@ -8112,6 +8365,9 @@ int BlueStore::set_onode_cache_policy(const std::string& policy, Formatter* f)
   }
   bool changed = false;
   const auto started = ceph_clock_now().to_nsec();
+  if (next == OnodeCacheShard::Policy::LRU) {
+    onode_prefetch.set_active(false);
+  }
   for (auto* shard : onode_cache_shards) {
     std::lock_guard l(shard->lock);
     if (shard->_get_policy() != next) {
@@ -8125,6 +8381,9 @@ int BlueStore::set_onode_cache_policy(const std::string& policy, Formatter* f)
     onode_cache_switch_completed_ns = ceph_clock_now().to_nsec();
     dout(1) << __func__ << " effective_policy=" << policy
             << " generation=" << onode_cache_policy_generation << dendl;
+  }
+  if (next == OnodeCacheShard::Policy::S3FIFO) {
+    onode_prefetch.set_active(true);
   }
   _dump_onode_cache_policy(f);
   return 0;
@@ -8146,10 +8405,13 @@ void BlueStore::_dump_onode_cache_policy(Formatter* f)
   f->dump_stream("cache_instance") << onode_cache_instance;
   f->dump_unsigned("policy_generation", onode_cache_policy_generation);
   f->dump_bool("runtime_only", true);
+  f->dump_bool("s3fifo_shard_rebalance_enabled",
+               cct->_conf.get_val<bool>("bluestore_cache_s3fifo_rebalance_shards"));
   f->dump_string("buffer_cache_policy", buffer_cache_policy);
   f->dump_unsigned("last_switch_started_ns", onode_cache_switch_started_ns);
   f->dump_unsigned("last_switch_completed_ns", onode_cache_switch_completed_ns);
   std::string effective_policy;
+  uint64_t prefetch_loaded = 0, prefetch_used = 0, prefetch_unused = 0;
   f->open_array_section("shards");
   for (size_t i = 0; i < onode_cache_shards.size(); ++i) {
     auto* shard = onode_cache_shards[i];
@@ -8164,6 +8426,12 @@ void BlueStore::_dump_onode_cache_policy(Formatter* f)
     f->open_object_section("shard");
     f->dump_unsigned("id", i);
     shard->_dump_policy(f);
+    f->dump_unsigned("prefetch_loaded", shard->prefetch_loaded);
+    f->dump_unsigned("prefetch_used", shard->prefetch_used);
+    f->dump_unsigned("prefetch_unused", shard->prefetch_unused);
+    prefetch_loaded += shard->prefetch_loaded;
+    prefetch_used += shard->prefetch_used;
+    prefetch_unused += shard->prefetch_unused;
     f->close_section();
   }
   f->close_section();
@@ -8172,6 +8440,12 @@ void BlueStore::_dump_onode_cache_policy(Formatter* f)
   // Process-lifetime counters, not a percentage: consumers use window deltas.
   f->dump_unsigned("onode_hits", logger->get(l_bluestore_onode_hits));
   f->dump_unsigned("onode_misses", logger->get(l_bluestore_onode_misses));
+  f->open_object_section("prefetch");
+  onode_prefetch.dump(f);
+  f->dump_unsigned("loaded", prefetch_loaded);
+  f->dump_unsigned("used", prefetch_used);
+  f->dump_unsigned("unused_removed", prefetch_unused);
+  f->close_section();
   f->close_section();
 }
 
@@ -8271,6 +8545,7 @@ int BlueStore::_mount()
   }
 
   mounted = true;
+  onode_prefetch.init();
   return 0;
 }
 
@@ -8284,6 +8559,7 @@ int BlueStore::umount()
   ceph_assert(alloc);
 
   if (!_kv_only) {
+    onode_prefetch.shutdown();
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
     if (bdev->is_smr()) {

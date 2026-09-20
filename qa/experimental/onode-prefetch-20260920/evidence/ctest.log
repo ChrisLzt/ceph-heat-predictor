@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /lab/build
+Test project /lab/build
+    Start 159: unittest_bluestore_onode_cache
+1/1 Test #159: unittest_bluestore_onode_cache ...   Passed    4.11 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   4.13 sec

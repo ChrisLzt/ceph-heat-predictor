@@ -15,13 +15,13 @@ CASES = ['bigdata_baleen_v2', 'graph_graphchi_psw_v2', 'hpc_wrf_continuous_v2',
 
 
 class Agent:
-    def __init__(self, osd):
+    def __init__(self, osd, remote_agent='/mnt/ceph-lab/cache-study-agent-20260919.py'):
         self.osd = osd
         self.process = subprocess.Popen([
             'ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
             '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
             'wzp@' + HOSTS[osd], 'sudo', '-n', 'python3',
-            '/mnt/ceph-lab/cache-study-agent-20260919.py', str(osd)],
+            remote_agent, str(osd)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
 
     def call(self, action, **fields):
@@ -51,17 +51,27 @@ def write(path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
 
 
-def ready_cluster(cluster):
+def ready_cluster(cluster, allow_disabled_scrub=False):
     s = cluster['status']
     assert s['osdmap']['num_up_osds'] == s['osdmap']['num_in_osds'] == 3
     assert all(p['state_name'] == 'active+clean' for p in s['pgmap']['pgs_by_state'])
-    assert set(s['health'].get('checks', {})) <= {'POOL_NO_REDUNDANCY'}, s['health']
+    allowed = {'POOL_NO_REDUNDANCY'}
+    if allow_disabled_scrub:
+        flags = set(cluster['osdmap']['flags'].split(','))
+        assert {'noscrub', 'nodeep-scrub'} <= flags <= {
+            'noscrub', 'nodeep-scrub', 'sortbitwise', 'recovery_deletes',
+            'purged_snapdirs', 'pglog_hardlimit'}, flags
+        allowed.add('OSDMAP_FLAGS')
+    assert set(s['health'].get('checks', {})) <= allowed, s['health']
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--run-id', required=True)
     ap.add_argument('--check-only', action='store_true')
+    ap.add_argument('--allow-disabled-scrub', action='store_true',
+                    help='Allow only the lab noscrub/nodeep-scrub flags; PGs must still be active+clean')
+    ap.add_argument('--remote-agent', default='/mnt/ceph-lab/cache-study-agent-20260919.py')
     ap.add_argument('--cases', nargs='+', choices=CASES, default=CASES)
     ap.add_argument('--output-root', type=Path,
                     default=Path(__file__).resolve().parent / 'cloudlab-runs')
@@ -70,7 +80,7 @@ def main():
         ap.error('--cases must not contain duplicates')
     root = args.output_root / args.run_id
     root.mkdir(parents=True, exist_ok=False)
-    agents = [Agent(i) for i in range(3)]
+    agents = [Agent(i, args.remote_agent) for i in range(3)]
     pool = ThreadPoolExecutor(max_workers=3)
 
     def all_call(action, **fields):
@@ -87,7 +97,11 @@ def main():
         write(root / 'budget.json', all_call('budget'))
         write(root / 'preflight-samples.json', all_call('sample'))
         runtime = agents[1].call('runtime')
-        assert runtime['runtime']['other_methods_identical_after_javap_owner_normalization']
+        if runtime.get('kind') == 'stock-vdbench-single':
+            assert runtime['preflight']['parser']['passed'] == 15
+            assert runtime['runtime']['jar_sha256'] == '8d53b728baf4e3eb28b538765b81de606ce2b1dfca39c66822d02704b462304a'
+        else:
+            assert runtime['runtime']['other_methods_identical_after_javap_owner_normalization']
         write(root / 'runtime.json', runtime)
         if args.check_only:
             stage('all', 'preflight-complete-no-measurement')
@@ -99,7 +113,7 @@ def main():
             out = root / case
             out.mkdir()
             initial = agents[0].call('cluster')
-            ready_cluster(initial)
+            ready_cluster(initial, args.allow_disabled_scrub)
             write(out / 'initial-cluster.json', initial)
             write(out / 'baseline-control.json', all_call('control', policy='lru', enabled=False))
             write(out / 'effective-budget.json', all_call('budget'))
@@ -133,7 +147,7 @@ def main():
                             stage(case, 's3fifo-hp-enabled', switch_elapsed=timing['switch_confirmed_wall'] - timing['start_wall'])
                     if count % 10 == 0:
                         row['cluster'] = agents[0].call('cluster')
-                        ready_cluster(row['cluster'])
+                        ready_cluster(row['cluster'], args.allow_disabled_scrub)
                     stream.write(json.dumps(row) + '\n')
                     stream.flush()
                     count += 1
