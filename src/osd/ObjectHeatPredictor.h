@@ -24,6 +24,9 @@ public:
   ObjectHeatPredictor(const ObjectHeatPredictor&) = delete;
   ObjectHeatPredictor& operator=(const ObjectHeatPredictor&) = delete;
 
+  // Call once with a non-null context before registering/dispatching commands.
+  // Creates perf counters even while disabled. Init must not race commands;
+  // observations before init are ignored because the predictor is disabled.
   void init(CephContext* cct);
   void register_commands(AdminSocket* socket, AdminSocketHook* hook);
   bool handle_command(std::string_view prefix, const cmdmap_t& cmdmap,

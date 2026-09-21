@@ -168,16 +168,10 @@ struct ObjectHeatPredictor::Impl {
     logger->set(p50_id, hp_mul10000(summary.p50));
   }
 
-  void hp_ensure_object_logger(CephContext *cct)
+  // Called once by init, before control commands can enable the predictor.
+  void hp_create_object_logger(CephContext *cct)
   {
-    if (osd_object_hp_logger != nullptr || cct == nullptr) {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lock(osd_object_hp_logger_mtx);
-    if (osd_object_hp_logger != nullptr) {
-      return;
-    }
+    ceph_assert(cct && osd_object_hp_logger == nullptr);
 
     PerfCountersBuilder b(cct, "object_hp_status", object_hp_first, object_hp_last);
     b.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
@@ -638,8 +632,9 @@ struct ObjectHeatPredictor::Impl {
 
   void init_osd_object_hp_status(CephContext *cct)
   {
+    std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
     context = cct;
-    hp_ensure_object_logger(cct);
+    hp_create_object_logger(cct);
     hp_zero_object_logger();
   }
 
@@ -664,12 +659,10 @@ struct ObjectHeatPredictor::Impl {
     f->close_section();
   }
 
-  void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
-                                                ceph::Formatter *f)
+  void hp_dump_osd_object_heat_predictor_status(ceph::Formatter *f)
   {
     std::shared_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
 
-    hp_ensure_object_logger(cct);
     const auto predictor_status = osd_object_heat_predictor.status();
     if (osd_object_hp_logger != nullptr) {
       hp_update_object_logger_from_status(
@@ -730,11 +723,10 @@ struct ObjectHeatPredictor::Impl {
     f->close_section();
   }
 
-  void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f)
+  void hp_reset_osd_object_heat_predictor(ceph::Formatter *f)
   {
     std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
 
-    hp_ensure_object_logger(cct);
     uint64_t discarded_pending_io = osd_object_heat_predictor.reset();
     hp_reset_osd_op_counters();
     hp_zero_object_logger();
@@ -779,13 +771,11 @@ struct ObjectHeatPredictor::Impl {
     }
   }
 
-  void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
-                                                ceph::Formatter *f,
+  void hp_set_osd_object_heat_predictor_enabled(ceph::Formatter *f,
                                                 bool enabled)
   {
     std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
 
-    hp_ensure_object_logger(cct);
     uint64_t discarded_pending_io =
       osd_object_heat_predictor.set_enabled(enabled);
     hp_reset_osd_op_counters();
@@ -833,11 +823,12 @@ struct ObjectHeatPredictor::Impl {
     }
   }
 
-  void hp_notify_osd_object_op(CephContext *cct,
-                               const hobject_t& soid,
+  void hp_notify_osd_object_op(const hobject_t& soid,
                                uint16_t op)
   {
-    if (!hp_track_osd_op(op)) {
+    // Disabled observations need only an atomic load, not the shared lock.
+    // Keep the check under the lock too: disable/reset may race this fast path.
+    if (!osd_object_heat_predictor.is_enabled() || !hp_track_osd_op(op)) {
       return;
     }
 
@@ -847,7 +838,6 @@ struct ObjectHeatPredictor::Impl {
     }
 
     hp_count_osd_op(op);
-    hp_ensure_object_logger(cct);
     auto start_time = ceph::mono_clock::now();
     uint64_t index = 0;
     try {
@@ -873,14 +863,14 @@ ObjectHeatPredictor::ObjectHeatPredictor() : impl(std::make_unique<Impl>()) {}
 ObjectHeatPredictor::~ObjectHeatPredictor() = default;
 
 void ObjectHeatPredictor::init(CephContext* cct) {
-  ceph_assert(impl && impl->context == nullptr);
+  ceph_assert(cct && impl && impl->context == nullptr);
   impl->init_osd_object_hp_status(cct);
 }
 
 void ObjectHeatPredictor::observe(const hobject_t& object, uint16_t op,
                                   uint64_t effective_length) {
   if (effective_length != 0 && impl) {
-    impl->hp_notify_osd_object_op(impl->context, object, op);
+    impl->hp_notify_osd_object_op(object, op);
   }
 }
 
@@ -889,15 +879,15 @@ void ObjectHeatPredictor::shutdown() { impl.reset(); }
 bool ObjectHeatPredictor::handle_command(std::string_view prefix,
                                          const cmdmap_t& cmdmap,
                                          ceph::Formatter* f) {
-  if (!impl) return false;
+  if (!impl || !impl->context) return false;
   if (prefix == "object_hp reset") {
-    impl->hp_reset_osd_object_heat_predictor(impl->context, f);
+    impl->hp_reset_osd_object_heat_predictor(f);
   } else if (prefix == "object_hp status") {
-    impl->hp_dump_osd_object_heat_predictor_status(impl->context, f);
+    impl->hp_dump_osd_object_heat_predictor_status(f);
   } else if (prefix == "object_hp enable") {
-    impl->hp_set_osd_object_heat_predictor_enabled(impl->context, f, true);
+    impl->hp_set_osd_object_heat_predictor_enabled(f, true);
   } else if (prefix == "object_hp disable") {
-    impl->hp_set_osd_object_heat_predictor_enabled(impl->context, f, false);
+    impl->hp_set_osd_object_heat_predictor_enabled(f, false);
   } else {
     return false;
   }
@@ -906,6 +896,7 @@ bool ObjectHeatPredictor::handle_command(std::string_view prefix,
 
 void ObjectHeatPredictor::register_commands(AdminSocket* admin_socket,
                                              AdminSocketHook* asok_hook) {
+  ceph_assert(impl && impl->context);
   int r;
   r = admin_socket->register_command("object_hp reset", asok_hook,
 				     "reset object heat predictor state");
