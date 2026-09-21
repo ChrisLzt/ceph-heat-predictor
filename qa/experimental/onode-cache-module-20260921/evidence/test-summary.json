@@ -1,0 +1,50 @@
+{
+  "fast_tests": {
+    "tests_per_round": 28,
+    "rounds": 50,
+    "passed": 1400
+  },
+  "pressure_tests": {
+    "tests_per_round": 3,
+    "rounds": 5,
+    "passed": 15
+  },
+  "types_tests": {
+    "passed": 27,
+    "excluded": [
+      "sb_info_space_efficient_map_t.size",
+      "bluestore_blob_t.csum_bench"
+    ]
+  },
+  "full_workloads_rerun": false,
+  "logs": {
+    "build.log": {
+      "bytes": 22778,
+      "sha256": "c4ec6f59555c2846ee1d99aeebe08b3ddfd8bc4c49f493af371baaa347cae767"
+    },
+    "ctest.log": {
+      "bytes": 273,
+      "sha256": "c78346e7e7bcf44f0b87e98545c0201cbc5f67dae4dc013e0edf77de36abfb49"
+    },
+    "repeat50.log": {
+      "bytes": 255201,
+      "sha256": "bb8670b20e4edfb7679c02ff878097949a2c4ab36e4b53dd48f7bc3444a63651"
+    },
+    "pressure-repeat5.log": {
+      "bytes": 14281811,
+      "sha256": "7218d082179b161dcac69bb3ea031fb1ad910a20a0ddc9cd80b6dcfe31d296eb"
+    },
+    "types.log": {
+      "bytes": 16088,
+      "sha256": "46a66715e06f155ffbc06dcb66ff432eedc27045c3d682d4ffba3324544e7130"
+    },
+    "pressure.xml": {
+      "bytes": 918,
+      "sha256": "85d4744aecb8c7f62c9e8a15a905436c5ddab7456c489029b80aceb30f4a7362"
+    },
+    "types.xml": {
+      "bytes": 5782,
+      "sha256": "3f9db2a8781c262a7dd38babc641a1eab4441657849c1f73e0be0897406f7fd1"
+    }
+  }
+}

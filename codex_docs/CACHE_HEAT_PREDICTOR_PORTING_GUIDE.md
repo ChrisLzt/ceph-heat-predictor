@@ -37,10 +37,19 @@ src/mgr/ObjectHeatPredictorStatus.cc
 src/mgr/ObjectHeatPredictorStatus.h
 src/mgr/ObjectHeatPredictorStatusFormatter.cc
 src/mgr/ObjectHeatPredictorStatusFormatter.h
+src/os/bluestore/OnodeCache.h
+src/os/bluestore/OnodeCache.cc
+src/os/bluestore/OnodeCacheShard.cc
+src/os/bluestore/OnodePrefetch.cc
+src/os/bluestore/OnodeCacheBudget.h
 ```
 
 `src/heatpredictor/` 是 header-only 算法模块，必须连同 `include/` 整体迁移。
 EQ、特征、动态阈值、统计和模型都由其中头文件实现。
+
+缓存实现已在压力恢复版本基础上拆为独立编译单元。它仍需适配 BlueStore 的原生类型、
+锁和引用管理，不是与 Ceph 无关的通用插件；详见
+[ONODE_CACHE_MODULE.md](ONODE_CACHE_MODULE.md)。
 
 ### 必须按语义合并的 Ceph 文件
 
@@ -48,7 +57,8 @@ EQ、特征、动态阈值、统计和模型都由其中头文件实现。
 |---|---|
 | `src/common/options/global.yaml.in` | S3FIFO 配置项及枚举 |
 | `src/os/ObjectStore.h` | 缓存策略查询/切换的虚接口及不支持后端的返回值 |
-| `src/os/bluestore/BlueStore.h/.cc` | Onode 状态、可切换 shard、队列迁移、工厂、策略状态、计数 |
+| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块 |
+| `src/os/CMakeLists.txt` | 注册 `OnodeCache.cc`、`OnodeCacheShard.cc`、`OnodePrefetch.cc` |
 | `src/osd/CMakeLists.txt` | `ObjectHeatPredictor.cc` |
 | `src/osd/OSD.cc` | HP 初始化、HP 与 Onode 两组 admin command 注册和分发 |
 | `src/osd/PrimaryLogPG.h/.cc` | object I/O hook 和 WRITESAME 类型传递 |

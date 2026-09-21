@@ -6,6 +6,7 @@
 - [CODEX_CEPH.md](CODEX_CEPH.md)：当前 C4 object-layer Heat Predictor 的算法、线程和状态契约。
 - [MGR_HP_OPERATIONS.md](MGR_HP_OPERATIONS.md)：冷热识别开关、reset、简要及详细状态输出。
 - [ONODE_CACHE_OPERATIONS.md](ONODE_CACHE_OPERATIONS.md)：Onode LRU/S3FIFO 在线切换、状态和命中率口径。
+- [ONODE_CACHE_MODULE.md](ONODE_CACHE_MODULE.md)：缓存模块边界、BlueStore 必要接入点及保持行为不变的模块化重构。
 - [CEPH_OPERATIONS_MANUAL.md](CEPH_OPERATIONS_MANUAL.md)：单节点构建、部署和运维。
 - [CACHE_C4_INTEGRATION.md](CACHE_C4_INTEGRATION.md)：缓存与 C4 的代码来源、整合范围及验证边界。
 - [CACHE_HEAT_PREDICTOR_PORTING_GUIDE.md](CACHE_HEAT_PREDICTOR_PORTING_GUIDE.md)：将当前两个模块移植到其他 Ceph v17.2.7 修改版的接入清单。
