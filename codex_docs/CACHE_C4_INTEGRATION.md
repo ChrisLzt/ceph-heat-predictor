@@ -83,3 +83,15 @@ OSD 模块生产探针的 ASan/UBSan 检查通过。类型测试排除两个基�
 验证日志及按生产接口调整的 dev 探针保留在
 `/home/chris/ceph-tool/results/hp-shallow-coupling-merge-20260921/`。
 这些结果来自本次代码整合，不是此前五负载的重跑；本轮未部署或执行线上联合负载。
+
+
+## 缓存模块化合并（2026-09-21）
+
+在 HP 重构 `a58005cfb53` 上合并缓存模块化提交 `9970f4d4598`。
+缓存控制器、LRU/S3FIFO 分片及预取实现拆入独立文件，详见
+[Onode 模块边界](ONODE_CACHE_MODULE.md)。已有 HP 重构代码保持不变。
+
+本机合并验证：OSD/MGR 和两个测试目标构建通过；正式 CTest 缓存入口通过，
+其中32项测试全部通过；BlueStore 类型27项通过，仍排除两个性能/规模用例。
+日志位于 `/home/chris/ceph-tool/results/cache-hp-module-merge-20260921/`。
+该记录与来源分支的 CloudLab 历史验证分开；本次未部署、未执行五负载，未重跑 sanitizer。

@@ -1,7 +1,8 @@
 # Cache 与 Heat Predictor 迁移说明
 
 本文面向将 `merge` 的当前模块移植到另一套 Ceph v17.2.7 修改版的开发者。
-缓存累积至 `5df98634d6f` 的预取压力恢复版本，HP 算法来源为 `afd18c8e01`，
+缓存包含 `5df98634d6f` 的预取压力恢复及 `9970f4d4598` 的模块化重构；
+HP 算法来源为 `afd18c8e01`，
 并已加入 2026-09-21 的实例生命周期与浅耦合重构；历史来源和本轮验证见
 [CACHE_C4_INTEGRATION.md](CACHE_C4_INTEGRATION.md)。
 
@@ -40,10 +41,19 @@ src/mgr/ObjectHeatPredictorStatus.cc
 src/mgr/ObjectHeatPredictorStatus.h
 src/mgr/ObjectHeatPredictorStatusFormatter.cc
 src/mgr/ObjectHeatPredictorStatusFormatter.h
+src/os/bluestore/OnodeCache.h
+src/os/bluestore/OnodeCache.cc
+src/os/bluestore/OnodeCacheShard.cc
+src/os/bluestore/OnodePrefetch.cc
+src/os/bluestore/OnodeCacheBudget.h
 ```
 
 `src/heatpredictor/` 是 header-only 算法模块，必须连同 `include/` 整体迁移。
 EQ、特征、动态阈值、统计和模型都由其中头文件实现。
+
+缓存实现已在压力恢复版本基础上拆为独立编译单元。它仍需适配 BlueStore 的原生类型、
+锁和引用管理，不是与 Ceph 无关的通用插件；详见
+[ONODE_CACHE_MODULE.md](ONODE_CACHE_MODULE.md)。
 
 ### 必须按语义合并的 Ceph 文件
 
@@ -51,7 +61,8 @@ EQ、特征、动态阈值、统计和模型都由其中头文件实现。
 |---|---|
 | `src/common/options/global.yaml.in` | S3FIFO 配置项及枚举 |
 | `src/os/ObjectStore.h` | 缓存策略查询/切换的虚接口及不支持后端的返回值 |
-| `src/os/bluestore/BlueStore.h/.cc` | Onode 状态、可切换 shard、队列迁移、工厂、策略状态、计数 |
+| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块 |
+| `src/os/CMakeLists.txt` | 注册 `OnodeCache.cc`、`OnodeCacheShard.cc`、`OnodePrefetch.cc` |
 | `src/osd/CMakeLists.txt` | `ObjectHeatPredictor.cc` |
 | `src/osd/OSD.h/.cc` | OSDService 持有 HP 实例；初始化、命令路由与 service 收尾时的销毁；保留 Onode 命令 |
 | `src/osd/PrimaryLogPG.cc` | 四处原位置的 `object_hp.observe`，传入规范化后的有效长度；不添加 WRITESAME 覆盖参数 |

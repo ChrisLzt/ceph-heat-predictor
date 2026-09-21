@@ -2268,15 +2268,6 @@ private:
 
   std::vector<OnodeCacheShard*> onode_cache_shards;
   std::vector<BufferCacheShard*> buffer_cache_shards;
-  // Serializes administrative policy changes; never taken on the I/O path.
-  ceph::mutex onode_cache_policy_lock =
-    ceph::make_mutex("BlueStore::onode_cache_policy_lock");
-  uint64_t onode_cache_policy_generation = 0;
-  uuid_d onode_cache_instance;
-  uint64_t onode_cache_switch_started_ns = 0;
-  uint64_t onode_cache_switch_completed_ns = 0;
-  std::string buffer_cache_policy;
-  void _dump_onode_cache_policy(ceph::Formatter* f);
 
   /// protect zombie_osr_set
   ceph::mutex zombie_osr_lock = ceph::make_mutex("BlueStore::zombie_osr_lock");
@@ -2647,47 +2638,8 @@ private:
   } mempool_thread;
 
   friend struct OnodePrefetchTestPeer;
-  struct OnodePrefetchThread : public Thread {
-    struct Work {
-      CollectionRef collection;
-      ghobject_t next;
-      uint64_t generation;
-      uint32_t bits;
-    };
-    BlueStore* store;
-    ceph::mutex lock = ceph::make_mutex("BlueStore::OnodePrefetchThread");
-    ceph::condition_variable cond;
-    std::deque<Work> queue;
-    bool stop = false;
-    bool configured = false;
-    bool reclaim_enabled = false;
-    uint64_t rate = 1024;
-    uint64_t max_queued = 256;
-    uint64_t max_record = 1048576;
-    uint64_t next_generation = 0;
-    std::atomic<uint64_t> generation{0};
-    std::atomic<uint64_t> meta_limit{0};
-    std::atomic<uint64_t> scanned{0}, reads{0}, encoded_bytes{0};
-    std::atomic<uint64_t> errors{0}, oversized{0}, queue_full{0};
-    std::atomic<uint64_t> pressure_pauses{0};
-    std::atomic<uint64_t> shard_pressure_pauses{0}, resident_skips{0};
-    std::atomic<uint64_t> lock_retries{0}, candidate_retries{0};
-    std::atomic<uint64_t> reclaim_passes{0}, reclaim_examined{0};
-    std::atomic<uint64_t> reclaim_evicted{0}, reclaim_no_progress{0};
-    std::atomic<uint64_t> reclaim_lock_skips{0};
-    size_t reclaim_shard = 0;
-    std::chrono::steady_clock::time_point next_reclaim{};
-
-    explicit OnodePrefetchThread(BlueStore* s) : store(s) {}
-    void init();
-    void shutdown();
-    void set_active(bool active); // called under onode_cache_policy_lock
-    void schedule(Collection* collection);
-    bool memory_available() const;
-    void reclaim_space(uint64_t epoch, OnodeCacheShard* target = nullptr);
-    void dump(ceph::Formatter* f);
-    void* entry() override;
-  } onode_prefetch;
+  struct OnodeCache;
+  std::unique_ptr<OnodeCache> onode_cache;
 
 #ifdef WITH_BLKIN
   ZTracer::Endpoint trace_endpoint {"0.0.0.0", 0, "BlueStore"};

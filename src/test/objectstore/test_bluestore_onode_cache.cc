@@ -7,7 +7,7 @@
 #include "common/perf_counters.h"
 #include "global/global_context.h"
 #include "json_spirit/json_spirit.h"
-#include "os/bluestore/BlueStore.h"
+#include "os/bluestore/OnodeCache.h"
 #include "os/bluestore/OnodeCacheBudget.h"
 #include "gtest/gtest.h"
 #include "store_test_fixture.h"
@@ -21,7 +21,7 @@
 // A separate worker lets tests control its budget without racing the mounted
 // store's autotuner or adding a production budget-override command.
 struct OnodePrefetchTestPeer {
-  BlueStore::OnodePrefetchThread worker;
+  BlueStore::OnodeCache::PrefetchThread worker;
   explicit OnodePrefetchTestPeer(BlueStore* store) : worker(store) {}
   ~OnodePrefetchTestPeer() { worker.shutdown(); }
 
@@ -945,6 +945,45 @@ TEST(OnodeCachePolicy, FactoryKeepsStartupCompatibility)
       BlueStore::OnodeCacheShard::create(g_ceph_context, name, nullptr));
     const auto expected = std::string(name) == "s3fifo" ? Policy::S3FIFO : Policy::LRU;
     EXPECT_EQ(expected, shard->_get_policy());
+  }
+}
+
+TEST(OnodeCachePolicy, ModuleKeepsStartupMappingAndIndependentState)
+{
+  std::string previous_instance;
+  for (const auto* name : {"lru", "2q", "s3fifo"}) {
+    CephContext cct(CEPH_ENTITY_TYPE_OSD);
+    ASSERT_EQ(0, cct._conf.set_val("bluestore_cache_type", name));
+    ASSERT_EQ(0, cct._conf.set_val("bluestore_onode_prefetch", "false"));
+    cct._conf.apply_changes(nullptr);
+    BlueStore store(&cct, "", 4096);
+    store.set_cache_shards(4);
+    ceph::JSONFormatter f;
+    ASSERT_EQ(0, store.get_onode_cache_policy(&f));
+    auto result = decode_status(f);
+    EXPECT_EQ(std::string(name) == "s3fifo" ? "s3fifo" : "lru",
+              result.at("effective_policy").get_str());
+    EXPECT_EQ(std::string(name) == "s3fifo" ? "2q" : name,
+              result.at("buffer_cache_policy").get_str());
+    EXPECT_EQ(0u, result.at("policy_generation").get_uint64());
+    EXPECT_EQ(0u, result.at("onode_hits").get_uint64());
+    EXPECT_EQ(0u, result.at("onode_misses").get_uint64());
+    const auto instance = result.at("cache_instance").get_str();
+    EXPECT_FALSE(instance.empty());
+    EXPECT_NE(previous_instance, instance);
+    previous_instance = instance;
+    const auto& prefetch = result.at("prefetch").get_obj();
+    EXPECT_FALSE(prefetch.at("configured").get_bool());
+    EXPECT_FALSE(prefetch.at("active").get_bool());
+    // Keep the diagnostic contract available even before the worker starts.
+    for (const auto* field : {"generation", "queued_pgs", "meta_budget_bytes",
+         "scanned", "db_reads", "encoded_bytes", "errors", "oversized",
+         "queue_full", "pressure_pauses", "shard_pressure_pauses",
+         "resident_skips", "lock_retries", "candidate_retries", "reclaim_passes",
+         "reclaim_examined", "reclaim_evicted", "reclaim_no_progress",
+         "reclaim_lock_skips", "loaded", "used", "unused_removed"}) {
+      EXPECT_EQ(0u, prefetch.at(field).get_uint64()) << field;
+    }
   }
 }
 
