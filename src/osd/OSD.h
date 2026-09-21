@@ -36,6 +36,7 @@
 #include "include/common_fwd.h"
 
 #include "OpRequest.h"
+#include "ObjectHeatPredictor.h"
 #include "Session.h"
 
 #include "osd/scheduler/OpScheduler.h"
@@ -97,6 +98,7 @@ class OSD;
 class OSDService {
   using OpSchedulerItem = ceph::osd::scheduler::OpSchedulerItem;
 public:
+  ObjectHeatPredictor object_hp;
   OSD *osd;
   CephContext *cct;
   ObjectStore::CollectionHandle meta_ch;

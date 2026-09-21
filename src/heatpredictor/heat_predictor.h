@@ -7,6 +7,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -45,8 +46,8 @@ struct HeatPredictorStatus {
 
 class HeatPredictor {
 public:
-    using ExpiryProgressCallback = void (*)(uint64_t);
-    using BackgroundErrorCallback = void (*)();
+    using ExpiryProgressCallback = std::function<void(uint64_t)>;
+    using BackgroundErrorCallback = std::function<void()>;
 
 private:
     static uint64_t mix64(uint64_t x) {
@@ -58,11 +59,11 @@ private:
 
     static uint64_t make_object_key(
             int64_t pool,
-            uint64_t ceph_object_hash,
+            uint64_t object_hash,
             uint64_t object_name_hash) {
         uint64_t key = mix64(static_cast<uint64_t>(pool));
         key ^= mix64(
-            mix64(ceph_object_hash) ^ mix64(object_name_hash));
+            mix64(object_hash) ^ mix64(object_name_hash));
         return key;
     }
 
@@ -141,8 +142,9 @@ private:
     std::thread expiry_thread;
     std::atomic<bool> expiry_running{false};
     std::atomic<uint64_t> expiry_wake_sequence{0};
-    std::atomic<ExpiryProgressCallback> expiry_progress_callback{nullptr};
-    std::atomic<BackgroundErrorCallback> background_error_callback{nullptr};
+    // Immutable after construction; the owner outlives shutdown/join.
+    const ExpiryProgressCallback expiry_progress_callback;
+    const BackgroundErrorCallback background_error_callback;
     HpTraceWriter trace_writer;
 
     static const std::vector<double>& to_feat(const PredictionSample& item) {
@@ -319,8 +321,7 @@ private:
         }
         train_queue_cv.notify_all();
         notify_expiry_worker();
-        auto callback = background_error_callback.load(
-            std::memory_order_acquire);
+        const auto& callback = background_error_callback;
         if (callback != nullptr) {
             try {
                 callback();
@@ -377,8 +378,7 @@ private:
 
                 if (expired_evaluation_count > 0 ||
                     threshold_status_changed) {
-                    auto callback = expiry_progress_callback.load(
-                        std::memory_order_acquire);
+                    const auto& callback = expiry_progress_callback;
                     if (callback != nullptr) {
                         callback(expired_evaluation_count);
                     }
@@ -463,14 +463,20 @@ private:
     HpIntegerQuantileWindow cold_labeled_sample_future_access_count_window;
 
 public:
-    HeatPredictor() {
-        train_model.reset(make_model(adaptation_telemetry));
-        prediction_snapshot = clone_train_model_for_prediction();
+    explicit HeatPredictor(ExpiryProgressCallback on_expiry = {},
+                           BackgroundErrorCallback on_error = {})
+        : expiry_progress_callback(std::move(on_expiry)),
+          background_error_callback(std::move(on_error)) {
         eq = std::make_unique<EvaluationQueue>();
         last_snapshot_publish_time_ns = monotonic_now_ns();
     }
 
-    ~HeatPredictor() {
+    ~HeatPredictor() { shutdown(); }
+
+    // Terminal lifecycle operation. The owner must stop foreground callers
+    // first. Callbacks remain valid until both workers have been joined.
+    void shutdown() {
+        enabled.store(false, std::memory_order_release);
         if (expiry_running.exchange(false)) {
             notify_expiry_worker();
         }
@@ -479,14 +485,15 @@ public:
         }
         if (train_running.exchange(false)) {
             train_queue_cv.notify_all();
-            if (train_thread.joinable()) {
-                train_thread.join();
-            }
         }
+        if (train_thread.joinable()) {
+            train_thread.join();
+        }
+        trace_writer.stop();
     }
 
 private:
-    // 懒启动：首次 predict() 调用时才创建后台训练线程，避免静态初始化阶段 spawn thread
+    // 懒启动：首次 predict() 调用时才创建后台训练线程，避免为尚未使用的实例创建线程
     void ensure_started() {
         std::call_once(start_flag, [this] {
             train_running = true;
@@ -516,7 +523,10 @@ public:
     HeatPredictor(const HeatPredictor&) = delete;
     HeatPredictor& operator=(const HeatPredictor&) = delete;
 
-    uint64_t reset() {
+    uint64_t reset() { return reset_state(is_enabled()); }
+
+private:
+    uint64_t reset_state(bool prepare_model) {
         std::unique_lock<std::shared_mutex> reset_lock(reset_mutex);
         uint64_t discarded_pending = 0;
 
@@ -529,8 +539,11 @@ public:
         adaptation_telemetry->reset();
         trained_sample_count.store(0, std::memory_order_relaxed);
         warmup_prediction_count.store(0, std::memory_order_relaxed);
-        train_model.reset(make_model(adaptation_telemetry));
-        next_snapshot = clone_train_model_for_prediction();
+        train_model.reset();
+        if (prepare_model) {
+            train_model.reset(make_model(adaptation_telemetry));
+            next_snapshot = clone_train_model_for_prediction();
+        }
         publish_prediction_snapshot(std::move(next_snapshot));
 
         {
@@ -564,28 +577,21 @@ public:
         return discarded_pending;
     }
 
+public:
     bool is_enabled() const {
         return enabled.load(std::memory_order_acquire);
     }
 
-    void set_expiry_progress_callback(ExpiryProgressCallback callback) {
-        expiry_progress_callback.store(callback, std::memory_order_release);
-    }
-
-    void set_background_error_callback(BackgroundErrorCallback callback) {
-        background_error_callback.store(callback, std::memory_order_release);
-    }
-
     uint64_t set_enabled(bool next_enabled) {
         enabled.store(false, std::memory_order_release);
-        uint64_t discarded_pending = reset();
+        uint64_t discarded_pending = reset_state(next_enabled);
         enabled.store(next_enabled, std::memory_order_release);
         train_queue_cv.notify_all();
         notify_expiry_worker();
         return discarded_pending;
     }
 
-    int predict(int64_t pool, uint64_t ceph_object_hash,
+    int predict(int64_t pool, uint64_t object_hash,
             uint64_t object_name_hash, uint64_t *io_sequence_out) {
         if (!is_enabled()) {
             if (io_sequence_out != nullptr) {
@@ -612,7 +618,7 @@ public:
             return 0;
         }
         uint64_t object_key_hash = make_object_key(
-            pool, ceph_object_hash, object_name_hash);
+            pool, object_hash, object_name_hash);
 
         std::vector<EvaluatedSample> expired_evaluated;
         uint64_t io_sequence = 0;
@@ -807,6 +813,7 @@ public:
             std::lock_guard<std::mutex> lock(train_queue_mutex);
             train_queue_length = train_queue.size();
         }
+        const auto snapshot = get_prediction_snapshot();
         return HeatPredictorStatus{
             std::move(evaluation),
             train_queue_length,
@@ -817,7 +824,7 @@ public:
             background_error_count.load(std::memory_order_relaxed),
             trace_writer.status(),
             trained_sample_count.load(std::memory_order_relaxed),
-            get_prediction_snapshot()->trained_samples,
+            snapshot ? snapshot->trained_samples : 0,
             warmup_prediction_count.load(std::memory_order_relaxed)};
     }
 

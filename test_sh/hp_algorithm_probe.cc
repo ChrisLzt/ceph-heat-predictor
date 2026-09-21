@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-#include "common/debug.h"
+#include <sstream>
 
 #define private public
 #include "heatpredictor/heat_predictor.h"
@@ -26,27 +26,7 @@
 #include "heatpredictor/include/ARFClassifier.h"
 #include "heatpredictor/include/drift/ADWIN.h"
 
-namespace ceph {
 
-void __ceph_assert_fail(const assert_data& ctx)
-{
-  std::cerr << "ceph_assert failed: " << ctx.assertion
-            << " at " << ctx.file << ":" << ctx.line << std::endl;
-  std::abort();
-}
-
-void __ceph_assert_fail(
-    const char *assertion,
-    const char *file,
-    int line,
-    const char *)
-{
-  std::cerr << "ceph_assert failed: " << assertion
-            << " at " << file << ":" << line << std::endl;
-  std::abort();
-}
-
-} // namespace ceph
 
 namespace {
 
@@ -214,11 +194,9 @@ void test_training_shutdown_finishes_only_current_batch()
 
 void test_training_exception_disables_predictor_without_terminating()
 {
-  HeatPredictor predictor;
+  HeatPredictor predictor({}, record_background_error_notification);
   predictor.set_enabled(true);
   background_error_notification_count.store(0);
-  predictor.set_background_error_callback(
-      record_background_error_notification);
   auto classifier = std::make_shared<ThrowingTrainingClassifier>();
   predictor.train_model = classifier;
   predictor.train_queue.push(

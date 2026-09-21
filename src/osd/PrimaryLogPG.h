@@ -1513,8 +1513,7 @@ public:
   void snap_trimmer_scrub_complete() override;
   int do_osd_ops(
     OpContext *ctx,
-    std::vector<OSDOp>& ops,
-    std::optional<uint16_t> hp_op_override = std::nullopt);
+    std::vector<OSDOp>& ops);
 
   int _get_tmap(OpContext *ctx, ceph::buffer::list *header, ceph::buffer::list *vals);
   int do_tmap2omap(OpContext *ctx, unsigned flags);

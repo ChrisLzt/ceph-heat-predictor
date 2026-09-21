@@ -7,29 +7,7 @@
 #include "heatpredictor/hp_trace.h"
 #include "heatpredictor/hp_trace_record.h"
 
-namespace ceph {
 
-void __ceph_assert_fail(const assert_data& ctx)
-{
-  std::fprintf(
-      stderr, "ceph_assert failed: %s at %s:%d\n",
-      ctx.assertion, ctx.file, ctx.line);
-  std::abort();
-}
-
-void __ceph_assert_fail(
-    const char *assertion,
-    const char *file,
-    int line,
-    const char *)
-{
-  std::fprintf(
-      stderr, "ceph_assert failed: %s at %s:%d\n",
-      assertion, file, line);
-  std::abort();
-}
-
-} // namespace ceph
 
 namespace {
 

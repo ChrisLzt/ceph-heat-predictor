@@ -1,6 +1,8 @@
 #ifndef CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 #define CEPH_HEATPREDICTOR_HP_INTEGER_QUANTILE_WINDOW_H
 
+#include "hp_assert.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -31,11 +33,11 @@ public:
         }
 
         const BinIndex bin = bin_for_value(value);
-        ceph_assert(bins[bin] < std::numeric_limits<uint64_t>::max());
+        hp_assert(bins[bin] < std::numeric_limits<uint64_t>::max());
         ++bins[bin];
         order.push_back(bin);
         if (order.size() > capacity) {
-            ceph_assert(bins[order.front()] > 0);
+            hp_assert(bins[order.front()] > 0);
             --bins[order.front()];
             order.pop_front();
         }

@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "common/debug.h"
+#include "hp_assert.h"
 #include "hp_config.h"
 #include "hp_features.h"
 #include "hp_future_access_threshold.h"
@@ -147,7 +147,7 @@ public:
             pending_evaluation_capacity(pending_evaluation_capacity),
             lru_capacity(lru_capacity),
             next_deadline(pending_evaluations.end()) {
-        ceph_assert(short_access_window_ns > 0);
+        hp_assert(short_access_window_ns > 0);
         heat_map.reserve(std::min<size_t>(
             lru_capacity, static_cast<size_t>(65536)));
     }
@@ -190,9 +190,9 @@ private:
                 recent_access_events.front().object_key_hash;
             recent_access_events.pop_front();
             auto state_position = heat_map.find(key);
-            ceph_assert(state_position != heat_map.end());
+            hp_assert(state_position != heat_map.end());
             ObjectHeatState& state = state_position->second;
-            ceph_assert(state.recent_window_access_count > 0);
+            hp_assert(state.recent_window_access_count > 0);
             const uint64_t old_count =
                 state.recent_window_access_count;
             --state.recent_window_access_count;
@@ -213,9 +213,9 @@ private:
                 short_access_events.front().object_key_hash;
             short_access_events.pop_front();
             auto state_position = heat_map.find(key);
-            ceph_assert(state_position != heat_map.end());
+            hp_assert(state_position != heat_map.end());
             ObjectHeatState& state = state_position->second;
-            ceph_assert(state.short_window_access_count > 0);
+            hp_assert(state.short_window_access_count > 0);
             --state.short_window_access_count;
             make_idle_if_unprotected(key, state);
         }
@@ -237,7 +237,7 @@ private:
                     0,
                     lru_list.end(),
                     now_ns});
-            ceph_assert(ok);
+            hp_assert(ok);
             state_position = inserted;
             heat_state_peak_count_value = std::max(
                 heat_state_peak_count_value, heat_map.size());
@@ -249,9 +249,9 @@ private:
                     ? now_ns - state.last_access_time_ns
                     : 0;
             if (state.lru_position != lru_list.end()) {
-                ceph_assert(state.pending_evaluation_count == 0);
-                ceph_assert(state.recent_window_access_count == 0);
-                ceph_assert(state.short_window_access_count == 0);
+                hp_assert(state.pending_evaluation_count == 0);
+                hp_assert(state.recent_window_access_count == 0);
+                hp_assert(state.short_window_access_count == 0);
                 lru_list.erase(state.lru_position);
                 state.lru_position = lru_list.end();
             }
@@ -323,7 +323,7 @@ public:
         while (next_evaluation_is_due(now_ns)) {
             auto batch = expire_due_evaluations(
                 now_ns, HP_EXPIRY_MAINTENANCE_BATCH_SIZE);
-            ceph_assert(!batch.empty() || !next_evaluation_is_due(now_ns));
+            hp_assert(!batch.empty() || !next_evaluation_is_due(now_ns));
             evaluated.insert(
                 evaluated.end(),
                 std::make_move_iterator(batch.begin()),
@@ -383,7 +383,7 @@ private:
                 ++microbatch_count;
                 ++scan;
             }
-            ceph_assert(microbatch_count > 0);
+            hp_assert(microbatch_count > 0);
 
             // Deadlines within one millisecond share the threshold at the
             // latest deadline in that microbatch.
@@ -462,11 +462,11 @@ public:
             double predicted_hot_probability,
             int predicted_label,
             bool cold_start_fallback = false) {
-        ceph_assert(ticket.valid);
+        hp_assert(ticket.valid);
         PendingIterator position = ticket.position;
         ticket.valid = false;
-        ceph_assert(position != pending_evaluations.end());
-        ceph_assert(!position->prediction_complete);
+        hp_assert(position != pending_evaluations.end());
+        hp_assert(!position->prediction_complete);
         position->item.predicted_hot_probability =
             predicted_hot_probability;
         position->item.predicted_label = predicted_label;
@@ -482,16 +482,16 @@ public:
             PredictionTicket&& ticket,
             uint64_t now_ns) {
         (void)now_ns;
-        ceph_assert(ticket.valid);
+        hp_assert(ticket.valid);
         PendingIterator position = ticket.position;
         ticket.valid = false;
-        ceph_assert(position != pending_evaluations.end());
+        hp_assert(position != pending_evaluations.end());
 
         if (!position->label_complete) {
-            ceph_assert(pending_deadline_count > 0);
+            hp_assert(pending_deadline_count > 0);
             auto state = heat_map.find(position->item.object_key_hash);
-            ceph_assert(state != heat_map.end());
-            ceph_assert(state->second.pending_evaluation_count > 0);
+            hp_assert(state != heat_map.end());
+            hp_assert(state->second.pending_evaluation_count > 0);
             --state->second.pending_evaluation_count;
             --pending_deadline_count;
             if (position == next_deadline) {
@@ -550,8 +550,8 @@ public:
 
     EvaluationQueueStatus status(uint64_t now_ns) const {
         (void)now_ns;
-        ceph_assert(pending_evaluations.size() >= pending_deadline_count);
-        ceph_assert(heat_map.size() >= lru_list.size());
+        hp_assert(pending_evaluations.size() >= pending_deadline_count);
+        hp_assert(heat_map.size() >= lru_list.size());
         const auto threshold = future_access_threshold.status();
         return EvaluationQueueStatus{
             pending_deadline_count,
@@ -577,12 +577,12 @@ private:
             const uint64_t victim = lru_list.front();
             lru_list.pop_front();
             auto victim_position = heat_map.find(victim);
-            ceph_assert(victim_position != heat_map.end());
-            ceph_assert(
+            hp_assert(victim_position != heat_map.end());
+            hp_assert(
                 victim_position->second.pending_evaluation_count == 0);
-            ceph_assert(
+            hp_assert(
                 victim_position->second.recent_window_access_count == 0);
-            ceph_assert(
+            hp_assert(
                 victim_position->second.short_window_access_count == 0);
             heat_map.erase(victim_position);
             ++lru_eviction_count_value;
@@ -608,15 +608,15 @@ private:
             PendingIterator position,
             uint64_t now_ns) {
         PendingEvaluation& expired = *position;
-        ceph_assert(!expired.label_complete);
-        ceph_assert(pending_deadline_count > 0);
+        hp_assert(!expired.label_complete);
+        hp_assert(pending_deadline_count > 0);
 
         auto state_position =
             heat_map.find(expired.item.object_key_hash);
-        ceph_assert(state_position != heat_map.end());
+        hp_assert(state_position != heat_map.end());
         ObjectHeatState& state = state_position->second;
-        ceph_assert(state.pending_evaluation_count > 0);
-        ceph_assert(
+        hp_assert(state.pending_evaluation_count > 0);
+        hp_assert(
             state.tracked_access_count >=
             expired.item.tracked_access_count_after_current_access);
 
@@ -636,8 +636,8 @@ private:
 
     EvaluatedSample finalize_evaluation(PendingIterator position) {
         PendingEvaluation& completed = *position;
-        ceph_assert(completed.prediction_complete);
-        ceph_assert(completed.label_complete);
+        hp_assert(completed.prediction_complete);
+        hp_assert(completed.label_complete);
         EvaluatedSample evaluated{
             std::move(completed.item),
             completed.future_window_access_count,
@@ -656,7 +656,7 @@ private:
             bool prediction_complete,
             uint64_t now_ns) {
         auto state_position = heat_map.find(item.object_key_hash);
-        ceph_assert(state_position != heat_map.end());
+        hp_assert(state_position != heat_map.end());
         if (pending_evaluations.size() >= pending_evaluation_capacity) {
             ++evaluation_drop_count_value;
             make_idle_if_unprotected(

@@ -2,30 +2,37 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
-
+#include <string_view>
 #include "include/common_fwd.h"
+#include "common/cmdparse.h"
 
-namespace ceph {
-class Formatter;
-}
-
+namespace ceph { class Formatter; }
+class AdminSocket;
+class AdminSocketHook;
 struct hobject_t;
 
-void init_osd_object_hp_status(CephContext *cct, int osd_id);
-void hp_dump_osd_object_heat_predictor_status(CephContext *cct,
-                                              ceph::Formatter *f);
-void hp_reset_osd_object_heat_predictor(CephContext *cct, ceph::Formatter *f);
-void hp_set_osd_object_heat_predictor_enabled(CephContext *cct,
-                                              ceph::Formatter *f,
-                                              bool enabled);
-void hp_start_osd_object_heat_predictor_trace(
-    CephContext *cct,
-    ceph::Formatter *f,
-    const std::string& phase,
-    const std::string& directory);
-void hp_stop_osd_object_heat_predictor_trace(CephContext *cct,
-                                             ceph::Formatter *f);
-void hp_notify_osd_object_op(CephContext *cct,
-                             const hobject_t& soid,
-                             uint16_t op);
+// One module per OSDService. The host owns command/request routing; this module
+// owns all predictor, Trace and perf-counter state. No storage I/O is performed.
+class ObjectHeatPredictor {
+  struct Impl;
+  std::unique_ptr<Impl> impl;
+public:
+  ObjectHeatPredictor();
+  ~ObjectHeatPredictor();
+  ObjectHeatPredictor(const ObjectHeatPredictor&) = delete;
+  ObjectHeatPredictor& operator=(const ObjectHeatPredictor&) = delete;
+
+  // Call once with a non-null context before registering/dispatching commands.
+  // Creates perf counters even while disabled. Init must not race commands;
+  // observations before init are ignored because the predictor is disabled.
+  void init(CephContext* cct, int osd_id);
+  void register_commands(AdminSocket* socket, AdminSocketHook* hook);
+  bool handle_command(std::string_view prefix, const cmdmap_t& cmdmap,
+                      ceph::Formatter* formatter);
+  // Call only at the existing validated/normalized PG observation positions.
+  void observe(const hobject_t& object, uint16_t op, uint64_t effective_length);
+  // Terminal, idempotent. Host must first drain callers and unregister commands.
+  void shutdown();
+};

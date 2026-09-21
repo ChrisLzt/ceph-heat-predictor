@@ -1,6 +1,8 @@
 #ifndef CEPH_HEATPREDICTOR_HP_FEATURES_H
 #define CEPH_HEATPREDICTOR_HP_FEATURES_H
 
+#include "hp_assert.h"
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -61,7 +63,7 @@ inline const std::vector<double>& hp_to_features(const PredictionSample& item) {
     for (double count : item.slow_history_counts) {
         features[next++] = hp_log2p1(count) - threshold_log2p1;
     }
-    ceph_assert(next == features.size());
+    hp_assert(next == features.size());
     return features;
 }
 

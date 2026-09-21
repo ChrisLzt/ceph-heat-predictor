@@ -9,7 +9,7 @@
 #include <limits>
 #include <optional>
 
-#include "common/debug.h"
+#include "hp_assert.h"
 #include "hp_config.h"
 
 enum class HpThresholdState : uint64_t {
@@ -109,10 +109,10 @@ public:
         if (old_count > 0) {
             const BinValue old_bin = bin_for_count(old_count);
             decrement_bin(old_bin.bin);
-            ceph_assert(positive_object_count_value > 0);
+            hp_assert(positive_object_count_value > 0);
             --positive_object_count_value;
             if (old_bin.upper_clamped) {
-                ceph_assert(upper_clamped_object_count_value > 0);
+                hp_assert(upper_clamped_object_count_value > 0);
                 --upper_clamped_object_count_value;
             }
         }
@@ -230,20 +230,20 @@ private:
     }
 
     void increment_bin(size_t bin) {
-        ceph_assert(bin < histogram.size());
+        hp_assert(bin < histogram.size());
         if (histogram[bin] == 0) {
             ++occupied_bin_count_value;
         }
-        ceph_assert(histogram[bin] < std::numeric_limits<uint64_t>::max());
+        hp_assert(histogram[bin] < std::numeric_limits<uint64_t>::max());
         ++histogram[bin];
     }
 
     void decrement_bin(size_t bin) {
-        ceph_assert(bin < histogram.size());
-        ceph_assert(histogram[bin] > 0);
+        hp_assert(bin < histogram.size());
+        hp_assert(histogram[bin] > 0);
         --histogram[bin];
         if (histogram[bin] == 0) {
-            ceph_assert(occupied_bin_count_value > 0);
+            hp_assert(occupied_bin_count_value > 0);
             --occupied_bin_count_value;
         }
     }
@@ -260,7 +260,7 @@ private:
             total_sum +=
                 bin_center(bin) * static_cast<double>(histogram[bin]);
         }
-        ceph_assert(total_count == positive_object_count_value);
+        hp_assert(total_count == positive_object_count_value);
 
         uint64_t lhs_count = 0;
         double lhs_sum = 0.0;

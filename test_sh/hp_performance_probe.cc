@@ -8,27 +8,7 @@
 #include "heatpredictor/hp_features.h"
 #include "heatpredictor/hp_future_access_threshold.h"
 
-namespace ceph {
 
-void __ceph_assert_fail(const assert_data& ctx)
-{
-  std::cerr << "ceph_assert failed: " << ctx.assertion
-            << " at " << ctx.file << ":" << ctx.line << std::endl;
-  std::abort();
-}
-
-void __ceph_assert_fail(
-    const char *assertion,
-    const char *file,
-    int line,
-    const char *)
-{
-  std::cerr << "ceph_assert failed: " << assertion
-            << " at " << file << ":" << line << std::endl;
-  std::abort();
-}
-
-} // namespace ceph
 
 namespace {
 
