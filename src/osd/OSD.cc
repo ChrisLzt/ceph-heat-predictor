@@ -528,6 +528,10 @@ void OSDService::shutdown()
 
   publish_map(OSDMapRef());
   next_osdmap = OSDMapRef();
+
+  // OSD has drained request workers and unregistered commands; service
+  // timers and Objecter callbacks have now stopped as well.
+  object_hp.shutdown();
 }
 
 void OSDService::init()
@@ -2714,14 +2718,8 @@ void OSD::asok_command(
     f->dump_unsigned("newest_map", superblock.newest_map);
     f->dump_unsigned("num_pgs", num_pgs);
     f->close_section();
-  } else if (prefix == "object_hp reset") {
-    hp_reset_osd_object_heat_predictor(cct, f);
-  } else if (prefix == "object_hp status") {
-    hp_dump_osd_object_heat_predictor_status(cct, f);
-  } else if (prefix == "object_hp enable") {
-    hp_set_osd_object_heat_predictor_enabled(cct, f, true);
-  } else if (prefix == "object_hp disable") {
-    hp_set_osd_object_heat_predictor_enabled(cct, f, false);
+  } else if (service.object_hp.handle_command(prefix, cmdmap, f)) {
+    // The module owns HP command semantics and output.
   } else if (prefix == "onode_cache status") {
     ret = store->get_onode_cache_policy(f);
     if (ret < 0) {
@@ -4027,23 +4025,12 @@ out:
 void OSD::final_init()
 {
   AdminSocket *admin_socket = cct->get_admin_socket();
-  init_osd_object_hp_status(cct);
+  service.object_hp.init(cct);
   asok_hook = new OSDSocketHook(this);
   int r = admin_socket->register_command("status", asok_hook,
 					 "high-level status of OSD");
   ceph_assert(r == 0);
-  r = admin_socket->register_command("object_hp reset", asok_hook,
-				     "reset object heat predictor state");
-  ceph_assert(r == 0);
-  r = admin_socket->register_command("object_hp status", asok_hook,
-				     "show live object heat predictor state");
-  ceph_assert(r == 0);
-  r = admin_socket->register_command("object_hp enable", asok_hook,
-				     "enable and reset object heat predictor");
-  ceph_assert(r == 0);
-  r = admin_socket->register_command("object_hp disable", asok_hook,
-				     "disable and reset object heat predictor");
-  ceph_assert(r == 0);
+  service.object_hp.register_commands(admin_socket, asok_hook);
   r = admin_socket->register_command("onode_cache status", asok_hook,
                                      "Show effective Onode cache policy and lookup counters");
   ceph_assert(r == 0);

@@ -18,23 +18,47 @@
 - 动态 `K`：`src/heatpredictor/hp_future_access_threshold.h`
 - feature、类型与统计契约：`src/heatpredictor/hp_*.h`
 - ARF、Hoeffding Tree、detector 与 scaler：`src/heatpredictor/include/`
+- OSD 生命周期与命令入口：`OSDService::object_hp`、`src/osd/ObjectHeatPredictor.*`
+- MGR HP 命令：`src/mgr/ObjectHeatPredictorCommands.*`；`DaemonServer` 只路由命令，
+  提供连接检查与 Objecter 访问。
 - MGR 聚合与输出：`src/mgr/ObjectHeatPredictorStatus.*`、
-  `src/mgr/DaemonServer.cc`
+  `src/mgr/ObjectHeatPredictorStatusFormatter.*`
 
-Ceph op 解析留在 OSD 层；算法层只接收匿名 object key。Trace、探针、replay 和
+Ceph op 解析、`hobject_t` 映射、PerfCounters 和命令注册留在 OSD 适配层。
+算法目录不包含 Ceph 运行时头文件，断言使用 Release 中同样生效的 `hp_assert`；
+可以只用标准 C++17/线程库编译。算法入口保留 pool/hash/name-hash 三个整数和原
+`make_object_key` 映射，因此此次重构不改变已有对象键。Trace、探针、replay 和
 离线分析仅由 `dev` 保留。
+
+每个 `OSDService` 持有一个 `ObjectHeatPredictor` 适配实例；实现通过 PIMPL 隐藏，
+不再使用进程级全局预测器或全局回调状态。构造后默认关闭，只建立统计/队列外壳，
+不创建森林或预测快照；enable 才创建模型，首次预测才启动后台线程。
+disable 清空统计并释放模型；已启动的线程继续等待，不等同于卸载模块。
+
+正常 OSD 退出先注销管理命令并停止请求线程，在 `OSDService::shutdown()` 完成
+定时器及 Objecter 回调收尾后调用模块 `shutdown()`：等待到期/训练
+线程及其回调结束，最后注销并销毁 perf logger。析构也执行该清理，
+支持初始化失败后的回收。shutdown 是终止操作，宿主不得与观察/命令并发调用；
+Ceph 原有直接 `_exit()` 的 fast-shutdown 路径仍由进程退出回收资源。
 
 ## Hook 与 object key
 
 `PrimaryLogPG` 在 Ceph 完成 op 参数校验和范围规范化后调用：
 
 ```cpp
-hp_notify_osd_object_op(cct, soid, op_type);
+osd->object_hp.observe(soid, op.op, effective_length);
 ```
 
 支持 `READ`、`SYNC_READ`、`SPARSE_READ`、`WRITE`、`WRITEFULL` 和
-`WRITESAME`。`WRITESAME` 只记录一次。管理、恢复、omap、class、watch、
-cache/tier 等路径不进入模型。
+`WRITESAME`。有效长度为 0 的事件由适配层忽略。四个 PG hook 仍位于原来的
+读范围规范化、稀疏读范围规范化、WRITE 校验和 WRITEFULL 校验之后；不移到分发
+入口或后端完成回调，因此这里是通过当时检查的请求观察，不代表最终 I/O 成功。
+
+WRITESAME 由 Ceph 原流程转换为 WRITE，在该 WRITE hook 只记录一次；不再通过
+`do_osd_ops` 的额外参数保留原操作编号。这会把该路径的操作统计从
+`hp_op_writesame_count` 移到 `hp_op_write_count`，不改变样本总数、对象键或算法
+feature。旧 `hp_op_writesame_count` 字段保留用于状态契约兼容。管理、恢复、omap、
+class、watch、cache/tier 等专用路径不增加新的 hook。
 
 粒度固定为 RADOS object，不按 offset 切分：
 

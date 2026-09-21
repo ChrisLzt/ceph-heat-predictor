@@ -5024,7 +5024,7 @@ int PrimaryLogPG::do_writesame(OpContext *ctx, OSDOp& osd_op)
   write_op.op.op = CEPH_OSD_OP_WRITE;
   write_op.op.extent.offset = op.writesame.offset;
   write_op.op.extent.length = op.writesame.length;
-  result = do_osd_ops(ctx, write_ops, CEPH_OSD_OP_WRITESAME);
+  result = do_osd_ops(ctx, write_ops);
   if (result < 0)
     derr << "do_writesame do_osd_ops failed " << result << dendl;
 
@@ -5805,9 +5805,7 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
 
   dout(30) << __func__ << "op.extent.length is now " << op.extent.length << dendl;
 
-  if (op.extent.length != 0) {
-    hp_notify_osd_object_op(cct, soid, op.op);
-  }
+  osd->object_hp.observe(soid, op.op, op.extent.length);
 
   // read into a buffer
   int result = 0;
@@ -5894,9 +5892,7 @@ int PrimaryLogPG::do_sparse_read(OpContext *ctx, OSDOp& osd_op) {
     length = size - offset;
   }
 
-  if (length != 0) {
-    hp_notify_osd_object_op(cct, soid, op.op);
-  }
+  osd->object_hp.observe(soid, op.op, length);
 
   ++ctx->num_read;
   if (pool.info.is_erasure()) {
@@ -5972,8 +5968,7 @@ int PrimaryLogPG::do_sparse_read(OpContext *ctx, OSDOp& osd_op) {
 
 int PrimaryLogPG::do_osd_ops(
   OpContext *ctx,
-  vector<OSDOp>& ops,
-  std::optional<uint16_t> hp_op_override)
+  vector<OSDOp>& ops)
 {
   int result = 0;
   SnapSetContext *ssc = ctx->obc->ssc;
@@ -6759,10 +6754,7 @@ int PrimaryLogPG::do_osd_ops(
 	  static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
 	if (result < 0)
 	  break;
-	if (op.extent.length != 0) {
-	  hp_notify_osd_object_op(
-	    cct, soid, hp_op_override.value_or(op.op));
-	}
+	osd->object_hp.observe(soid, op.op, op.extent.length);
 
 	maybe_create_new_object(ctx);
 
@@ -6814,9 +6806,7 @@ int PrimaryLogPG::do_osd_ops(
           static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
 	if (result < 0)
 	  break;
-	if (op.extent.length != 0) {
-	  hp_notify_osd_object_op(cct, soid, op.op);
-	}
+	osd->object_hp.observe(soid, op.op, op.extent.length);
 
 	if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
 	  op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;

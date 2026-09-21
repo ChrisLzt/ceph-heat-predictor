@@ -1,7 +1,8 @@
 # Cache 与 Heat Predictor 迁移说明
 
 本文面向将 `merge` 的当前模块移植到另一套 Ceph v17.2.7 修改版的开发者。
-缓存来源为 `3de6e677ae6`，HP 来源为 `afd18c8e01`；来源与本轮验证见
+缓存累积至 `5df98634d6f` 的预取压力恢复版本，HP 算法来源为 `afd18c8e01`，
+并已加入 2026-09-21 的实例生命周期与浅耦合重构；历史来源和本轮验证见
 [CACHE_C4_INTEGRATION.md](CACHE_C4_INTEGRATION.md)。
 
 移植应复制独立模块、按目标控制流合并 Ceph 接入点，不能整体覆盖目标的核心文件。
@@ -33,6 +34,8 @@ S3FIFO，并将 Buffer 启动策略映射为2Q。已有配置可以覆盖默认�
 src/heatpredictor/
 src/osd/ObjectHeatPredictor.cc
 src/osd/ObjectHeatPredictor.h
+src/mgr/ObjectHeatPredictorCommands.cc
+src/mgr/ObjectHeatPredictorCommands.h
 src/mgr/ObjectHeatPredictorStatus.cc
 src/mgr/ObjectHeatPredictorStatus.h
 src/mgr/ObjectHeatPredictorStatusFormatter.cc
@@ -50,10 +53,10 @@ EQ、特征、动态阈值、统计和模型都由其中头文件实现。
 | `src/os/ObjectStore.h` | 缓存策略查询/切换的虚接口及不支持后端的返回值 |
 | `src/os/bluestore/BlueStore.h/.cc` | Onode 状态、可切换 shard、队列迁移、工厂、策略状态、计数 |
 | `src/osd/CMakeLists.txt` | `ObjectHeatPredictor.cc` |
-| `src/osd/OSD.cc` | HP 初始化、HP 与 Onode 两组 admin command 注册和分发 |
-| `src/osd/PrimaryLogPG.h/.cc` | object I/O hook 和 WRITESAME 类型传递 |
-| `src/mgr/CMakeLists.txt` | HP 聚合器及 `ObjectHeatPredictorStatusFormatter.cc` |
-| `src/mgr/DaemonServer.cc` | HP 聚合、格式化及控制命令下发 |
+| `src/osd/OSD.h/.cc` | OSDService 持有 HP 实例；初始化、命令路由与 service 收尾时的销毁；保留 Onode 命令 |
+| `src/osd/PrimaryLogPG.cc` | 四处原位置的 `object_hp.observe`，传入规范化后的有效长度；不添加 WRITESAME 覆盖参数 |
+| `src/mgr/CMakeLists.txt` | HP Commands、Status 和 StatusFormatter 三个实现文件 |
+| `src/mgr/DaemonServer.cc` | 转交 HP 专用命令模块，提供连接检查及 Objecter 访问 |
 | `src/mgr/MgrCommands.h` | HP 命令及 `status --detail` |
 | `src/mgr/PyModuleRegistry.h` | 提供 Objecter 访问路径 |
 | `src/test/objectstore/CMakeLists.txt` | 缓存单元测试目标 |
@@ -113,8 +116,8 @@ ceph daemon osd.0 onode_cache policy lru
 ### Hook 与标签
 
 `PrimaryLogPG` 在参数校验和范围规范化之后记录 READ、SYNC_READ、SPARSE_READ、
-WRITE、WRITEFULL、WRITESAME，排除最终长度为0的 no-op。WRITESAME 转译时保留原类型，
-只记录一次。不要把 hook 改到事务提交完成后，否则会改变计数语义。
+WRITE、WRITEFULL、WRITESAME，由适配层排除有效长度为0的 no-op。WRITESAME 转为 WRITE 后
+只记录一次，操作分类计入 write_count，原 writesame_count 字段为兼容保留。不要把 hook 改到事务提交完成后，否则会改变计数语义。
 
 粒度为 RADOS object。每次 I/O 预测同一 object 在未来 `(t,t+10s)` 的访问数是否达到
 到期阈值 `K_window`。当前访问与恰在 deadline 的访问不计入未来窗口。
@@ -152,6 +155,12 @@ Poisson λ=4，冷热样本权重均为1，预测阈值0.50。叶固定输出多
 ### 生命周期、控制和统计
 
 HP 默认 disabled；enable/disable 均完整 reset，reset 保持启用状态。
+每个 OSDService 拥有独立适配实例，算法实现通过 PIMPL 隐藏；不要恢复为进程全局变量。
+默认关闭时不创建森林或快照，enable 创建模型，首次预测启动工作线程。disable 释放
+模型，已启动线程等待；重启 OSD 不恢复模型或启用状态。
+正常退出先注销命令、停止请求与服务后台调用，再执行模块 shutdown、等待回调/线程
+退出并注销 perf logger；不能持有预测器控制锁执行 join。fast-shutdown 的 `_exit()`
+仍直接结束进程。核心使用独立且 Release 生效的 `hp_assert.h`，无需 Ceph 运行库。
 保留 EQ 到期线程、后台训练、只读模型快照及原锁顺序。异常不能传播为 Ceph I/O 失败；
 后台异常会禁用模块并刷新状态。
 

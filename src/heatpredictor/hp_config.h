@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "common/debug.h"
+#include "hp_assert.h"
 
 static constexpr size_t NUM_FEATURES = 7;
 
@@ -86,7 +86,7 @@ static_assert(HP_REPORT_LOG_HISTOGRAM_BIN_COUNT <= 65536,
               "reporting histogram bin index must fit in uint16_t");
 
 inline double hp_heat_decay_log_factor_per_ns(uint64_t horizon_ns) {
-    ceph_assert(horizon_ns > 0);
+    hp_assert(horizon_ns > 0);
     return std::log(HP_HEAT_RETAINED_AFTER_DECAY_HORIZON) /
         static_cast<double>(horizon_ns);
 }
