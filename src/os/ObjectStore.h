@@ -60,7 +60,24 @@ typedef uint32_t osflagbits_t;
 const int SKIP_JOURNAL_REPLAY = 1 << 0;
 const int SKIP_MOUNT_OMAP = 1 << 1;
 
+#include "os/ObjectStoreAccess.h"
+
 class ObjectStore {
+private:
+  ObjectStoreAccess<hobject_t> data_access_observer;
+public:
+  using DataAccessCallback = ObjectStoreAccess<hobject_t>::Callback;
+  void set_data_access_observer(DataAccessCallback callback) {
+    data_access_observer.set(std::move(callback));
+  }
+  void clear_data_access_observer() { data_access_observer.clear(); }
+protected:
+  void observe_data_access(const hobject_t& object, HpAccessType kind,
+                           uint64_t length) noexcept {
+    // PG metadata and non-pool store bookkeeping are not data objects.
+    if (object.pool >= 0 && !object.oid.name.empty())
+      data_access_observer.notify(object, kind, length);
+  }
 protected:
   std::string path;
 

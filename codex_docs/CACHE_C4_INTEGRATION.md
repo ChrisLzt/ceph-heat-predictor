@@ -95,3 +95,19 @@ OSD 模块生产探针的 ASan/UBSan 检查通过。类型测试排除两个基�
 其中32项测试全部通过；BlueStore 类型27项通过，仍排除两个性能/规模用例。
 日志位于 `/home/chris/ceph-tool/results/cache-hp-module-merge-20260921/`。
 该记录与来源分支的 CloudLab 历史验证分开；本次未部署、未执行五负载，未重跑 sanitizer。
+
+
+## 存储对象观察接入（2026-09-23）
+
+本轮从 dev 工作区选择性移入 BlueStore read/readv/OP_WRITE hook、ObjectStoreAccess
+观察桥和 OSD 注册/注销连接，删除旧 PG 通知及 include。HP 仍由 OSDService 持有。
+算法、配置、缓存策略及预取实现保持原样；不引入 dev Trace、均值补点或实验候选。
+Read/Write 在适配层映射到现有统计，旧细分计数字段为兼容保留，新 hook 不增加它们。
+新口径包含到达入口的后台/副本访问，历史负载结果不是该版本的验收结果。
+新增 unittest_storage_object_access 验证实际对象身份、有效字节、readv、元数据排除和注销。
+
+本轮验证：merge 的存储库、OSD.cc、PrimaryLogPG.cc、ObjectHeatPredictor.cc 及新测试
+目标编译通过；独立临时 BlueStore 测试 1/1 通过，观察器并发注销/异常隔离测试通过。
+测试覆盖对象身份、字节范围、重复读取、readv 一次通知、元数据排除与注销后不通知。
+未运行线上负载，未部署；不作为命中率、准确率或性能验收结果。工作区原有 TreeBase.h
+模板修正未纳入此次提交，适配代码另用提交基线的 TreeBase.h 完成语法编译验证。

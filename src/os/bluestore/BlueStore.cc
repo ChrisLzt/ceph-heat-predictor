@@ -10723,6 +10723,10 @@ int BlueStore::read(
     if (offset == length && offset == 0)
       length = o->onode.size;
 
+    observe_data_access(oid.hobj, HpAccessType::Read,
+      offset < o->onode.size
+        ? std::min<uint64_t>(length, o->onode.size - offset) : 0);
+
     r = _do_read(c, o, offset, length, bl, op_flags);
     if (r == -EIO) {
       logger->inc(l_bluestore_read_eio);
@@ -11350,6 +11354,13 @@ int BlueStore::readv(
       r = 0;
       goto out;
     }
+
+    uint64_t hp_length = 0;
+    for (auto it = m.begin(); it != m.end(); ++it) {
+      if (it.get_start() < o->onode.size)
+        hp_length += std::min<uint64_t>(it.get_len(), o->onode.size - it.get_start());
+    }
+    observe_data_access(oid.hobj, HpAccessType::Read, hp_length);
 
     r = _do_readv(c, o, m, bl, op_flags);
     if (r == -EIO) {
@@ -14323,7 +14334,8 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 	uint32_t fadvise_flags = i.get_fadvise_flags();
         bufferlist bl;
         i.decode_bl(bl);
-	r = _write(txc, c, o, off, len, bl, fadvise_flags);
+	observe_data_access(o->oid.hobj, HpAccessType::Write, len);
+        r = _write(txc, c, o, off, len, bl, fadvise_flags);
       }
       break;
 

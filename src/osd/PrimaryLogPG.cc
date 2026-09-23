@@ -63,7 +63,6 @@
 #include "OpRequest.h"
 #include "PG.h"
 #include "Session.h"
-#include "ObjectHeatPredictor.h"
 
 // required includes order:
 #include "json_spirit/json_spirit_value.h"
@@ -5805,7 +5804,6 @@ int PrimaryLogPG::do_read(OpContext *ctx, OSDOp& osd_op) {
 
   dout(30) << __func__ << "op.extent.length is now " << op.extent.length << dendl;
 
-  osd->object_hp.observe(soid, op.op, op.extent.length);
 
   // read into a buffer
   int result = 0;
@@ -5892,7 +5890,6 @@ int PrimaryLogPG::do_sparse_read(OpContext *ctx, OSDOp& osd_op) {
     length = size - offset;
   }
 
-  osd->object_hp.observe(soid, op.op, length);
 
   ++ctx->num_read;
   if (pool.info.is_erasure()) {
@@ -6754,7 +6751,6 @@ int PrimaryLogPG::do_osd_ops(
 	  static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
 	if (result < 0)
 	  break;
-	osd->object_hp.observe(soid, op.op, op.extent.length);
 
 	maybe_create_new_object(ctx);
 
@@ -6806,7 +6802,6 @@ int PrimaryLogPG::do_osd_ops(
           static_cast<Option::size_t>(osd->osd_max_object_size), get_dpp());
 	if (result < 0)
 	  break;
-	osd->object_hp.observe(soid, op.op, op.extent.length);
 
 	if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
 	  op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;

@@ -680,6 +680,8 @@ struct ObjectHeatPredictor::Impl {
     f->dump_unsigned("hp_warmup_trained_samples", HP_WARMUP_TRAINED_SAMPLES);
     f->dump_bool("hp_leaf_majority_only", HP_LEAF_MAJORITY_ONLY);
     f->dump_string("hp_feature_policy", "C4");
+    f->dump_string("hp_observation_scope", "storage_object");
+    f->dump_string("hp_observation_backend", "bluestore");
     f->dump_unsigned("hp_feature_count", NUM_FEATURES);
     f->dump_float("hp_slow_history_tau_30_seconds", HP_SLOW_HISTORY_TAU_SECONDS[0]);
     f->dump_float("hp_slow_history_tau_60_seconds", HP_SLOW_HISTORY_TAU_SECONDS[1]);
@@ -867,10 +869,14 @@ void ObjectHeatPredictor::init(CephContext* cct) {
   impl->init_osd_object_hp_status(cct);
 }
 
-void ObjectHeatPredictor::observe(const hobject_t& object, uint16_t op,
+void ObjectHeatPredictor::observe(const hobject_t& object, HpAccessType op,
                                   uint64_t effective_length) {
   if (effective_length != 0 && impl) {
-    impl->hp_notify_osd_object_op(object, op);
+    // Preserve merge's existing counter schema; storage hooks have two kinds.
+    if (op == HpAccessType::Read)
+      impl->hp_notify_osd_object_op(object, CEPH_OSD_OP_READ);
+    else if (op == HpAccessType::Write)
+      impl->hp_notify_osd_object_op(object, CEPH_OSD_OP_WRITE);
   }
 }
 

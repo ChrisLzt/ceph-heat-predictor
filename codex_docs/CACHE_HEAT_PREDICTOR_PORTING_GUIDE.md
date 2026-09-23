@@ -60,17 +60,18 @@ EQ、特征、动态阈值、统计和模型都由其中头文件实现。
 | 文件 | 需要接入的内容 |
 |---|---|
 | `src/common/options/global.yaml.in` | S3FIFO 配置项及枚举 |
-| `src/os/ObjectStore.h` | 缓存策略查询/切换的虚接口及不支持后端的返回值 |
-| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块 |
+| `src/os/ObjectStore.h` | 缓存策略查询/切换接口；HP 数据观察回调的注册、注销及保留对象过滤 |
+| `src/os/ObjectStoreAccess.h` | 独立观察桥，注销等待在途通知；依赖 hp_access_type.h 的 Read/Write 类型 |
+| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块；BlueStore.cc 另有 read/readv/OP_WRITE 的 HP 通知 |
 | `src/os/CMakeLists.txt` | 注册 `OnodeCache.cc`、`OnodeCacheShard.cc`、`OnodePrefetch.cc` |
 | `src/osd/CMakeLists.txt` | `ObjectHeatPredictor.cc` |
-| `src/osd/OSD.h/.cc` | OSDService 持有 HP 实例；初始化、命令路由与 service 收尾时的销毁；保留 Onode 命令 |
-| `src/osd/PrimaryLogPG.cc` | 四处原位置的 `object_hp.observe`，传入规范化后的有效长度；不添加 WRITESAME 覆盖参数 |
+| `src/osd/OSD.h/.cc` | OSDService 持有 HP 实例；初始化后绑定 ObjectStore 回调；关闭先注销并排空回调再销毁 HP；保留命令路由及 Onode 命令 |
+| `src/osd/PrimaryLogPG.cc` | 删除旧四处 HP 通知和 HP include，避免与存储层重复计数 |
 | `src/mgr/CMakeLists.txt` | HP Commands、Status 和 StatusFormatter 三个实现文件 |
 | `src/mgr/DaemonServer.cc` | 转交 HP 专用命令模块，提供连接检查及 Objecter 访问 |
 | `src/mgr/MgrCommands.h` | HP 命令及 `status --detail` |
 | `src/mgr/PyModuleRegistry.h` | 提供 Objecter 访问路径 |
-| `src/test/objectstore/CMakeLists.txt` | 缓存单元测试目标 |
+| `src/test/objectstore/CMakeLists.txt` | 缓存测试及 unittest_storage_object_access 存储观察测试 |
 
 缓存测试文件为 `src/test/objectstore/test_bluestore_onode_cache.cc`。
 不要按旧文档行号贴代码；先确认目标版本的类型、锁、生命周期和构建方式。
@@ -126,9 +127,11 @@ ceph daemon osd.0 onode_cache policy lru
 
 ### Hook 与标签
 
-`PrimaryLogPG` 在参数校验和范围规范化之后记录 READ、SYNC_READ、SPARSE_READ、
-WRITE、WRITEFULL、WRITESAME，由适配层排除有效长度为0的 no-op。WRITESAME 转为 WRITE 后
-只记录一次，操作分类计入 write_count，原 writesame_count 字段为兼容保留。不要把 hook 改到事务提交完成后，否则会改变计数语义。
+BlueStore 在 read/readv 数据读取前及事务 OP_WRITE 执行前通知实际存储对象。
+OSDService 持有 HP，OSD 注册观察回调，关闭时先注销并等待在途通知再销毁 HP。
+旧 PG hook 必须删除；readv 多区间一次通知，数据缓存命中也通知，内部重试不重复。
+当前不区分来源，只覆盖上述入口；详细过滤条件、未覆盖路径和兼容字段见 CODEX_CEPH.md。
+不要在完成回调中再次通知。不要把 dev 的 Trace 或候选算法随 hook 一起移入 merge。
 
 粒度为 RADOS object。每次 I/O 预测同一 object 在未来 `(t,t+10s)` 的访问数是否达到
 到期阈值 `K_window`。当前访问与恰在 deadline 的访问不计入未来窗口。

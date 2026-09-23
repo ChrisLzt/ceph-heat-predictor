@@ -186,3 +186,12 @@ if(WITH_BLUESTORE)
   install(TARGETS ceph_test_alloc_replay
     DESTINATION bin)
 endif()
+
+if(WITH_BLUESTORE)
+  add_executable(unittest_storage_object_access
+    test_storage_object_access.cc
+    $<TARGET_OBJECTS:store_test_fixture>
+    $<TARGET_OBJECTS:unit-main>)
+  target_link_libraries(unittest_storage_object_access os global ${UNITTEST_LIBS})
+  add_ceph_unittest(unittest_storage_object_access)
+endif()

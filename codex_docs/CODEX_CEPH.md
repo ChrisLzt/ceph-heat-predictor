@@ -4,15 +4,15 @@
 `src/heatpredictor/hp_config.h` 为准；部署流程见
 [Ceph 操作手册](CEPH_OPERATIONS_MANUAL.md)。
 
-模块按 RADOS object 预测：对每条 I/O 判断同一 object 在未来
+模块按 BlueStore 实际访问的存储 object 预测：对每条观察事件判断同一 object 在未来
 `(t, t + 10s)` 内的访问次数，是否达到该未来窗口结束时的动态阈值 `K_window`。
 预测时的 `K_context` 只描述当前历史窗口，作为 feature 使用。模块只输出预测与
 统计，不执行迁移或分层放置。
 
 ## 代码边界
 
-- OSD hook 与适配：`src/osd/PrimaryLogPG.cc`、
-  `src/osd/ObjectHeatPredictor.*`
+- 存储 hook：`src/os/bluestore/BlueStore.cc`、`src/os/ObjectStoreAccess.h`
+- OSD 适配：`src/osd/ObjectHeatPredictor.*`
 - 算法入口：`src/heatpredictor/heat_predictor.h`
 - EQ：`src/heatpredictor/hp_evaluation_queue.h`
 - 动态 `K`：`src/heatpredictor/hp_future_access_threshold.h`
@@ -24,7 +24,7 @@
 - MGR 聚合与输出：`src/mgr/ObjectHeatPredictorStatus.*`、
   `src/mgr/ObjectHeatPredictorStatusFormatter.*`
 
-Ceph op 解析、`hobject_t` 映射、PerfCounters 和命令注册留在 OSD 适配层。
+存储读写类型适配、`hobject_t` 映射、PerfCounters 和命令注册留在 OSD 适配层。
 算法目录不包含 Ceph 运行时头文件，断言使用 Release 中同样生效的 `hp_assert`；
 可以只用标准 C++17/线程库编译。算法入口保留 pool/hash/name-hash 三个整数和原
 `make_object_key` 映射，因此此次重构不改变已有对象键。Trace、探针、replay 和
@@ -37,34 +37,39 @@ disable 清空统计并释放模型；已启动的线程继续等待，不等同
 `init()` 接收非空 CephContext，且只能调用一次；在注册/分发命令之前创建 perf logger，
 访问和控制路径不再尝试延迟创建 logger。初始化前的观察因默认关闭而忽略，控制命令
 返回未处理；宿主不得并发初始化与分发命令。统计发布仍保留独立锁。
-观察入口先原子读取 enabled；关闭时直接返回，不获取 reset 读锁、不统计访问。
+HP 适配入口先原子读取 enabled；关闭时直接返回，不获取 reset 读锁、不统计访问。
+调用 HP 之前，ObjectStore 观察桥在回调已注册时仍获取共享锁，因此整个存储通知路径不是无锁路径。
 开启时仍获取读锁并再次检查 enabled，确保与 disable/reset 的写锁互斥。
 与启停重叠且读到关闭状态的观察直接跳过，不等待启用完成后补记。
 
 正常 OSD 退出先注销管理命令并停止请求线程，在 `OSDService::shutdown()` 完成
-定时器及 Objecter 回调收尾后调用模块 `shutdown()`：等待到期/训练
+定时器及 Objecter 回调收尾后，先注销 ObjectStore 观察回调并等待在途通知退出，
+再调用模块 `shutdown()`：等待到期/训练
 线程及其回调结束，最后注销并销毁 perf logger。析构也执行该清理，
 支持初始化失败后的回收。shutdown 是终止操作，宿主不得与观察/命令并发调用；
 Ceph 原有直接 `_exit()` 的 fast-shutdown 路径仍由进程退出回收资源。
 
 ## Hook 与 object key
 
-`PrimaryLogPG` 在 Ceph 完成 op 参数校验和范围规范化后调用：
+OSD 在 HP 初始化后向自己的 ObjectStore 注册观察回调。BlueStore 在对象存在性检查后、
+数据读取前的 `read/readv`，以及事务 `OP_WRITE` 调用 `_write` 前通知：
 
 ```cpp
-osd->object_hp.observe(soid, op.op, effective_length);
+observe_data_access(object, HpAccessType::Read /* or Write */, effective_length);
 ```
 
-支持 `READ`、`SYNC_READ`、`SPARSE_READ`、`WRITE`、`WRITEFULL` 和
-`WRITESAME`。有效长度为 0 的事件由适配层忽略。四个 PG hook 仍位于原来的
-读范围规范化、稀疏读范围规范化、WRITE 校验和 WRITEFULL 校验之后；不移到分发
-入口或后端完成回调，因此这里是通过当时检查的请求观察，不代表最终 I/O 成功。
+旧 PrimaryLogPG 的四处通知已删除。读取包含数据缓存命中；readv 合计有效区间、一次通知。
+写入按非空 WRITE 事务项通知；上层转换后产生 WRITE 的操作同样覆盖。有效长度为零、
+负 pool 保留对象和空名称 PG 元数据对象不通知。回调异常与存储 I/O 隔离。
 
-WRITESAME 由 Ceph 原流程转换为 WRITE，在该 WRITE hook 只记录一次；不再通过
-`do_osd_ops` 的额外参数保留原操作编号。这会把该路径的操作统计从
-`hp_op_writesame_count` 移到 `hp_op_write_count`，不改变样本总数、对象键或算法
-feature。旧 `hp_op_writesame_count` 字段保留用于状态契约兼容。管理、恢复、omap、
-class、watch、cache/tier 等专用路径不增加新的 hook。
+当前不区分访问来源，后台/副本访问经过这些入口也计入；这是存储访问尝试，不是客户端
+请求恰好一次，也不代表最终 I/O 成功。内部克隆、GC、读改写、fsck 辅助读写不额外通知，
+未经过 WRITE 的 ZERO/TRUNCATE 等不扩展。仅 BlueStore 接入，其他 ObjectStore 后端不采样。
+
+适配层将 Read/Write 映射到已有 read_count/write_count。为限制本次合入范围，旧的
+sync_read/sparse_read/writefull/writesame 计数字段保留兼容，但新 hook 不增加它们。
+status 标记 `hp_observation_scope=storage_object`、`hp_observation_backend=bluestore`。
+merge 仍不包含 Trace。新的观察口径不能沿用历史实验准确率作为当前验证结果。
 
 粒度固定为 RADOS object，不按 offset 切分：
 
