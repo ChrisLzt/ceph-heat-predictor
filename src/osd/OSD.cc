@@ -4026,7 +4026,7 @@ out:
 void OSD::final_init()
 {
   AdminSocket *admin_socket = cct->get_admin_socket();
-  service.object_hp.init(cct);
+  service.object_hp.init(cct, store->data_access_observation_gate());
   store->set_data_access_observer(
     [this](const hobject_t& object, HpAccessType kind, uint64_t length) {
       service.object_hp.observe(object, kind, length);

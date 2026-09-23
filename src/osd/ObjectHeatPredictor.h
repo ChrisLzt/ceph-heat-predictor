@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include "heatpredictor/hp_access_type.h"
 #include <memory>
 #include <string>
@@ -28,7 +29,9 @@ public:
   // Call once with a non-null context before registering/dispatching commands.
   // Creates perf counters even while disabled. Init must not race commands;
   // observations before init are ignored because the predictor is disabled.
-  void init(CephContext* cct);
+  // Optional storage gate is bound at init, before commands or observations.
+  void init(CephContext* cct,
+            std::shared_ptr<std::atomic<bool>> observation_gate = {});
   void register_commands(AdminSocket* socket, AdminSocketHook* hook);
   bool handle_command(std::string_view prefix, const cmdmap_t& cmdmap,
                       ceph::Formatter* formatter);
