@@ -71,6 +71,9 @@ public:
     data_access_observer.set(std::move(callback));
   }
   void clear_data_access_observer() { data_access_observer.clear(); }
+  std::shared_ptr<std::atomic<bool>> data_access_observation_gate() const {
+    return data_access_observer.observation_gate();
+  }
 protected:
   void observe_data_access(const hobject_t& object, HpAccessType kind,
                            uint64_t length) noexcept {

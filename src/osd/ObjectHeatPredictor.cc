@@ -25,12 +25,14 @@ namespace hp_field = ceph::hp_telemetry::field;
 
 struct ObjectHeatPredictor::Impl {
   CephContext* context = nullptr;
+  std::shared_ptr<std::atomic<bool>> observation_gate;
 
   HeatPredictor osd_object_heat_predictor{
     [this](uint64_t count) { hp_record_object_expiry_progress(count); },
     [this] { hp_record_object_background_error(); }};
 
   ~Impl() {
+    if (observation_gate) observation_gate->store(false, std::memory_order_release);
     // Do not hold reset/logger locks while joining callback threads.
     osd_object_heat_predictor.shutdown();
     if (osd_object_hp_logger) {
@@ -513,6 +515,11 @@ struct ObjectHeatPredictor::Impl {
   void hp_record_object_background_error()
   {
     std::shared_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
+    // Serialize gate publication with commands; a late error callback must
+    // observe a subsequently re-enabled core rather than close its gate.
+    if (observation_gate)
+      observation_gate->store(osd_object_heat_predictor.is_enabled(),
+                              std::memory_order_release);
     hp_update_object_logger(ceph::timespan::zero(), false);
   }
 
@@ -787,8 +794,16 @@ struct ObjectHeatPredictor::Impl {
   {
     std::unique_lock<std::shared_mutex> reset_lock(osd_object_hp_reset_mtx);
 
+    // Close before reset/model allocation, including a failed enable.
+    if (observation_gate)
+      observation_gate->store(false, std::memory_order_release);
+
     uint64_t discarded_pending_io =
       osd_object_heat_predictor.set_enabled(enabled);
+    // Publish only after the core transition; inner enabled checks still guard
+    // observations that passed the gate before disable acquired reset_lock.
+    if (observation_gate)
+      observation_gate->store(enabled, std::memory_order_release);
     hp_rotate_trace_if_enabled();
     hp_reset_osd_op_counters();
     hp_zero_object_logger();
@@ -927,8 +942,12 @@ struct ObjectHeatPredictor::Impl {
 ObjectHeatPredictor::ObjectHeatPredictor() : impl(std::make_unique<Impl>()) {}
 ObjectHeatPredictor::~ObjectHeatPredictor() = default;
 
-void ObjectHeatPredictor::init(CephContext* cct, int osd_id) {
+void ObjectHeatPredictor::init(CephContext* cct, int osd_id,
+                               std::shared_ptr<std::atomic<bool>> gate) {
   ceph_assert(cct && impl && impl->context == nullptr);
+  impl->observation_gate = std::move(gate);
+  if (impl->observation_gate)
+    impl->observation_gate->store(false, std::memory_order_release);
   impl->init_osd_object_hp_status(cct, osd_id);
 }
 
