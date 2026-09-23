@@ -844,9 +844,9 @@ struct ObjectHeatPredictor::Impl {
     uint64_t index = 0;
     try {
       osd_object_heat_predictor.predict(
-        soid.pool,
-        soid.get_hash(),
-        std::hash<object_t>{}(soid.oid),
+        HpObjectIdentityView{soid.pool, soid.get_hash(), soid.oid.name,
+                             soid.nspace, static_cast<uint64_t>(soid.snap),
+                             soid.get_key()},
         &index);
     } catch (...) {
       osd_object_heat_predictor.record_predict_error();

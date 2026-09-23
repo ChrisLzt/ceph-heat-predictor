@@ -26,8 +26,8 @@
 
 存储读写类型适配、`hobject_t` 映射、PerfCounters 和命令注册留在 OSD 适配层。
 算法目录不包含 Ceph 运行时头文件，断言使用 Release 中同样生效的 `hp_assert`；
-可以只用标准 C++17/线程库编译。算法入口保留 pool/hash/name-hash 三个整数和原
-`make_object_key` 映射，因此此次重构不改变已有对象键。Trace、探针、replay 和
+可以只用标准 C++17/线程库编译。线上算法入口接收完整HpObjectIdentityView；三整数旧接口仅供独立探针。
+完整身份包括pool、placement hash、name、namespace、snapshot、locator key。Trace、探针、replay 和
 离线分析仅由 `dev` 保留。
 
 每个 `OSDService` 持有一个 `ObjectHeatPredictor` 适配实例；实现通过 PIMPL 隐藏，
@@ -52,7 +52,7 @@ Ceph 原有直接 `_exit()` 的 fast-shutdown 路径仍由进程退出回收资�
 ## Hook 与 object key
 
 OSD 在 HP 初始化后向自己的 ObjectStore 注册观察回调。BlueStore 在对象存在性检查后、
-数据读取前的 `read/readv`，以及事务 `OP_WRITE` 调用 `_write` 前通知：
+数据读取前的 `read/readv`，以及 `_write()` 入口通知：
 
 ```cpp
 observe_data_access(object, HpAccessType::Read /* or Write */, effective_length);
@@ -71,14 +71,11 @@ sync_read/sparse_read/writefull/writesame 计数字段保留兼容，但新 hook
 status 标记 `hp_observation_scope=storage_object`、`hp_observation_backend=bluestore`。
 merge 仍不包含 Trace。新的观察口径不能沿用历史实验准确率作为当前验证结果。
 
-粒度固定为 RADOS object，不按 offset 切分：
+粒度固定为存储object，不按offset切分，不区分shard/generation。
+完整身份在EQ锁内查找，hash仅定位候选，完整字段决定相等。新对象复制身份字段，
+后续事件使用进程内不复用的整数ID，身份随热状态淘汰；reset也不复用ID。
+旧数字键入口不能与完整身份入口在同一EQ生命周期混用。身份表增加内存开销。
 
-```cpp
-make_object_key(
-    soid.pool,
-    soid.get_hash(),
-    std::hash<object_t>{}(soid.oid));
-```
 
 offset、length、operation、pool 和 hash 不是模型 feature；operation 只用于
 read/write 计数。

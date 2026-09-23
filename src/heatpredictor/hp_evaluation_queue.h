@@ -19,6 +19,7 @@
 #include "hp_features.h"
 #include "hp_future_access_threshold.h"
 #include "hp_types.h"
+#include "hp_object_identity.h"
 
 class EvaluationQueue {
 public:
@@ -124,6 +125,8 @@ private:
     PendingIterator next_deadline;
     size_t pending_deadline_count = 0;
     std::unordered_map<uint64_t, ObjectHeatState> heat_map;
+    HpObjectIdentityRegistry<> identities;
+    std::optional<bool> full_identity_mode;
     std::list<uint64_t> lru_list;
     std::deque<AccessEvent> recent_access_events;
     std::deque<AccessEvent> short_access_events;
@@ -221,9 +224,12 @@ private:
         }
     }
 
-    void prepare_features(PredictionSample& item, uint64_t now_ns) {
+    void prepare_features(PredictionSample& item, uint64_t now_ns,
+                          const HpObjectIdentityView* identity) {
         expire_recent_accesses(now_ns);
         expire_short_accesses(now_ns);
+        // Resolve after expiry: expiry may evict an earlier incarnation.
+        if (identity) item.object_key_hash = identities.resolve(*identity);
         auto state_position = heat_map.find(item.object_key_hash);
         if (state_position == heat_map.end()) {
             auto [inserted, ok] = heat_map.emplace(
@@ -314,7 +320,12 @@ private:
 public:
     BeginPredictionResult begin_prediction(
             PredictionSample item,
-            uint64_t now_ns) {
+            uint64_t now_ns,
+            const HpObjectIdentityView* identity = nullptr) {
+        // Numeric keys are a legacy replay/probe API, never live identities.
+        if (full_identity_mode && *full_identity_mode != bool(identity))
+            throw std::invalid_argument("cannot mix HP full identities and legacy numeric keys");
+        full_identity_mode = bool(identity);
         const auto schedule_before = expiry_schedule(now_ns);
         std::vector<EvaluatedSample> evaluated;
 
@@ -330,7 +341,7 @@ public:
                 std::make_move_iterator(batch.end()));
         }
 
-        prepare_features(item, now_ns);
+        prepare_features(item, now_ns, identity);
         PredictionSample prepared_sample = item;
         PendingIterator position =
             enqueue_time_impl(std::move(item), false, now_ns);
@@ -548,6 +559,8 @@ public:
             expiry_schedule(now_ns)};
     }
 
+    size_t identity_count() const noexcept { return identities.size(); }
+
     EvaluationQueueStatus status(uint64_t now_ns) const {
         (void)now_ns;
         hp_assert(pending_evaluations.size() >= pending_deadline_count);
@@ -584,6 +597,7 @@ private:
                 victim_position->second.recent_window_access_count == 0);
             hp_assert(
                 victim_position->second.short_window_access_count == 0);
+            identities.erase(victim);
             heat_map.erase(victim_position);
             ++lru_eviction_count_value;
         }

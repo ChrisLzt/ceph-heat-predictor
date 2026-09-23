@@ -47,6 +47,24 @@ TEST_F(StorageObjectAccess, ActualStorageIdentityAndReadCounting) {
   { std::lock_guard<std::mutex> lock(mutex);
     ASSERT_EQ(1u, events.size()); EXPECT_EQ(physical.hobj, events[0].first);
     EXPECT_EQ(HpAccessType::Write, events[0].second); }
+  // Multiple write items remain separate events; a zero-length item is ignored.
+  ObjectStore::Transaction more;
+  bufferlist empty_write, half; half.append_zero(4096);
+  more.write(cid, physical, 0, 4096, half);
+  more.write(cid, physical, 4096, 4096, half);
+  more.write(cid, physical, 0, 0, empty_write);
+  ASSERT_EQ(0, store->queue_transaction(ch, std::move(more)));
+  ch->flush();
+  { std::lock_guard<std::mutex> lock(mutex);
+    ASSERT_EQ(3u, events.size());
+    EXPECT_EQ(HpAccessType::Write, events[1].second);
+    EXPECT_EQ(HpAccessType::Write, events[2].second);
+    EXPECT_EQ(physical.hobj, events[1].first);
+    EXPECT_EQ(physical.hobj, events[2].first);
+    EXPECT_EQ((std::vector<uint64_t>{8192,4096,4096}), lengths);
+    // Retain the original first event for the read assertions below.
+    events.resize(1); lengths.resize(1);
+  }
   bufferlist result;
   ASSERT_EQ(8192, store->read(ch, physical, 0, 0, result));
   ASSERT_EQ(4096, store->read(ch, physical, 0, 4096, result)); // cached read still observed

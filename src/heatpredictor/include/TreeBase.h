@@ -129,7 +129,7 @@ public:
                 }
             }
         }
-        return new NumericBinaryBranch(feature, threshold, children[0], children[1], stats);
+        return new NumericBinaryBranch<num_features, num_labels>(feature, threshold, children[0], children[1], stats);
     }
 };
 

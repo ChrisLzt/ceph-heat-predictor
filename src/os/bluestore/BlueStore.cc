@@ -14334,7 +14334,6 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 	uint32_t fadvise_flags = i.get_fadvise_flags();
         bufferlist bl;
         i.decode_bl(bl);
-	observe_data_access(o->oid.hobj, HpAccessType::Write, len);
         r = _write(txc, c, o, off, len, bl, fadvise_flags);
       }
       break;
@@ -16142,6 +16141,9 @@ int BlueStore::_write(TransContext *txc,
 		      bufferlist& bl,
 		      uint32_t fadvise_flags)
 {
+  // One observation per data-write call, before normal/journal dispatch.
+  // Count attempts as before; internal _do_write callers are not observed.
+  observe_data_access(o->oid.hobj, HpAccessType::Write, length);
   dout(15) << __func__ << " " << c->cid << " " << o->oid
 	   << " 0x" << std::hex << offset << "~" << length << std::dec
 	   << dendl;

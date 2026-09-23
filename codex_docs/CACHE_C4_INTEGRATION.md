@@ -111,3 +111,9 @@ Read/Write 在适配层映射到现有统计，旧细分计数字段为兼容保
 测试覆盖对象身份、字节范围、重复读取、readv 一次通知、元数据排除与注销后不通知。
 未运行线上负载，未部署；不作为命中率、准确率或性能验收结果。工作区原有 TreeBase.h
 模板修正未纳入此次提交，适配代码另用提交基线的 TreeBase.h 完成语法编译验证。
+
+## 2026-09-23 完整身份与写入口合并
+
+在此前BlueStore存储对象hook之上补齐完整身份，写通知从事务OP_WRITE移入_write入口，
+普通数据读写语义不变；不增加内部_do_write、ZERO/TRUNCATE/clone通知。
+本次未引入dev的Trace或GaussianSplitter/TreeBase分裂候选；显式模板参数修正同步保留。

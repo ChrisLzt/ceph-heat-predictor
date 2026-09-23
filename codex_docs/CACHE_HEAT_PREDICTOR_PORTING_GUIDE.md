@@ -62,7 +62,7 @@ EQ、特征、动态阈值、统计和模型都由其中头文件实现。
 | `src/common/options/global.yaml.in` | S3FIFO 配置项及枚举 |
 | `src/os/ObjectStore.h` | 缓存策略查询/切换接口；HP 数据观察回调的注册、注销及保留对象过滤 |
 | `src/os/ObjectStoreAccess.h` | 独立观察桥，注销等待在途通知；依赖 hp_access_type.h 的 Read/Write 类型 |
-| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块；BlueStore.cc 另有 read/readv/OP_WRITE 的 HP 通知 |
+| `src/os/bluestore/BlueStore.h/.cc` | 原生 Onode/OnodeSpace hook、控制器持有、生命周期、查询触发、预算与磁盘格式适配；队列、策略状态和 worker 在独立模块；BlueStore.cc 另有 read/readv/_write 的 HP 通知 |
 | `src/os/CMakeLists.txt` | 注册 `OnodeCache.cc`、`OnodeCacheShard.cc`、`OnodePrefetch.cc` |
 | `src/osd/CMakeLists.txt` | `ObjectHeatPredictor.cc` |
 | `src/osd/OSD.h/.cc` | OSDService 持有 HP 实例；初始化后绑定 ObjectStore 回调；关闭先注销并排空回调再销毁 HP；保留命令路由及 Onode 命令 |
@@ -127,7 +127,7 @@ ceph daemon osd.0 onode_cache policy lru
 
 ### Hook 与标签
 
-BlueStore 在 read/readv 数据读取前及事务 OP_WRITE 执行前通知实际存储对象。
+BlueStore 在 read/readv 数据读取前及 _write 入口（普通/journal分支之前）通知实际存储对象。
 OSDService 持有 HP，OSD 注册观察回调，关闭时先注销并等待在途通知再销毁 HP。
 旧 PG hook 必须删除；readv 多区间一次通知，数据缓存命中也通知，内部重试不重复。
 当前不区分来源，只覆盖上述入口；详细过滤条件、未覆盖路径和兼容字段见 CODEX_CEPH.md。
@@ -222,3 +222,6 @@ build/bin/unittest_bluestore_types \
 
 当前整合回归结果见整合说明。其他 Ceph 修改版的可编译性、运行正确性、命中率和
 Accuracy 收益均须在目标环境确认；本机历史结果不能直接作为目标环境验收结论。
+
+对象身份适配传递pool、placement hash、完整name、namespace、snapshot、locator key；
+完整相等比较位于HP身份表，不使用hash值作为唯一身份。身份ID在进程内不复用，随热状态回收映射。
