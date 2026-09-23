@@ -108,11 +108,7 @@ struct ObjectHeatPredictor::Impl {
     object_hp_trace_drop_count,
     object_hp_trace_write_error_count,
     object_hp_op_read_count,
-    object_hp_op_sync_read_count,
-    object_hp_op_sparse_read_count,
     object_hp_op_write_count,
-    object_hp_op_writefull_count,
-    object_hp_op_writesame_count,
     object_hp_status_publish_generation_end,
     object_hp_predict_latency,
     object_hp_last
@@ -120,11 +116,7 @@ struct ObjectHeatPredictor::Impl {
 
   struct ObjectHpOpCounters {
     std::atomic<uint64_t> read{0};
-    std::atomic<uint64_t> sync_read{0};
-    std::atomic<uint64_t> sparse_read{0};
     std::atomic<uint64_t> write{0};
-    std::atomic<uint64_t> writefull{0};
-    std::atomic<uint64_t> writesame{0};
   };
 
   ObjectHpOpCounters osd_object_hp_op_counters;
@@ -132,11 +124,7 @@ struct ObjectHeatPredictor::Impl {
   void hp_reset_osd_op_counters()
   {
     osd_object_hp_op_counters.read.store(0, std::memory_order_relaxed);
-    osd_object_hp_op_counters.sync_read.store(0, std::memory_order_relaxed);
-    osd_object_hp_op_counters.sparse_read.store(0, std::memory_order_relaxed);
     osd_object_hp_op_counters.write.store(0, std::memory_order_relaxed);
-    osd_object_hp_op_counters.writefull.store(0, std::memory_order_relaxed);
-    osd_object_hp_op_counters.writesame.store(0, std::memory_order_relaxed);
   }
 
   uint64_t hp_mul10000(double x)
@@ -324,11 +312,7 @@ struct ObjectHeatPredictor::Impl {
               hp_field::trace_write_error_count,
               "trace records or sessions lost to write errors");
     b.add_u64(object_hp_op_read_count, hp_field::op_read_count, "read op count");
-    b.add_u64(object_hp_op_sync_read_count, hp_field::op_sync_read_count, "sync read op count");
-    b.add_u64(object_hp_op_sparse_read_count, hp_field::op_sparse_read_count, "sparse read op count");
     b.add_u64(object_hp_op_write_count, hp_field::op_write_count, "write op count");
-    b.add_u64(object_hp_op_writefull_count, hp_field::op_writefull_count, "writefull op count");
-    b.add_u64(object_hp_op_writesame_count, hp_field::op_writesame_count, "writesame op count");
     b.add_u64(object_hp_status_publish_generation_end,
               hp_field::status_publish_generation_end,
               "object heat predictor status publication generation end");
@@ -478,11 +462,7 @@ struct ObjectHeatPredictor::Impl {
                 adaptation_stats.active_background_count);
     hp_set_trace_logger(logger, predictor_status.trace);
     logger->set(object_hp_op_read_count, osd_object_hp_op_counters.read.load(std::memory_order_relaxed));
-    logger->set(object_hp_op_sync_read_count, osd_object_hp_op_counters.sync_read.load(std::memory_order_relaxed));
-    logger->set(object_hp_op_sparse_read_count, osd_object_hp_op_counters.sparse_read.load(std::memory_order_relaxed));
     logger->set(object_hp_op_write_count, osd_object_hp_op_counters.write.load(std::memory_order_relaxed));
-    logger->set(object_hp_op_writefull_count, osd_object_hp_op_counters.writefull.load(std::memory_order_relaxed));
-    logger->set(object_hp_op_writesame_count, osd_object_hp_op_counters.writesame.load(std::memory_order_relaxed));
     logger->set(
       object_hp_status_publish_generation_end, publish_generation);
     publish_lock.unlock();
@@ -613,11 +593,7 @@ struct ObjectHeatPredictor::Impl {
     hp_set_trace_logger(
       logger, osd_object_heat_predictor.get_trace_status());
     logger->set(object_hp_op_read_count, 0);
-    logger->set(object_hp_op_sync_read_count, 0);
-    logger->set(object_hp_op_sparse_read_count, 0);
     logger->set(object_hp_op_write_count, 0);
-    logger->set(object_hp_op_writefull_count, 0);
-    logger->set(object_hp_op_writesame_count, 0);
     logger->set(
       object_hp_status_publish_generation_end, publish_generation);
   }
@@ -627,47 +603,14 @@ struct ObjectHeatPredictor::Impl {
     return (index % object_hp_logger_update_interval) == 0;
   }
 
-  bool hp_track_osd_op(uint16_t op)
-  {
-    switch (op) {
-    case CEPH_OSD_OP_READ:
-    case CEPH_OSD_OP_SYNC_READ:
-    case CEPH_OSD_OP_SPARSE_READ:
-    case CEPH_OSD_OP_WRITE:
-    case CEPH_OSD_OP_WRITEFULL:
-    case CEPH_OSD_OP_WRITESAME:
-      return true;
-    default:
-      return false;
-    }
+  bool hp_track_osd_op(HpAccessType op) {
+    return op == HpAccessType::Read || op == HpAccessType::Write;
   }
-
-  void hp_count_osd_op(uint16_t op)
-  {
-    switch (op) {
-    case CEPH_OSD_OP_READ:
-      osd_object_hp_op_counters.read.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case CEPH_OSD_OP_SYNC_READ:
-      osd_object_hp_op_counters.sync_read.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case CEPH_OSD_OP_SPARSE_READ:
-      osd_object_hp_op_counters.sparse_read.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case CEPH_OSD_OP_WRITE:
-      osd_object_hp_op_counters.write.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case CEPH_OSD_OP_WRITEFULL:
-      osd_object_hp_op_counters.writefull.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case CEPH_OSD_OP_WRITESAME:
-      osd_object_hp_op_counters.writesame.fetch_add(1, std::memory_order_relaxed);
-      break;
-    default:
-      break;
-    }
+  void hp_count_osd_op(HpAccessType op) {
+    auto& count = op == HpAccessType::Read
+      ? osd_object_hp_op_counters.read : osd_object_hp_op_counters.write;
+    count.fetch_add(1, std::memory_order_relaxed);
   }
-
 
   void init_osd_object_hp_status(CephContext *cct, int osd_id)
   {
@@ -720,6 +663,8 @@ struct ObjectHeatPredictor::Impl {
     f->dump_unsigned("hp_warmup_trained_samples", HP_WARMUP_TRAINED_SAMPLES);
     f->dump_bool("hp_leaf_majority_only", HP_LEAF_MAJORITY_ONLY);
     f->dump_string("hp_feature_policy", "C4");
+    f->dump_string("hp_observation_scope", "storage_object");
+    f->dump_string("hp_observation_backend", "bluestore");
     f->dump_unsigned("hp_feature_count", NUM_FEATURES);
     f->dump_float("hp_slow_history_tau_30_seconds", HP_SLOW_HISTORY_TAU_SECONDS[0]);
     f->dump_float("hp_slow_history_tau_60_seconds", HP_SLOW_HISTORY_TAU_SECONDS[1]);
@@ -944,7 +889,7 @@ struct ObjectHeatPredictor::Impl {
   }
 
   void hp_notify_osd_object_op(const hobject_t& soid,
-                               uint16_t op)
+                               HpAccessType op)
   {
     // Disabled observations need only an atomic load, not the shared lock.
     // Keep the check under the lock too: disable/reset may race this fast path.
@@ -962,9 +907,9 @@ struct ObjectHeatPredictor::Impl {
     uint64_t index = 0;
     try {
       osd_object_heat_predictor.predict(
-        soid.pool,
-        soid.get_hash(),
-        std::hash<object_t>{}(soid.oid),
+        HpObjectIdentityView{soid.pool, soid.get_hash(), soid.oid.name,
+                             soid.nspace, static_cast<uint64_t>(soid.snap),
+                             soid.get_key()},
         &index);
     } catch (...) {
       osd_object_heat_predictor.record_predict_error();
@@ -987,7 +932,7 @@ void ObjectHeatPredictor::init(CephContext* cct, int osd_id) {
   impl->init_osd_object_hp_status(cct, osd_id);
 }
 
-void ObjectHeatPredictor::observe(const hobject_t& object, uint16_t op,
+void ObjectHeatPredictor::observe(const hobject_t& object, HpAccessType op,
                                   uint64_t effective_length) {
   if (effective_length != 0 && impl) {
     impl->hp_notify_osd_object_op(object, op);

@@ -6,6 +6,8 @@
 
 struct PredictionSample {
     uint64_t io_sequence;
+    // Live input: process-local identity ID, not a hash. Legacy replay keeps
+    // its opaque numeric key here for binary/fixture compatibility.
     uint64_t object_key_hash;
     double heat_after_current_access;
     uint64_t future_access_threshold_at_prediction;

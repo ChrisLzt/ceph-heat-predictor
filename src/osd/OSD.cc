@@ -531,6 +531,7 @@ void OSDService::shutdown()
 
   // OSD has drained request workers and unregistered commands; service
   // timers and Objecter callbacks have now stopped as well.
+  store->clear_data_access_observer(); // Wait for in-flight storage observations.
   object_hp.shutdown();
 }
 
@@ -4010,6 +4011,10 @@ void OSD::final_init()
 {
   AdminSocket *admin_socket = cct->get_admin_socket();
   service.object_hp.init(cct, whoami);
+  store->set_data_access_observer(
+    [this](const hobject_t& object, HpAccessType kind, uint64_t length) {
+      service.object_hp.observe(object, kind, length);
+    });
   asok_hook = new OSDSocketHook(this);
   int r = admin_socket->register_command("status", asok_hook,
 					 "high-level status of OSD");

@@ -28,8 +28,10 @@ inline void hp_trace_hash_value(uint64_t& hash, const T& value)
 inline uint64_t hp_trace_config_hash()
 {
     uint64_t hash = 1469598103934665603ULL;
-    const std::array<uint64_t, 16> integer_values = {
+    const std::array<uint64_t, 18> integer_values = {
         HP_TRACE_FEATURE_SCHEMA_VERSION,
+        2, // Observation policy: BlueStore data-object accesses (previously PG logical ops).
+        1, // Full live object identity -> process-local, non-reused ID.
         HP_WARMUP_TRAINED_SAMPLES,
         HP_LEAF_MAJORITY_ONLY,
         HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL,

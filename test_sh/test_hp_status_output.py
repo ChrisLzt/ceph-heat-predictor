@@ -79,6 +79,8 @@ class StatusOutputTests(unittest.TestCase):
             "actual_behavior", "prediction", "training", "model_adaptation",
             "trace", "latency", "read_ops", "write_ops"})
         self.assertEqual(s["samples"]["hp_io_count"], 104)
+        self.assertEqual(s["read_ops"], {"hp_op_read_count": 93})
+        self.assertEqual(s["write_ops"], {"hp_op_write_count": 11})
         self.assertEqual(s["samples"]["hp_pending_io_count"], 4)
         self.assertEqual(s["latency"]["hp_predict_latency"], {
             "avgcount": 4, "sum_ns": 356000, "avgtime_ns": 89000})

@@ -591,8 +591,21 @@ public:
         return discarded_pending;
     }
 
+    // Live adapters must supply complete fields. The numeric overload remains
+    // for legacy traces/probes; do not mix the two modes without reset.
+    int predict(HpObjectIdentityView identity, uint64_t *io_sequence_out) {
+        return predict_impl(0, io_sequence_out, &identity);
+    }
+
     int predict(int64_t pool, uint64_t object_hash,
             uint64_t object_name_hash, uint64_t *io_sequence_out) {
+        return predict_impl(make_object_key(pool, object_hash, object_name_hash),
+                            io_sequence_out, nullptr);
+    }
+
+private:
+    int predict_impl(uint64_t object_key_hash, uint64_t *io_sequence_out,
+                     const HpObjectIdentityView* identity) {
         if (!is_enabled()) {
             if (io_sequence_out != nullptr) {
                 *io_sequence_out = 0;
@@ -617,9 +630,6 @@ public:
             }
             return 0;
         }
-        uint64_t object_key_hash = make_object_key(
-            pool, object_hash, object_name_hash);
-
         std::vector<EvaluatedSample> expired_evaluated;
         uint64_t io_sequence = 0;
         PredictionSample item = {
@@ -656,7 +666,7 @@ public:
                     *io_sequence_out = io_sequence;
                 }
 
-                auto begin = eq->begin_prediction(std::move(item), now_ns);
+                auto begin = eq->begin_prediction(std::move(item), now_ns, identity);
                 item = begin.sample;
                 expired_evaluated = std::move(begin.evaluated);
                 if (begin.ticket.has_value()) {
@@ -764,6 +774,7 @@ public:
         return res;
     }
 
+public:
     HeatPredictorStatus status() {
         std::shared_lock<std::shared_mutex> reset_lock(reset_mutex);
         std::lock_guard<std::mutex> transition_lock(

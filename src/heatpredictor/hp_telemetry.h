@@ -111,11 +111,7 @@ inline constexpr char trace_drop_count[] = "hp_trace_drop_count";
 inline constexpr char trace_write_error_count[] =
     "hp_trace_write_error_count";
 inline constexpr char op_read_count[] = "hp_op_read_count";
-inline constexpr char op_sync_read_count[] = "hp_op_sync_read_count";
-inline constexpr char op_sparse_read_count[] = "hp_op_sparse_read_count";
 inline constexpr char op_write_count[] = "hp_op_write_count";
-inline constexpr char op_writefull_count[] = "hp_op_writefull_count";
-inline constexpr char op_writesame_count[] = "hp_op_writesame_count";
 inline constexpr char status_publish_generation_end[] =
     "hp_status_publish_generation_end";
 inline constexpr char predict_latency[] = "hp_predict_latency";
@@ -204,11 +200,7 @@ inline constexpr CounterField counter_fields[] = {
     {field::trace_drop_count, Aggregate::sum},
     {field::trace_write_error_count, Aggregate::sum},
     {field::op_read_count, Aggregate::sum},
-    {field::op_sync_read_count, Aggregate::sum},
-    {field::op_sparse_read_count, Aggregate::sum},
     {field::op_write_count, Aggregate::sum},
-    {field::op_writefull_count, Aggregate::sum},
-    {field::op_writesame_count, Aggregate::sum},
     {field::status_publish_generation_end, Aggregate::none},
 };
 

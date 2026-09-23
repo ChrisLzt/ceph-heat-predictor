@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include "heatpredictor/hp_access_type.h"
 #include <memory>
 #include <string>
 #include <string_view>
@@ -31,8 +32,8 @@ public:
   void register_commands(AdminSocket* socket, AdminSocketHook* hook);
   bool handle_command(std::string_view prefix, const cmdmap_t& cmdmap,
                       ceph::Formatter* formatter);
-  // Call only at the existing validated/normalized PG observation positions.
-  void observe(const hobject_t& object, uint16_t op, uint64_t effective_length);
+  // Called by the host storage observer with the actual stored object identity.
+  void observe(const hobject_t& object, HpAccessType op, uint64_t effective_length);
   // Terminal, idempotent. Host must first drain callers and unregister commands.
   void shutdown();
 };

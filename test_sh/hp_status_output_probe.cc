@@ -44,7 +44,8 @@ int main(int argc, char** argv)
       c[field::io_count] = c[field::labeled_io_total] + c[field::pending_io_count];
       c[field::train_queue_length] = scenario == "complete" ? 0 : 1;
       c[field::snapshot_publish_count] = 7;
-      c[field::op_read_count] = c[field::io_count];
+      c[field::op_write_count] = 5 + id;
+      c[field::op_read_count] = c[field::io_count] - c[field::op_write_count];
       c[field::heat_state_count] = 20;
       c[field::hot_labeled_sample_avg_future_access_count] = 120000;
       c[field::cold_labeled_sample_avg_future_access_count] = 10000;

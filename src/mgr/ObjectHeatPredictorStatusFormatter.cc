@@ -267,14 +267,10 @@ void dump_detail(ObjectHpClusterStatus& cluster_status, Formatter* f)
 
   f->open_object_section("read_ops");
   f->dump_unsigned("hp_op_read_count", summary["hp_op_read_count"]);
-  f->dump_unsigned("hp_op_sync_read_count", summary["hp_op_sync_read_count"]);
-  f->dump_unsigned("hp_op_sparse_read_count", summary["hp_op_sparse_read_count"]);
   f->close_section();
 
   f->open_object_section("write_ops");
   f->dump_unsigned("hp_op_write_count", summary["hp_op_write_count"]);
-  f->dump_unsigned("hp_op_writefull_count", summary["hp_op_writefull_count"]);
-  f->dump_unsigned("hp_op_writesame_count", summary["hp_op_writesame_count"]);
   f->close_section();
 
   f->close_section();
