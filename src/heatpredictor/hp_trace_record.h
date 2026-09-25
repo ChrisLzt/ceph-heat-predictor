@@ -28,7 +28,7 @@ inline void hp_trace_hash_value(uint64_t& hash, const T& value)
 inline uint64_t hp_trace_config_hash()
 {
     uint64_t hash = 1469598103934665603ULL;
-    const std::array<uint64_t, 18> integer_values = {
+    const std::array<uint64_t, 22> integer_values = {
         HP_TRACE_FEATURE_SCHEMA_VERSION,
         2, // Observation policy: BlueStore data-object accesses (previously PG logical ops).
         1, // Full live object identity -> process-local, non-reused ID.
@@ -40,6 +40,10 @@ inline uint64_t hp_trace_config_hash()
         HP_ARF_N_MODELS,
         HP_ARF_MAX_FEATURES,
         HP_ARF_SEED,
+        HP_MODEL_POLICY_VERSION,
+        HP_ARF_GRACE_PERIOD,
+        HP_ARF_LAMBDA,
+        HP_GAUSSIAN_SPLIT_CANDIDATES,
         HP_FUTURE_LABEL_WINDOW_NS,
         HP_SHORT_ACCESS_WINDOW_NS,
         HP_PENDING_EVALUATION_CAPACITY,
@@ -48,11 +52,12 @@ inline uint64_t hp_trace_config_hash()
         HP_FUTURE_ACCESS_OTSU_RECOMPUTE_MAX_INTERVAL_NS,
         HP_FUTURE_ACCESS_OTSU_BIN_COUNT,
     };
-    const std::array<double, 8> floating_values = {
+    const std::array<double, 9> floating_values = {
         HP_SLOW_HISTORY_TAU_SECONDS[0],
         HP_SLOW_HISTORY_TAU_SECONDS[1],
         HP_SLOW_HISTORY_MAX_MULTIPLIER,
         HP_HOT_PREDICT_THRESHOLD,
+        HP_ARF_DELTA,
         HP_HEAT_INCREMENT,
         HP_HEAT_RETAINED_AFTER_DECAY_HORIZON,
         HP_FUTURE_ACCESS_OTSU_SCORE_MIN,

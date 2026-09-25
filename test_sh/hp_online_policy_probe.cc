@@ -1,6 +1,7 @@
 #define main existing_algorithm_probe_main
 #include "hp_algorithm_probe.cc"
 #undef main
+#include "hp_trace_replay.h"
 
 struct MajorityPolicyLeaf : LeafNaiveBayesAdaptive<5, 2> {
   MajorityPolicyLeaf() : LeafNaiveBayesAdaptive<5, 2>(0) {}
@@ -71,7 +72,33 @@ void test_snapshot_sample_or_time_boundary() {
           "elapsed time must publish without enough new samples");
 }
 
+void test_unscaled_online_replay_and_snapshot() {
+  using Model = ARFClassifier<NUM_FEATURES, 2,
+      DetectorFactory<NeverDriftDetector>, DetectorFactory<NeverDriftDetector>>;
+  HeatPredictor predictor;
+  predictor.set_enabled(true);
+  require(dynamic_cast<Model*>(predictor.train_model.get()) != nullptr,
+          "production factory must return raw ARF without a scaler");
+  auto reference = make_hp_replay_model(nullptr);
+  require(dynamic_cast<Model*>(reference.get()) != nullptr,
+          "direct replay factory must return raw ARF");
+  for (int i = 0; i < 600; ++i) {
+    std::vector<double> x(NUM_FEATURES);
+    for(size_t j=0;j<NUM_FEATURES;++j) x[j]=(i%2 ? 1000.0 : -1000.0)+j;
+    predictor.train_model->learn_one(x, i%2);
+    reference->learn_one(x, i%2);
+  }
+  std::vector<double> x(NUM_FEATURES,1000.0);
+  auto snapshot = predictor.train_model->clone_for_prediction();
+  auto p = snapshot->predict_proba_one(x);
+  require(p == reference->predict_proba_one(x),
+          "online, replay and snapshot must agree in raw coordinates");
+  for(int i=0;i<200;++i) predictor.train_model->learn_one(x,0);
+  require(snapshot->predict_proba_one(x) == p,"raw snapshot must be isolated");
+}
+
 int main() {
+  test_unscaled_online_replay_and_snapshot();
   test_fixed_majority_policy();
   test_untrained_history_guard();
   test_warmup_tracks_published_model_and_reset();

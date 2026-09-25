@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="25" failures="0" disabled="0" errors="0" time="3.913" timestamp="2026-09-20T05:45:39.802" name="AllTests">
+  <testsuite name="OnodeCacheBudget" tests="5" failures="0" disabled="0" skipped="0" errors="0" time="0" timestamp="2026-09-20T05:45:39.802">
+    <testcase name="DisabledOrMixedPoliciesKeepOriginalQuotas" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:39.802" classname="OnodeCacheBudget" />
+    <testcase name="BorrowIdleQuotasWithoutIncreasingBudget" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:39.802" classname="OnodeCacheBudget" />
+    <testcase name="UnderusedShardsRetainResidentsAndAdmissionReserve" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:39.802" classname="OnodeCacheBudget" />
+    <testcase name="ZeroSmallAndLargeBudgetsDoNotOverflow" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:39.802" classname="OnodeCacheBudget" />
+    <testcase name="RecomputingForMigratedPressurePreservesTotal" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:39.802" classname="OnodeCacheBudget" />
+  </testsuite>
+  <testsuite name="OnodePrefetchStore" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="3.85" timestamp="2026-09-20T05:45:39.802">
+    <testcase name="RealMetadataPrefetchPreservesReadsWritesDeletesAndGating" status="run" result="completed" time="3.85" timestamp="2026-09-20T05:45:39.802" classname="OnodePrefetchStore" />
+  </testsuite>
+  <testsuite name="OnodeCacheSwitch" tests="16" failures="0" disabled="0" skipped="0" errors="0" time="0.056" timestamp="2026-09-20T05:45:43.652">
+    <testcase name="PrefetchDoesNotManufactureDemandHits" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.652" classname="OnodeCacheSwitch" />
+    <testcase name="PrefetchRejectsLruAbsentObjectsAndCanceledWork" status="run" result="completed" time="0.001" timestamp="2026-09-20T05:45:43.652" classname="OnodeCacheSwitch" />
+    <testcase name="PrefetchReservesCapacityAndNeverEvictsDemandEntries" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.653" classname="OnodeCacheSwitch" />
+    <testcase name="UnusedPrefetchIsCountedOnceOnEvictionOrClear" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.653" classname="OnodeCacheSwitch" />
+    <testcase name="DuplicatePrefetchCannotReplaceDirtyDemandOnode" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.653" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentPrefetchAndPolicyChangesPreserveDemandAccounting" status="run" result="completed" time="0.007" timestamp="2026-09-20T05:45:43.653" classname="OnodeCacheSwitch" />
+    <testcase name="WarmRoundTripPreservesEntriesBinsAndCounters" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.660" classname="OnodeCacheSwitch" />
+    <testcase name="BorrowedQuotaRetainsRealOnodes" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.660" classname="OnodeCacheSwitch" />
+    <testcase name="PinnedAndNonexistentOnodesSurviveSwitch" status="run" result="completed" time="0.001" timestamp="2026-09-20T05:45:43.660" classname="OnodeCacheSwitch" />
+    <testcase name="MainGhostAndIdempotentSwitch" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.661" classname="OnodeCacheSwitch" />
+    <testcase name="OverlappingHitsPromoteReusedOnode" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.661" classname="OnodeCacheSwitch" />
+    <testcase name="ReferenceReleaseIsNotAnotherHit" status="run" result="completed" time="0.001" timestamp="2026-09-20T05:45:43.661" classname="OnodeCacheSwitch" />
+    <testcase name="GhostShrinkKeepsMostRecentEvictions" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.662" classname="OnodeCacheSwitch" />
+    <testcase name="StaleUnpinDispatchesToDestinationShard" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.662" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentLookupsAndRepeatedSwitches" status="run" result="completed" time="0.029" timestamp="2026-09-20T05:45:43.662" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentEvictionInsertionAndSwitch" status="run" result="completed" time="0.017" timestamp="2026-09-20T05:45:43.691" classname="OnodeCacheSwitch" />
+  </testsuite>
+  <testsuite name="OnodeCachePolicy" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.007" timestamp="2026-09-20T05:45:43.708">
+    <testcase name="StoreFanoutStatusAndInvalidPolicy" status="run" result="completed" time="0.001" timestamp="2026-09-20T05:45:43.708" classname="OnodeCachePolicy" />
+    <testcase name="FactoryKeepsStartupCompatibility" status="run" result="completed" time="0" timestamp="2026-09-20T05:45:43.709" classname="OnodeCachePolicy" />
+    <testcase name="InvalidS3fifoTunablesLeaveLruUnchanged" status="run" result="completed" time="0.006" timestamp="2026-09-20T05:45:43.709" classname="OnodeCachePolicy" />
+  </testsuite>
+</testsuites>

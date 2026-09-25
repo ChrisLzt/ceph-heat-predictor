@@ -1,0 +1,603 @@
+{
+  "source_commit": "da10bdb168750e4428b0b98790c88b5d7a7f34f6",
+  "source_baseline": "fbfd7114508d14b7e582263bd8a4fbc3883fa39f",
+  "full_five_case_acceptance": false,
+  "acceptance_pass": false,
+  "original_server_verified": false,
+  "archive": {
+    "filename": "onode-s3fifo-hit-accounting-evidence-20260919.tar.gz",
+    "bytes": 13001541,
+    "sha256": "a3b5bf1fbbe2cfdb26b503c84e54b2abc3b4308c1e1613efb2ccfcb069b2749b"
+  },
+  "files": {
+    "VALIDATION.md": {
+      "bytes": 10848,
+      "sha256": "2075e747ca8c4e1e3df1e9423562d3ab05f81bb79baffaebb1e3c68672871c2b"
+    },
+    "audit_pair.py": {
+      "bytes": 2150,
+      "sha256": "156de408f109b7985551a8deada464e447132a4d7e0a0b730525ae6df4fd76e7"
+    },
+    "balancer-before.json": {
+      "bytes": 138,
+      "sha256": "5732308b2ba51c241da2ef5f9d1f261a209dca467953ceee32729236da38e463"
+    },
+    "baseline-kernel-client.json": {
+      "bytes": 357,
+      "sha256": "90688c801fd30711f4134acae3cc01bfc936333811d8bfbf1f6dab2dcde0e862"
+    },
+    "baseline-restarts.json": {
+      "bytes": 9256,
+      "sha256": "09f34c854b5486a209b3fd7de6dc337f706b982679c2daa5d2ea667f1617fb4a"
+    },
+    "baseline-verified-budget.json": {
+      "bytes": 3902,
+      "sha256": "0d6293432cbc8683a0147c0c2d0e3f3f0aba10e2ccf58203d4ec80b50be9d426"
+    },
+    "comparison.csv": {
+      "bytes": 1227,
+      "sha256": "2d82e06f9dc7c2c527c6d8ac3c281d972306db1dfe56c2cfbd59376976dcbff8"
+    },
+    "comparison.json": {
+      "bytes": 12294,
+      "sha256": "303cbc91a9f9d0818f9637c849863d0de73b9ba7b03a2b89b5ea8132b75368ac"
+    },
+    "fetch_fixed.py": {
+      "bytes": 662,
+      "sha256": "5eb5c3accdeb50be98fef55db2aecb90c3c72360215c08ed5904b9a13cc042eb"
+    },
+    "final-state.json": {
+      "bytes": 2943,
+      "sha256": "251349b3fab2c5c578b49fbe1d73ef8a9f690e9ed7b13ed853e04916a134b839"
+    },
+    "finalize_evidence.py": {
+      "bytes": 5400,
+      "sha256": "66e1d6ce0aee6a7be9a82c9019b569f4a583690c9d1cd80a92ad65ea4ca0382e"
+    },
+    "fixed-kernel-client.json": {
+      "bytes": 357,
+      "sha256": "90688c801fd30711f4134acae3cc01bfc936333811d8bfbf1f6dab2dcde0e862"
+    },
+    "fixed-restarts.json": {
+      "bytes": 9235,
+      "sha256": "29c2184b3a35c117e4e2d1a243b2b2d853200f8cb9773d0ca8bcaebdadc70d32"
+    },
+    "fixed-verified-budget.json": {
+      "bytes": 3902,
+      "sha256": "0d6293432cbc8683a0147c0c2d0e3f3f0aba10e2ccf58203d4ec80b50be9d426"
+    },
+    "implementation.patch": {
+      "bytes": 6343,
+      "sha256": "c792dc0212e61971ed0affd3a1060623cec50fcd70c9e4d4fe793dec8c3c01ea"
+    },
+    "lab_runtime.py": {
+      "bytes": 3345,
+      "sha256": "d89ca118a59726d63891dd973576aecbbe60be2bc546e06a893f575fee6da8bc"
+    },
+    "offline-tests.log": {
+      "bytes": 98,
+      "sha256": "38fb7b1381ba454bc2f6fa68107e46c9ad1ae7674c6b26c2259743af69291f6c"
+    },
+    "package_delivery.py": {
+      "bytes": 4199,
+      "sha256": "0bc3b940cdc0faa10695624ee456f67ab4afd2295a815dd5d3f3810f25a0324d"
+    },
+    "prepare_lab.py": {
+      "bytes": 2741,
+      "sha256": "c9e509a28b1ddd1c16a5ebfd8c71736058e1f698fd50d5bca2954e84cec25b73"
+    },
+    "quality.json": {
+      "bytes": 8994,
+      "sha256": "aad669bb53e87e4464d64542568c25c89681dc74f7203746b1b4d9b3c85d81d5"
+    },
+    "run_pair.py": {
+      "bytes": 2269,
+      "sha256": "2d9c0420d27a6dce405777aecb538e7331c12ca97f19089ab44d27d11094f135"
+    },
+    "s3fifo-pair-distribution-summary.json": {
+      "bytes": 7201,
+      "sha256": "7be93205d67b69e02a6c68aaf9a3afec1d3a53e5107d23d90dd0951f950d84a3"
+    },
+    "summarize_pair.py": {
+      "bytes": 3966,
+      "sha256": "0c2a9c60029fadc4fcffda6ed60671482ef118481337a20691a0aa90ad86352a"
+    },
+    "use_kernel_client.py": {
+      "bytes": 1988,
+      "sha256": "d1249889130b74463d328c67068d458325d08a7a052a3785a1bc3bc2d912f71b"
+    },
+    "validate_build.py": {
+      "bytes": 2661,
+      "sha256": "8bdc2a2d72bce58c5b6fc7e4dd669b62c8c17e1f550e01a28bbbd90cd91a62fb"
+    },
+    "runs/kernel4g-baseline-001/FAILURE.txt": {
+      "bytes": 1691,
+      "sha256": "43142d565a434c35642addbc6af0232f1026b955767737253cd5dcfee59e5d27"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/baseline-control.json": {
+      "bytes": 59732,
+      "sha256": "d252f361d36fb8f52a00f6dde674a2d00da5f9ab07f42287443dfa42992c6ce2"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/initial-cluster.json": {
+      "bytes": 8002,
+      "sha256": "1466a5dba31f780cde619c40087979b66339520363de9446592a099e3d04f872"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/launch.json": {
+      "bytes": 853,
+      "sha256": "ad0f1fa18f6d279e7f7e88e3483b7559a6099696572479fd2add10aabb4da37e"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/samples.jsonl": {
+      "bytes": 1841694,
+      "sha256": "4812bb3efb7328a911d1c6db8d9b55d0ba5e6a3d89426d1a23fbbd60d933c3e5"
+    },
+    "runs/kernel4g-baseline-001/bigdata_baleen_v2/timing.json": {
+      "bytes": 93,
+      "sha256": "6a1f443d4865fdde7bb5958fc9bc00610f01598b89bc39094fe7b93db84382a4"
+    },
+    "runs/kernel4g-baseline-001/budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-001/clocks.json": {
+      "bytes": 391,
+      "sha256": "31d7be4a96d552b987763b7247f5a8af4b81e6c19de04f5e329e42b3805f760b"
+    },
+    "runs/kernel4g-baseline-001/preflight-samples.json": {
+      "bytes": 85114,
+      "sha256": "6e37b8905a72c20b702804d13c921b22e896b0b8ccdec7cabc3fff5145784cec"
+    },
+    "runs/kernel4g-baseline-001/progress.json": {
+      "bytes": 125,
+      "sha256": "994ae769e7ab5586cb837bab5fb34f13d012b34179782a8e2047fecb785a23ae"
+    },
+    "runs/kernel4g-baseline-001/restored-baseline.json": {
+      "bytes": 73250,
+      "sha256": "4a21f0a85d507687edbbae82560b34d491918e045cb2d0faabf105976f64b35f"
+    },
+    "runs/kernel4g-baseline-001/runtime.json": {
+      "bytes": 255155,
+      "sha256": "b6167fe6ad6a259c8fd2aa7b4f7b79df30aae2245d8a855b8296e9ab821cb202"
+    },
+    "runs/kernel4g-baseline-002/COMPLETE.json": {
+      "bytes": 132,
+      "sha256": "3c126f166b384ef440db2bb7462909a7593fb9158ed137295fde1b9d27713b0e"
+    },
+    "runs/kernel4g-baseline-002/analysis.json": {
+      "bytes": 31952,
+      "sha256": "f85ebd759ad1f67c5e3c7b8c9fcb7dd3cc9290c42af810c144fb0dc9e1999562"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/COMPLETE.json": {
+      "bytes": 81,
+      "sha256": "64b125894eddb4bc4c2dfb29966a8eadd6f7801caa9b05865144de22f6203dbb"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/analysis.json": {
+      "bytes": 8924,
+      "sha256": "947741c6d2d4495efd5f62af0df1e95d6238d187807811ba02e818b84efb42a7"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/baseline-control.json": {
+      "bytes": 59727,
+      "sha256": "3886a162f3b10adc0ebcd3b359ebfd8c4f9cdb00aa59e9efb3a64f7e82015ddd"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/final-cluster.json": {
+      "bytes": 7897,
+      "sha256": "ba586723f675b306c77e893b94cf30be18266053475ea3e38f65b5ee30dc1aa9"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/final-samples.json": {
+      "bytes": 87445,
+      "sha256": "5bfee219561079e09eb7b466e5901fdf1f2d584e1b37e5b5ee94f36c340578be"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/initial-cluster.json": {
+      "bytes": 8002,
+      "sha256": "ddd65028ad33026a25a8c80b190f0b1f066bd89bd1d2e78a74e0767dd5a32822"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/intervals.csv": {
+      "bytes": 57498,
+      "sha256": "277dff90de24a1872a643ee1e2307f07ff01bbd1f5de97fffe9eb4ae475bdbf1"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/launch.json": {
+      "bytes": 852,
+      "sha256": "fe75a6846f90201e946d40feaf042ca4d1545ccdd6d3f1497af1c93511f16c79"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/samples.jsonl": {
+      "bytes": 16075468,
+      "sha256": "f834b73ee1eec1b6cddcf75268a45b2d286a734979659a3a5e30fce38f6b4020"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/switch-control.json": {
+      "bytes": 61011,
+      "sha256": "2ffd3802aa450f23c15dd1f0a99e73703439653385905574e46ae0223fe39ae0"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/timing.json": {
+      "bytes": 439,
+      "sha256": "c4f8ea0aae247776ac7c486675d8c450c73bb034410c5ff60bb91d19c32dd75b"
+    },
+    "runs/kernel4g-baseline-002/bigdata_baleen_v2/workload-complete.json": {
+      "bytes": 705,
+      "sha256": "37d11a6da10d9cdde264a087bf61c2cb2d417d1f1eafd1572d1913d828828153"
+    },
+    "runs/kernel4g-baseline-002/budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-002/clocks.json": {
+      "bytes": 393,
+      "sha256": "80773cf7acf818f0a775b3558c0c4550f1d5cf2a35815acf18ca7240d624e147"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/COMPLETE.json": {
+      "bytes": 86,
+      "sha256": "6a143a2ad72a4710954d8f4e52af937691cd9fb64aa6efc5e617f9450a17ef3a"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/analysis.json": {
+      "bytes": 9283,
+      "sha256": "a40660970f074ed439ae21280c83d62b7748c011b9df749131bc13998c4fbac7"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/baseline-control.json": {
+      "bytes": 60549,
+      "sha256": "6ca840404c10d5b4686c3d557904b0e5acd5f7dcfa3008501a495a58c7674b62"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/final-cluster.json": {
+      "bytes": 7798,
+      "sha256": "449b7b12c3fbe6131fd84a018fae2ee0906de6603be7e4b9a600db03d6f4e3aa"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/final-samples.json": {
+      "bytes": 87638,
+      "sha256": "d6ac9df50abf672dbb47c9c7a5413dbac2d36feebb4fb3be046c5dd034abee18"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/initial-cluster.json": {
+      "bytes": 7896,
+      "sha256": "8f0d4480e3256ee0fe324646a504a79a535101ab941b9a51f22e7ea96b2619fc"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/intervals.csv": {
+      "bytes": 53185,
+      "sha256": "716dcd87b2bbc3d94289119cdf667b863e9c266618cefe1154ce2d71c08925af"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/launch.json": {
+      "bytes": 863,
+      "sha256": "48cacd0a7784c691842c336f56ea3745c6ce8312acaf8980a789b531c79228c7"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/samples.jsonl": {
+      "bytes": 15273144,
+      "sha256": "7550cea40554d97c9dae73a06e4a98b27fef90ff13c13a393b1fa01ceb975ac6"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/switch-control.json": {
+      "bytes": 61143,
+      "sha256": "7b2b616b49630a3984b4acb20b2b597db79a3f97281ed0ba017989ffe54287d0"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/timing.json": {
+      "bytes": 758,
+      "sha256": "a779c68504a63b59bff5c1207c4c7e65fa2afcedd3623da7aca09a4e6e8a85cf"
+    },
+    "runs/kernel4g-baseline-002/graph_graphchi_psw_v2/workload-complete.json": {
+      "bytes": 1054,
+      "sha256": "61fad060d2df988c59325aad0fde5ed67c103b9ed821e1fb2ccec8e8e06d2c80"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/COMPLETE.json": {
+      "bytes": 84,
+      "sha256": "9ee00c5b1dbed161d0addc0d78d6f75270309ddfe9fe7c2c0758f8c873d2c49c"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/analysis.json": {
+      "bytes": 9639,
+      "sha256": "30f849ac35fd06e4b226a8e7f305d12b2ac22ded7c05f542741f48d28f655e06"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/baseline-control.json": {
+      "bytes": 60599,
+      "sha256": "48f4864d8d9b0985a2865980b1160b241ce4df26a42cacf2280c05ba522a317a"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/final-cluster.json": {
+      "bytes": 7795,
+      "sha256": "e47ca1bb9926324462710698e7f97738bbeaa6faca01b1a049891f28ddb6e6f5"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/final-samples.json": {
+      "bytes": 87815,
+      "sha256": "fd906e5842410f21d63c21d43e80baeda1b3e8af9f0e84033fb318ecc51f2d6f"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/initial-cluster.json": {
+      "bytes": 7798,
+      "sha256": "e97024dcc03e5d0359cbccfaacadda272331d2a0b17da49c414a98904d0df9b3"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/intervals.csv": {
+      "bytes": 51231,
+      "sha256": "09d29bdb4b228e8f642aa64fc9c60dcdc815ad63580478be3c1ca785509f7995"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/launch.json": {
+      "bytes": 862,
+      "sha256": "e2b107b90266686868998676aba05f846a95f47dd49e08098c3f993ce3551e53"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/samples.jsonl": {
+      "bytes": 14789755,
+      "sha256": "2e8643abab5e1c4d505155f56ad6d9cff2d8eceb43730971642e405800bf56a4"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/switch-control.json": {
+      "bytes": 61171,
+      "sha256": "157f550dda58384bdbaa0fb781c1061a50bf751ecc31337599781fde64cb572b"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/timing.json": {
+      "bytes": 1069,
+      "sha256": "c7897fbfa6ad92e045428f6fca59d6501719f2647fca6db89ef43960f8aa3e00"
+    },
+    "runs/kernel4g-baseline-002/hpc_wrf_continuous_v2/workload-complete.json": {
+      "bytes": 1397,
+      "sha256": "76b4b9284d96034b6fba49d9e4a5bca6685e42cd4947f7dbdfd3aee51b1a9313"
+    },
+    "runs/kernel4g-baseline-002/preflight-samples.json": {
+      "bytes": 85252,
+      "sha256": "a242803de92b0714ca142883faf8c9b6a0b1b1da75c3adf235ce255e959eefa5"
+    },
+    "runs/kernel4g-baseline-002/progress.json": {
+      "bytes": 103,
+      "sha256": "570a3ed9c401a2e4a0c9433b566f9e32859433a4d7710201e5543b5d6cc0c914"
+    },
+    "runs/kernel4g-baseline-002/restored-baseline.json": {
+      "bytes": 60616,
+      "sha256": "eff94db15ccf55021707e356c1af234eb4e75049883d961deb658756c6d90575"
+    },
+    "runs/kernel4g-baseline-002/runtime.json": {
+      "bytes": 255155,
+      "sha256": "b6167fe6ad6a259c8fd2aa7b4f7b79df30aae2245d8a855b8296e9ab821cb202"
+    },
+    "runs/kernel4g-fixed-002/COMPLETE.json": {
+      "bytes": 132,
+      "sha256": "5f745ccbe3303dd43c631321c5c47356974040e4118be2999eebf7745185614d"
+    },
+    "runs/kernel4g-fixed-002/analysis.json": {
+      "bytes": 32034,
+      "sha256": "e1d41691417329c52a8a114a7db76bccccfbf1d442abd15f0e3d48a7fc5d19a7"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/COMPLETE.json": {
+      "bytes": 82,
+      "sha256": "25572396511b9e8c8687dd752e783e2301bb5d24cc12de559828174006709ccb"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/analysis.json": {
+      "bytes": 8930,
+      "sha256": "da087e5cfba5c3d5c18791d05baa5ff3fd4ed85e4781288fe0720cccf4f9602a"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/baseline-control.json": {
+      "bytes": 59729,
+      "sha256": "220a8c74f9ee15e15baae5a4703d39fb520c5a4fcb3c73a83bffd871983a5890"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/final-cluster.json": {
+      "bytes": 7896,
+      "sha256": "a3eebe3d5359bc6cce582b5502138bb5c6bf91554a3f9338c1defef06b894f73"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/final-samples.json": {
+      "bytes": 87454,
+      "sha256": "a7d57f16376bcff537787e19f6443c5cda7fd7de01b9ca096353915b3b79bb08"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/initial-cluster.json": {
+      "bytes": 8001,
+      "sha256": "5901521063be31c4dab064002bd81ee46cee4743f11fc2ca0c1945448011f6f3"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/intervals.csv": {
+      "bytes": 50272,
+      "sha256": "5b84b2c90b176700dc47af3c2c71633dfc1a3a78d0b116b589429c28310a87c5"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/launch.json": {
+      "bytes": 850,
+      "sha256": "243af19af6b94fef43769d036edea3e9a4c123189e307da8c113764f305e3888"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/samples.jsonl": {
+      "bytes": 14020465,
+      "sha256": "b71b0781326ab9f923e03ddb9b9621a0fef3c7102a26b9fe91e97b3705abbd49"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/switch-control.json": {
+      "bytes": 61015,
+      "sha256": "008ad966521cf0b6e7befa6f26480aed242af544b71b29a392ece97004ae2bcb"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/timing.json": {
+      "bytes": 441,
+      "sha256": "7ae8eb8aa22b87cd88db6a1cad04b4e825b313022e429851fa3df14485e68b7e"
+    },
+    "runs/kernel4g-fixed-002/bigdata_baleen_v2/workload-complete.json": {
+      "bytes": 704,
+      "sha256": "7fe98b5714358c5e777322c7e3e4afb27acc3c4812e62826e53626168ce491d7"
+    },
+    "runs/kernel4g-fixed-002/budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-fixed-002/clocks.json": {
+      "bytes": 393,
+      "sha256": "8162708a3aa904c5a83ba6ed11f3395fa95e8ef727ec18d506570f8647965bd5"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/COMPLETE.json": {
+      "bytes": 85,
+      "sha256": "bd746cdb84110c93f3c43d402141c970acaad4e93241055ec0e90891bc15ef6d"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/analysis.json": {
+      "bytes": 9291,
+      "sha256": "80b097233e978cfd7f6826ee6a60f0b17e38383a346b10578a814d8bd16d4188"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/baseline-control.json": {
+      "bytes": 60548,
+      "sha256": "5536a1e92bf30fb05d7c1d9fa23ae8a023db38519df949accdad9f9dc6d221ae"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/final-cluster.json": {
+      "bytes": 7792,
+      "sha256": "7850e812c24d46010424658b8956f904f7b0e15f0eef0c121eb9bdcfd570f195"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/final-samples.json": {
+      "bytes": 87613,
+      "sha256": "b5d29b10ca6dbc8ce49c39d310af647705f53d4a6fe51b6550c3a3a68aa60278"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/initial-cluster.json": {
+      "bytes": 7809,
+      "sha256": "fd9c7645943113396dac228915a6eb46cb3fbbbeca6fa042e2a173eb63c8c687"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/intervals.csv": {
+      "bytes": 44566,
+      "sha256": "a6e3c3be143e841b5d4e28107618660211af5ea645308918cb561b19d77b8495"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/launch.json": {
+      "bytes": 860,
+      "sha256": "ef9eab79bd50f12756560f986b2b0784c380b940401d68695e7dec1267dedb7e"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/samples.jsonl": {
+      "bytes": 12789893,
+      "sha256": "d361cb0e058248acfb78871a834f7e4e0d5789530ff84642baaf1baba324671e"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/switch-control.json": {
+      "bytes": 61143,
+      "sha256": "b66b4b44763b35d7d58bb9ff4cd7bd26ffc39f73617e35a83a81b6722e90c776"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/timing.json": {
+      "bytes": 760,
+      "sha256": "0d56472fd5bbb5a9bbf656cc7d6f34aee580aa326f38bdc02972bba0efb2fbfa"
+    },
+    "runs/kernel4g-fixed-002/graph_graphchi_psw_v2/workload-complete.json": {
+      "bytes": 1056,
+      "sha256": "bd11328d3678dcd47d4c1e45877d923ab8999c732d0273d9c5832d6850f20e31"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/COMPLETE.json": {
+      "bytes": 85,
+      "sha256": "8e16046660decdc034cee640b540b58c8bf769bc88ec317ad8d69976a040300f"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/analysis.json": {
+      "bytes": 9699,
+      "sha256": "03ddccf7ca901f3b015c65ad4e05bb5c02ac941f332131c52c1c13105333661a"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/baseline-control.json": {
+      "bytes": 60606,
+      "sha256": "8cc902e9fc726b18e6a4c99545223b6c3833c01619f58711900c6b105cd03473"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/effective-budget.json": {
+      "bytes": 3903,
+      "sha256": "34f4f0ff6e619dc25b6dcbdf816b1da6733913a6586a4671ec7ef3689ee7fd18"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/final-cluster.json": {
+      "bytes": 7883,
+      "sha256": "4865e4b78726b68e0aceff1486bb1a2a1a7ac25e58abb40081182c43920e320c"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/final-samples.json": {
+      "bytes": 87787,
+      "sha256": "0489bf71ee4ea72ee95601e968bff4cec5926c65ee4e77737ffd0e7c30e0fd25"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/initial-cluster.json": {
+      "bytes": 7792,
+      "sha256": "7b3e83bc38732f168b2c623ee19a3ca67444788fd59ddf8d40ee80315fa84499"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/intervals.csv": {
+      "bytes": 42022,
+      "sha256": "3a7c3a987d6ad0a2f01416cfee79b22aee6ac39d1a1e3a930c72f3fa5f4450e9"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/launch.json": {
+      "bytes": 860,
+      "sha256": "577cc05898cdf8088fe8b6817b174b7bd1806868670fb7220fc3ff2952be3d94"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/samples.jsonl": {
+      "bytes": 12234839,
+      "sha256": "c1101369619c9e613cbd3a423819668f366e6df6eda0d0c32594450267b8285d"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/switch-control.json": {
+      "bytes": 61195,
+      "sha256": "987b322af209ad2f47acdf6151f3c0010c7793b4ee61cbc3140543056e2c050a"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/timing.json": {
+      "bytes": 1073,
+      "sha256": "7edaf028bdcb37889ce5e8b623169eeb07997f090730a4ec3930ed416e3b6803"
+    },
+    "runs/kernel4g-fixed-002/hpc_wrf_continuous_v2/workload-complete.json": {
+      "bytes": 1398,
+      "sha256": "1967b3809c907b14c64c294c18f016d93e89ffce215b90f749fefac4bbae40aa"
+    },
+    "runs/kernel4g-fixed-002/preflight-samples.json": {
+      "bytes": 85306,
+      "sha256": "79dcac93921fd69a100a81061a65cd35b8e4494aa565462eff1ae87105f55e59"
+    },
+    "runs/kernel4g-fixed-002/progress.json": {
+      "bytes": 103,
+      "sha256": "4906077f61ae107fdbc65b18e8033043dde94e5c04cbc1e900e6a6330598caf1"
+    },
+    "runs/kernel4g-fixed-002/restored-baseline.json": {
+      "bytes": 60589,
+      "sha256": "1f900948f49544bcfa28ea2a29874f4ba373ea95b8db27eebe77cdf0533b2649"
+    },
+    "runs/kernel4g-fixed-002/runtime.json": {
+      "bytes": 255155,
+      "sha256": "b6167fe6ad6a259c8fd2aa7b4f7b79df30aae2245d8a855b8296e9ab821cb202"
+    },
+    "unit-evidence/baseline-build.log": {
+      "bytes": 189,
+      "sha256": "5046f3c9b9f11866c8b1353c1a3db9b0ba67294fba332752cb4592cfd52bb521"
+    },
+    "unit-evidence/baseline-identity.json": {
+      "bytes": 445,
+      "sha256": "3a55ef6b4cb07a2421af46c07e12c7dc9ecd9fb44600107db7642682afe97e9c"
+    },
+    "unit-evidence/baseline-onode.log": {
+      "bytes": 4456,
+      "sha256": "573bedbcbf2eb757646e89ea25480e8163ec4f2c32e1a24c077236f7b367b085"
+    },
+    "unit-evidence/baseline-onode.xml": {
+      "bytes": 6099,
+      "sha256": "524a16adfae42eead51c0f653b244ec952548d8610e4cb15d2296bd65bf1db6a"
+    },
+    "unit-evidence/baseline-restart-1789817987552389977.json": {
+      "bytes": 1360,
+      "sha256": "be215550eb705bc2306fd3260f64fefdcd3989f3676113a43bb656d8beb90f24"
+    },
+    "unit-evidence/baseline-restart-1789818526812636317.json": {
+      "bytes": 1700,
+      "sha256": "a2944f409b469fa83689b6c70fc7c957f38b059a67d2e73b6f926b088f872628"
+    },
+    "unit-evidence/baseline-restart-1789819138444282175.json": {
+      "bytes": 1790,
+      "sha256": "3d5b6616494506efb7803961d43bfe08eb4e22d65a188fffaf7737b071b809b0"
+    },
+    "unit-evidence/fixed-build.log": {
+      "bytes": 18309,
+      "sha256": "caaf80a69ce479643975b114ebf62415444091b67e1d0f9396c2c1a911f90051"
+    },
+    "unit-evidence/fixed-identity.json": {
+      "bytes": 317,
+      "sha256": "ff9d735e9afdd4e998fd635e844188af32c275d6e218a4a999769f1042f727d7"
+    },
+    "unit-evidence/fixed-onode.log": {
+      "bytes": 2741,
+      "sha256": "6bd56bdb05925a8d9b9eeba85a17ab9c85cbf4d5256ddd8103c35eb691aa718c"
+    },
+    "unit-evidence/fixed-onode.xml": {
+      "bytes": 2515,
+      "sha256": "d2c5117369d3cd1b304dfffa236fe64d3baadf62ffddb9eb3e9b7dd5fba018d9"
+    },
+    "unit-evidence/fixed-repeat50.log": {
+      "bytes": 119297,
+      "sha256": "5fb494234cc08cf4776fa54ead4912af6b39bda951e3891715decac52ede2f53"
+    },
+    "unit-evidence/fixed-types.log": {
+      "bytes": 16087,
+      "sha256": "345cbef99507ce2f156d49c528432ee63d7b3d4a4accada626b037ea3c4c4a2e"
+    },
+    "unit-evidence/fixed-types.xml": {
+      "bytes": 5789,
+      "sha256": "cd0a306bd262d83ab524861284d1b23b2e0b74f2f0ecd8700d5d1c05cedd74eb"
+    },
+    "s3fifo-pair-vdbench-evidence.tar.gz": {
+      "bytes": 3185147,
+      "sha256": "662058459d6014be200887fbc5299941af01f5839d2f97517bfaca5036347bd1"
+    }
+  },
+  "note": "Raw evidence is delivered separately; Git contains compact summaries only. Scripts with CloudLab paths are historical lab records, not another-server deployment tools."
+}

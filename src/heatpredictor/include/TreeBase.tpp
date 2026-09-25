@@ -68,27 +68,27 @@ RandomLeafNaiveBayesAdaptive<num_features, num_labels>::clone_for_prediction()
 
 template <int num_features, int num_labels>
 std::vector<BranchFactory<num_features, num_labels> > LeafNaiveBayesAdaptive<num_features, num_labels>::best_split_suggestions(
-    HoeffdingTree<num_features, num_labels>* tree, 
     double max_share_to_split, double min_branch_fraction) {
     std::vector<BranchFactory<num_features, num_labels> > best_suggestions;
     double maj_class = max_value(this->stats);
     if (maj_class > 0.0 && maj_class / total_weight() > max_share_to_split) {
-        // Wait for more evidence; purity is not a prepruning decision.
+        // Wait for more evidence; a near-pure leaf may change later.
         return best_suggestions;
-    }
-    if (tree->merit_preprune) {
-        best_suggestions.push_back(
-            BranchFactory<num_features, num_labels>::make_preprune());
     }
     for (int i = 0; i < num_features; ++i) {
         if (splitters[i] != nullptr) {
             auto suggestion = splitters[i]->best_evaluated_split_suggestion(
                 this->stats, i, min_branch_fraction);
-            // Constant features and rejected branch fractions return an
-            // invalid placeholder. They must not participate in a tie.
             if (suggestion.feature >= 0 && std::isfinite(suggestion.merit)) {
                 best_suggestions.push_back(std::move(suggestion));
             }
+        }
+    }
+    // Keep original cuts whenever any selected feature has a valid candidate.
+    if (best_suggestions.empty()) {
+        for(int i=0;i<num_features;++i)if(splitters[i]){
+            auto candidate=splitters[i]->midpoint_candidate(this->stats,i,min_branch_fraction);
+            if(candidate.feature>=0)best_suggestions.push_back(std::move(candidate));
         }
     }
     return best_suggestions;

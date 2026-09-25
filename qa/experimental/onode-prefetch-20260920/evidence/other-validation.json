@@ -1,0 +1,16 @@
+{
+  "completed_measurements": 8,
+  "quality_flags": [],
+  "persistent_inventory_unchanged": true,
+  "local_source_files_verified": 32,
+  "frozen_hp_files_verified": 27,
+  "restart_batches_verified": {
+    "off": 4,
+    "on": 4,
+    "rollback": 1
+  },
+  "candidate_sha256": "bba9de7f58f3249dae894cbb60a2e56111934f805a626e0a41400915f861e605",
+  "all_four_on_stage_averages_strict_gt96": true,
+  "all_four_on_hot_cold_accuracy_strict_gt80": true,
+  "all_four_on_all42_windows_proven_gt96": false
+}

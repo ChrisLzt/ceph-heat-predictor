@@ -7,6 +7,7 @@
 # include <vector>
 # include <unordered_map>
 # include <utility>
+# include "../hp_config.h"
 # include "TreeBase.h"
 
 class Gaussian {
@@ -16,6 +17,7 @@ private:
     double ddof = 1;
 public:
     double n = 0.0;
+    double mean() const { return _mean; }
     void update(double x, double w=1.0) {
         double mean_old = _mean;
         n += w;
@@ -82,7 +84,7 @@ private:
         return std::make_pair(lhs_dist, rhs_dist);
     }
 public:
-    GaussianSplitter(int n_split=5) : n_split(n_split) {
+    GaussianSplitter(int n_split=HP_GAUSSIAN_SPLIT_CANDIDATES) : n_split(n_split) {
         _min_per_class.fill(std::numeric_limits<double>::max());
         _max_per_class.fill(std::numeric_limits<double>::lowest());
     }
@@ -90,6 +92,18 @@ public:
         if (att_val < _min_per_class[target_val]) _min_per_class[target_val] = att_val;
         if (att_val > _max_per_class[target_val]) _max_per_class[target_val] = att_val;
         _att_dist_per_class[target_val].update(att_val, w);
+    }
+    BranchFactory<num_features,num_labels> midpoint_candidate(const std::unordered_map<int,double>& stats,int feature,double min_fraction) {
+        BranchFactory<num_features,num_labels> best;
+        for(int a=0;a<num_labels;++a)for(int b=a+1;b<num_labels;++b){
+            const auto& x=_att_dist_per_class[a];const auto& y=_att_dist_per_class[b];
+            if(!(x.n>0&&y.n>0)||!std::isfinite(x.mean())||!std::isfinite(y.mean()))continue;
+            const double cut=x.mean()/2+y.mean()/2;if(!std::isfinite(cut))continue;
+            auto dist=_class_dists_from_binary_split(cut);
+            double gain=InfoGainSplitCriterion::merit_of_split(stats,dist,min_fraction);
+            if(std::isfinite(gain)&&gain>0&&gain>best.merit)best=BranchFactory<num_features,num_labels>(gain,feature,cut,std::move(dist));
+        }
+        return best;
     }
     double cond_proba(double att_val, int target_val) {
         return _att_dist_per_class[target_val](att_val);

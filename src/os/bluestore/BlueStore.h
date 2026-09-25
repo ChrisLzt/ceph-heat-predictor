@@ -24,6 +24,7 @@
 #include <ratio>
 #include <mutex>
 #include <condition_variable>
+#include <deque>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/unordered_set.hpp>
@@ -1183,6 +1184,16 @@ public:
 
     boost::intrusive::list_member_hook<> lru_item;
 
+    // S3FIFO cache algorithm fields
+    uint8_t s3fifo_freq = 0;   ///< S3FIFO frequency counter (0-3 for 2-bit Clock)
+    enum {
+      Q_NONE = 0,              ///< not in any S3FIFO queue
+      Q_SMALL = 1,             ///< in small FIFO
+      Q_MAIN = 2,              ///< in main FIFO
+    };
+    uint8_t s3fifo_queue = Q_NONE; ///< which S3FIFO queue this Onode resides in
+    bool prefetched = false;     ///< protected by the onode shard lock
+
     bluestore_onode_t onode;  ///< metadata stored as value in kv store
     bool exists;              ///< true if object logically exists
     bool cached;              ///< Onode is logically in the cache
@@ -1394,6 +1405,18 @@ private:
     std::array<std::pair<ghobject_t, ceph::mono_clock::time_point>, 64> dumped_onodes;
 
   public:
+    enum class Policy { LRU, S3FIFO };
+    uint64_t prefetch_loaded = 0;
+    uint64_t prefetch_used = 0;
+    uint64_t prefetch_unused = 0;
+
+    void _prefetch_removed(Onode* o) {
+      if (o->prefetched) {
+        o->prefetched = false;
+        ++prefetch_unused;
+      }
+    }
+
     OnodeCacheShard(CephContext* cct) : CacheShard(cct) {}
     static OnodeCacheShard *create(CephContext* cct, std::string type,
                                    PerfCounters *logger);
@@ -1403,8 +1426,22 @@ private:
     virtual void _add(Onode* o, int level) = 0;
     virtual void _rm(Onode* o) = 0;
     virtual void _move_pinned(OnodeCacheShard *to, Onode *o) = 0;
+    virtual void _touch(Onode* o) {}
+    virtual void _maybe_unpin(Onode* o) = 0;
+    virtual bool _supports_policy(Policy policy) const = 0;
+    virtual void _set_policy(Policy policy) = 0;
+    virtual Policy _get_policy() const = 0;
+    virtual void _dump_policy(ceph::Formatter* f) const = 0;
 
-    virtual void maybe_unpin(Onode* o) = 0;
+    struct PrefetchReclaimResult {
+      uint64_t examined = 0;
+      uint64_t evicted = 0;
+    };
+    virtual PrefetchReclaimResult _reclaim_for_prefetch(uint64_t max_steps) {
+      return {};
+    }
+
+    void maybe_unpin(Onode* o);
     virtual void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) = 0;
     bool empty() {
       return _get_num() == 0;
@@ -1466,6 +1503,7 @@ private:
     friend struct Collection; // for split_cache()
     friend struct Onode; // for put()
     friend struct LruOnodeCacheShard;
+    friend struct SwitchableOnodeCacheShard;
     void _remove(const ghobject_t& oid);
   public:
     OnodeSpace(OnodeCacheShard *c) : cache(c) {}
@@ -1474,6 +1512,14 @@ private:
     }
 
     OnodeRef add_onode(const ghobject_t& oid, OnodeRef& o);
+    enum class PrefetchAdmission { ready, resident, inactive, full };
+    PrefetchAdmission prefetch_admission(const ghobject_t& oid);
+    bool can_prefetch(const ghobject_t& oid) {
+      return prefetch_admission(oid) == PrefetchAdmission::ready;
+    }
+    bool add_prefetched(OnodeRef& o,
+                        const std::atomic<uint64_t>* generation = nullptr,
+                        uint64_t expected_generation = 0);
     OnodeRef lookup(const ghobject_t& o);
     void rename(OnodeRef& o, const ghobject_t& old_oid,
 		const ghobject_t& new_oid,
@@ -1500,6 +1546,8 @@ private:
       ceph::make_shared_mutex("BlueStore::Collection::lock", true, false);
 
     bool exists;
+
+    std::atomic<uint64_t> prefetch_generation{0};
 
     SharedBlobSet shared_blob_set;      ///< open SharedBlobs
 
@@ -2589,6 +2637,10 @@ private:
     void _resize_shards(bool interval_stats);
   } mempool_thread;
 
+  friend struct OnodePrefetchTestPeer;
+  struct OnodeCache;
+  std::unique_ptr<OnodeCache> onode_cache;
+
 #ifdef WITH_BLKIN
   ZTracer::Endpoint trace_endpoint {"0.0.0.0", 0, "BlueStore"};
 #endif
@@ -2918,6 +2970,9 @@ public:
   }
 
   void set_cache_shards(unsigned num) override;
+  int set_onode_cache_policy(const std::string& policy,
+                            ceph::Formatter* f) override;
+  int get_onode_cache_policy(ceph::Formatter* f) override;
   void dump_cache_stats(ceph::Formatter *f) override {
     int onode_count = 0, buffers_bytes = 0;
     for (auto i: onode_cache_shards) {

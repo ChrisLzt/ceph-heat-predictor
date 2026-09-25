@@ -293,6 +293,13 @@ public:
   }
 
   virtual void set_cache_shards(unsigned num) { }
+  virtual int set_onode_cache_policy(const std::string& policy,
+                                    ceph::Formatter* f) {
+    return -EOPNOTSUPP;
+  }
+  virtual int get_onode_cache_policy(ceph::Formatter* f) {
+    return -EOPNOTSUPP;
+  }
 
   /**
    * Returns 0 if the hobject is valid, -error otherwise

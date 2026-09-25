@@ -124,7 +124,7 @@ protected:
         }
         _prediction_weights.resize(n_models);
         for (int i = 0; i < n_models; ++i) {
-            const double metric = _metrics[i].get_balanced_accuracy();
+            const double metric = _metrics[i].get_accuracy();
             _prediction_weights[i] = metric > 0.0 ? metric : 1.0;
         }
         _prediction_weights_valid = true;
@@ -159,9 +159,9 @@ protected:
         _prediction_weights_valid = true;
     }
 public:
-    ARFClassifier(int n_models=10, int max_features=(int)(std::sqrt(num_features)),
-        int seed=1037, int grace_period=100, int lambda_value=4,
-        double delta=0.001, double tau = 0.05,
+    ARFClassifier(int n_models=10, int max_features=hp_arf_sqrt_features(num_features),
+        int seed=1037, int grace_period=50, int lambda_value=6,
+        double delta=0.01, double tau = 0.05,
         double max_share_to_split = 0.99,
         double min_branch_fraction = 0.01,
         std::shared_ptr<ArfAdaptationTelemetry> adaptation_telemetry = nullptr)
@@ -197,7 +197,7 @@ public:
         } else {
             copy->_prediction_weights.resize(n_models);
             for (int i = 0; i < n_models; ++i) {
-                const double metric = _metrics[i].get_balanced_accuracy();
+                const double metric = _metrics[i].get_accuracy();
                 copy->_prediction_weights[i] = metric > 0.0 ? metric : 1.0;
             }
         }

@@ -16,7 +16,6 @@ protected:
     double max_share_to_split;
     double min_branch_fraction;
     void copy_prediction_state_to(HoeffdingTreeClassifier *copy) const {
-        copy->max_depth = this->max_depth;
         copy->binary_split = this->binary_split;
         copy->max_size = this->max_size;
         copy->memory_estimate_period = this->memory_estimate_period;
@@ -30,7 +29,6 @@ protected:
         copy->_growth_allowed = this->_growth_allowed;
         copy->_train_weight_seen_by_model = this->_train_weight_seen_by_model;
         copy->_last_memory_estimate_at = this->_last_memory_estimate_at;
-        copy->merit_preprune = this->merit_preprune;
         copy->_max_byte_size = this->_max_byte_size;
         delete copy->_root;
         copy->_root = this->_root != nullptr
@@ -48,8 +46,9 @@ protected:
     }
     void _attempt_to_split(LeafNaiveBayesAdaptive<num_features, num_labels>* leaf, NumericBinaryBranch<num_features, num_labels>* parent, int parent_branch) {
         if (!leaf->observed_class_distribution_is_pure()) {
-            std::vector<BranchFactory<num_features, num_labels>> best_split_suggestions = leaf->best_split_suggestions(this, max_share_to_split, min_branch_fraction);
-            std::sort(best_split_suggestions.begin(), best_split_suggestions.end());
+            std::vector<BranchFactory<num_features, num_labels>> best_split_suggestions = leaf->best_split_suggestions(max_share_to_split, min_branch_fraction);
+            // Keep feature order deterministic when valid candidates have equal merit.
+            std::stable_sort(best_split_suggestions.begin(), best_split_suggestions.end());
             bool should_split = false;
             if (best_split_suggestions.size() < 2) {
                 should_split = best_split_suggestions.size() > 0;
@@ -66,11 +65,7 @@ protected:
             }
             if (should_split) {
                 const BranchFactory<num_features, num_labels>& split_decision = best_split_suggestions[best_split_suggestions.size() - 1];
-                if (split_decision.is_preprune && this->merit_preprune) {
-                    leaf->deactivate();
-                    this->_n_active_leaves--;
-                    this->_n_inactive_leaves++;
-                } else if (split_decision.feature >= 0) {
+                if (split_decision.feature >= 0) {
                     std::unique_ptr<BranchOrLeaf<num_features, num_labels>> left(
                         _new_leaf(leaf));
                     std::unique_ptr<BranchOrLeaf<num_features, num_labels>> right(
@@ -81,6 +76,12 @@ protected:
                     NumericBinaryBranch<num_features, num_labels>* new_split =
                         split_decision.assemble(
                             leaf->stats, leaf->depth, leaves);
+                    // Inherited class weights are prior evidence, not new
+                    // observations toward this child's first grace period.
+                    for (auto* child : leaves) {
+                        auto* new_leaf = static_cast<LeafNaiveBayesAdaptive<num_features, num_labels>*>(child);
+                        new_leaf->last_split_attempt_at = new_leaf->total_weight();
+                    }
                     left.release();
                     right.release();
                     this->_n_active_leaves++;
@@ -138,21 +139,15 @@ public:
         // we assume node is always a leaf, thus no more test for multiway
         node->learn_one(x, y, w);
         if (this->_growth_allowed && node->is_active) {
-            if (node->depth >= this->max_depth) {
-                node->deactivate();
-                this->_n_active_leaves--;
-                this->_n_inactive_leaves++;
-            } else {
-                double weight_seen = node->total_weight();
-                double weight_diff = weight_seen - node->last_split_attempt_at;
-                if (weight_diff >= grace_period) {
-                    int p_branch = 0;
-                    if (pnode) {
-                        p_branch = pnode->branch_no(x);
-                    }
-                    node->last_split_attempt_at = weight_seen;
-                    _attempt_to_split(node, pnode, p_branch);
+            double weight_seen = node->total_weight();
+            double weight_diff = weight_seen - node->last_split_attempt_at;
+            if (weight_diff >= grace_period) {
+                int p_branch = 0;
+                if (pnode) {
+                    p_branch = pnode->branch_no(x);
                 }
+                node->last_split_attempt_at = weight_seen;
+                _attempt_to_split(node, pnode, p_branch);
             }
         }
         if (this->_train_weight_seen_by_model -

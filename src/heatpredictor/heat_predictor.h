@@ -20,8 +20,6 @@
 #include "include/ARFClassifier.h"
 #include "include/Classifier.h"
 #include "include/Metrics.h"
-#include "include/PipelineClassifier.h"
-#include "include/StandardScaler.h"
 
 #include "hp_config.h"
 #include "hp_evaluation_queue.h"
@@ -83,8 +81,7 @@ private:
                     HP_ARF_MAX_SHARE_TO_SPLIT,
                     HP_ARF_MIN_BRANCH_FRACTION,
                     std::move(adaptation_telemetry));
-        return new PipelineClassifier(
-            new StandardScaler<NUM_FEATURES>(), classifier);
+        return classifier; // Trees learn and predict in the original feature coordinates.
     }
 
     // reset_mutex gates full-state reset against foreground prediction and

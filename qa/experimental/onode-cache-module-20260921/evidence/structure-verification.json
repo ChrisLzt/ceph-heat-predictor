@@ -1,0 +1,8 @@
+{
+  "lru_and_s3fifo_body_identical": true,
+  "worker_identical_after_owner_and_storage_adapter_relocation": true,
+  "native_onode_space_body_identical": true,
+  "configuration_definitions_unchanged": true,
+  "budget_algorithm_unchanged": true,
+  "core_cc_line_delta": -1010
+}

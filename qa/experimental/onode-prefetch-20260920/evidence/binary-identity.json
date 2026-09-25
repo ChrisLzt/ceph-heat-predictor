@@ -1,0 +1,52 @@
+{
+  "binary_sha256": "bba9de7f58f3249dae894cbb60a2e56111934f805a626e0a41400915f861e605",
+  "source": {
+    "before": {
+      "src/os/bluestore/BlueStore.cc": "9f2f2fad426e107de736ebe774de17b3e375cea976595de80626121e52af76ab",
+      "src/os/bluestore/BlueStore.h": "87e451bf8e208bc618e8219beba4f546e088e0c599db7a67c36c6be1a2bad938",
+      "src/common/options/global.yaml.in": "b0fb398f5731fdbfc9bbf8f9c7207069ab8e9ccb2a546938228696f48abe2186",
+      "src/test/objectstore/test_bluestore_onode_cache.cc": "dddc88c39ea225098f33ed078d15b1534c32ac43a82023ed5b662b958d41985e",
+      "src/test/objectstore/CMakeLists.txt": "222835c3fd1f970f7cdc63f474a5490d102f09bed5b002dd88a39040f37adb98"
+    },
+    "after": {
+      "src/os/bluestore/BlueStore.cc": "2e018bb485dc84811114317eaad69e54b901809241117d6d864eb40f9de3e119",
+      "src/os/bluestore/BlueStore.h": "9fc5330db9b9be9f1617e1c0c21c11ceaaf832f4ce01d94391d955545d4ff6c3",
+      "src/common/options/global.yaml.in": "7acdc68930456ad659f806e92d4c70edffb895227f3009c768789060f2f87181",
+      "src/test/objectstore/test_bluestore_onode_cache.cc": "5cae554166e057ee2688f8bf706ff94aa41e074e6e358614b9d376954ae2610b",
+      "src/test/objectstore/CMakeLists.txt": "ab3b13ca36a637b6a39bc9ac18e14a036955b13a01772fe9eb0bdfe1279de5a1"
+    },
+    "frozen_heat_predictor_files": {
+      "src/heatpredictor/heat_predictor.h": "2898dc545545f577fa6f9b7023bf26bc3d97c735cce0050a0627480806d4e387",
+      "src/heatpredictor/hp_config.h": "b8ab0d1701e6d796fc0afb18093e6bf4881a8a9ce33b12d13d0a6032b462a88d",
+      "src/heatpredictor/hp_evaluation_queue.h": "217e6fda353d4ba9b25a80394619b8ba9a879765a4a716a1e3e0bbd7583f7f65",
+      "src/heatpredictor/hp_features.h": "8c97c3e755d4b0ae104947b5f6686294710be9896ccb2bb5d7b97d0fc9698f4a",
+      "src/heatpredictor/hp_future_access_threshold.h": "cad8cef4385c9df8176518b157f21615686eb1334e303fec0fcf589a18b98918",
+      "src/heatpredictor/hp_integer_quantile_window.h": "4ed7615b7cfd123160e4450b5f4de71c6fb7c519a7c89560a4ea794fb6403fd6",
+      "src/heatpredictor/hp_telemetry.h": "31c0724807c7748d88a08b61de41063d325270b21c3b570984cedbfdec840678",
+      "src/heatpredictor/hp_types.h": "d92acc32fc46ea08f5cdf1b086b44992d555e9dffce8a30fcc3081adbb77fb9e",
+      "src/heatpredictor/include/ARFClassifier.h": "6928bdd3aacb3b7a4be4be8e6481890ad3d1c40dddf75a9443dd7c96b7dc1708",
+      "src/heatpredictor/include/ArfAdaptationTelemetry.h": "e3c580e5b55c8570a4ebafdc44c337bce042a3e82662a7d7ef8ad4b3aca68cbe",
+      "src/heatpredictor/include/Classifier.h": "60bdde5787fd63a30bf2aca5475d1f1e91dbcb7fc7ca502ad80ed2be16217357",
+      "src/heatpredictor/include/GaussianSplitter.h": "9bfafd4e1946f9ae8e9bc80503e9e4b4d1f0696314fbc2016238db60c7cdb8be",
+      "src/heatpredictor/include/HoeffdingTree.h": "733daf2723807050891203ddbb153f1850b5dfcf151f9f9a2fbccb283487a470",
+      "src/heatpredictor/include/HoeffdingTree.tpp": "f0deaeb8e561dc3253bd563ed2be29ee415e013e5c49bdc28ed96599f3c725a4",
+      "src/heatpredictor/include/HoeffdingTreeClassifier.h": "3cb30144bc1441ba11a59db3d42bbeb74ceaa3a3cbab947892561e599ba5b156",
+      "src/heatpredictor/include/HoeffdingTreeClassifier.tpp": "79f10edb866b864cedafd2dce7fd5bdcbed4159b09ae64e2513196b52d933b40",
+      "src/heatpredictor/include/Metrics.h": "ba1c19fd14885b612dec4b6352e07afc42c3d956bccd7727d339b5f056aac894",
+      "src/heatpredictor/include/PipelineClassifier.h": "80a00ffdfb6dcd07437b09b4d14233b1c688c7395ba6562e9eb439710efc1f63",
+      "src/heatpredictor/include/StandardScaler.h": "f6c41b24bf74951ade9a83dd8682c3393cd07b61638397d53cf0db07ee0b2854",
+      "src/heatpredictor/include/Transformer.h": "5d122dc8ae48c9ae1ee1ce00fe42fafd63aa68aaa2d47d39441f30f8e5f0927b",
+      "src/heatpredictor/include/TreeBase.h": "e4c5d4edb0257338413ba1bcec46dc3a58cae5add322cd8416354ccafded2fbb",
+      "src/heatpredictor/include/TreeBase.tpp": "d13a1b983df8f92cf39b031fef6ff9b48a6d75dca5484254660f0ee74e4e9377",
+      "src/heatpredictor/include/drift/ADWIN.h": "66e9d9435fd3924cf3f0105879eff3069117ed34995edbb14dffbf8c2e6dd2c8",
+      "src/heatpredictor/include/drift/DetectorConcept.h": "86cced1c9dca1f487f8bceae01450dda958e4c3ed3ec78bb9d407df11c7158c1",
+      "src/heatpredictor/include/utils.h": "3352cabde9454fb942f3de58b7db25dbb27980f42c3cc2e054960bcd276aaa47",
+      "src/osd/ObjectHeatPredictor.cc": "e6fad9bd3b649a5deaa2b6392219be52dcdf248c1f849c818e8e450192c60fd3",
+      "src/osd/ObjectHeatPredictor.h": "d638bddcf13596cf41544811619e064cb77ca2dd931df21fd5e10002288c2d4f"
+    },
+    "parent_experiment": "pressure-aware-20260920; rebalancing stays disabled"
+  },
+  "version": "ceph version bfd711 (fbfd7114508d14b7e582263bd8a4fbc3883fa39f) quincy (stable)",
+  "note": "Uncommitted experimental prefetch; frozen HP source unchanged.",
+  "ctest": "unittest_bluestore_onode_cache passed in isolated CTest working directory"
+}

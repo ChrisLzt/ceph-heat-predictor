@@ -272,8 +272,8 @@ void test_fixed_baseline_configuration()
   }
   require(NUM_FEATURES == 7, "C4 must expose exactly seven features");
   require(HP_ARF_N_MODELS == 25, "baseline must use 25 ARF trees");
-  require(HP_ARF_MAX_FEATURES == NUM_FEATURES,
-          "each split must consider all baseline features");
+  require(HP_ARF_MAX_FEATURES == hp_arf_sqrt_features(NUM_FEATURES),
+          "each leaf must consider round(sqrt(feature count)) features");
   require_close(HP_HOT_PREDICT_THRESHOLD, 0.50,
                 "prediction threshold must remain fixed");
   require(HP_FUTURE_ACCESS_OTSU_BIN_COUNT == 2000,

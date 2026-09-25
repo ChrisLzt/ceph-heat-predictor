@@ -32,9 +32,8 @@ void learn_separable(Tree& tree) {
             "training must not mutate the published snapshot");
 }
 void purity_waits() {
-    for (bool preprune : {false, true}) {
+    {
         Tree tree(100, .001, .05, .99, .01);
-        tree.merit_preprune = preprune;
         for (int i = 0; i < 199; ++i) tree.learn_one(cold, 0);
         tree.learn_one(hot, 1);
         require_active(tree);
@@ -60,21 +59,31 @@ void valid_split_beats_empty_features() {
     Tree tree(100, .001, .05, .99, .01);
     learn_separable(tree);
 }
-void explicit_preprune_can_stop_growth() {
-    Tree tree(100, .001, .05, .99, .01);
-    tree.merit_preprune = true;
-    for (int i = 0; i < 1500; ++i) tree.learn_one(constant, i % 2);
-    require(tree._root->is_leaf && !static_cast<Leaf*>(tree._root)->is_active,
-            "explicit merit prepruning must still stop unhelpful growth");
-}
-struct DepthLimitedTree : Tree {
-    DepthLimitedTree() { max_depth = 0; }
+struct EmptyObserversTree : Tree {
+    void attempt_without_observers() {
+        _root = new Leaf(0);
+        _root->stats = {{0, 50}, {1, 50}};
+        _n_active_leaves = 1;
+        _attempt_to_split(static_cast<Leaf*>(_root), nullptr, 0);
+    }
 };
-void depth_limit_still_applies() {
-    DepthLimitedTree tree;
+void empty_observers_must_keep_learning() {
+    EmptyObserversTree tree;
+    tree.attempt_without_observers();
+    require_active(tree);
+    learn_separable(tree);
+}
+void old_depth_boundary_keeps_learning() {
+    Tree tree(50, .01, .05, .99, .01);
     tree.learn_one(cold, 0);
-    require(!static_cast<Leaf*>(tree._root)->is_active,
-            "maximum depth must still deactivate a leaf");
+    auto* leaf = static_cast<Leaf*>(tree._root);
+    leaf->depth = 980; // Former limit: test the boundary without a huge tree.
+    tree.learn_one(hot, 1);
+    require_active(tree);
+    learn_separable(tree);
+    auto* branch = static_cast<NumericBinaryBranch<5,2>*>(tree._root);
+    require(static_cast<Leaf*>(branch->children[0])->depth == 981,
+            "children must grow beyond the former depth cap");
 }
 void memory_limit_still_applies() {
     Tree tree(100, .001, .05, .99, .01);
@@ -92,8 +101,8 @@ int main() {
         {"constant_features_wait", constant_features_wait},
         {"rejected_small_branch_waits", rejected_small_branch_waits},
         {"valid_split_beats_empty_features", valid_split_beats_empty_features},
-        {"explicit_preprune_can_stop_growth", explicit_preprune_can_stop_growth},
-        {"depth_limit_still_applies", depth_limit_still_applies},
+        {"empty_observers_must_keep_learning", empty_observers_must_keep_learning},
+        {"old_depth_boundary_keeps_learning", old_depth_boundary_keeps_learning},
         {"memory_limit_still_applies", memory_limit_still_applies},
     };
     for (const auto& test : tests) {

@@ -21,6 +21,8 @@
 
 #include "heatpredictor/heat_predictor.h"
 #include "heatpredictor/include/HoeffdingTreeClassifier.h"
+#include "heatpredictor/include/PipelineClassifier.h"
+#include "heatpredictor/include/StandardScaler.h"
 
 static constexpr uint64_t HP_REPLAY_SNAPSHOT_SAMPLE_INTERVAL =
     HP_SNAPSHOT_PUBLISH_SAMPLE_INTERVAL;
@@ -127,8 +129,7 @@ inline std::unique_ptr<Classifier> make_hp_replay_model_with_detectors(
           HP_ARF_MAX_SHARE_TO_SPLIT,
           HP_ARF_MIN_BRANCH_FRACTION,
           std::move(adaptation_telemetry));
-  return std::make_unique<PipelineClassifier>(
-      new StandardScaler<NUM_FEATURES>(), classifier);
+  return std::unique_ptr<Classifier>(classifier);
 }
 
 inline std::unique_ptr<Classifier> make_hp_replay_model(

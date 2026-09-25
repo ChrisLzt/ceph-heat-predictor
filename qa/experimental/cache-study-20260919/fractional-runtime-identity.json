@@ -1,0 +1,18 @@
+{
+  "runtime": "vdbench-cloudlab-fractional-v2",
+  "original_binary_repository": "versity/scoutfs-vdbench",
+  "original_binary_commit": "d904d81d565c5882d0aabf2434eef46851954767",
+  "patch": "Only FwgEntry.getXferSize bytecode replaced; original journal-recovery branch preserved. Other methods retained. Fractional CDF in a new helper.",
+  "not_identical_to_colleague_missing_runtime": true,
+  "binary_signatures_match": true,
+  "files": {
+    "vdbench-cloudlab-fractional-v2/vdbench.jar": "8d53b728baf4e3eb28b538765b81de606ce2b1dfca39c66822d02704b462304a",
+    "vdbench-cloudlab-fractional-v2/classes/Vdb/FwgEntry.class": "b908905df33d8f6fed72e245c798e322c1ec260a3420f441cba9c63d7e7ce05e",
+    "vdbench-cloudlab-fractional-v2/classes/Vdb/FractionalSampler.class": "f3353c627846516fff69358b4342eb7917c8cc931dedac07f9a0239009ca9636",
+    "FractionalSampler.java": "6db4077f14bf8d64e4254db3df320e7b4c238363889bd1fa1f6f79e0898dcf2e",
+    "PatchFractional.java": "a120fc0d00c327e81e853e66aa1ad491bd3b6d87dd918a5d07eef0080b184e85",
+    "FractionalXferTest.java": "59a1a1d545d4e7cb794be00da22bf7f66beffa1ffb6f69d6a40230fa9b7f56b7"
+  },
+  "test_output": "PASS histogram [4096.0, 0.25, 8192.0, 33.125, 16384.0, 66.625] counts=[7433, 994306, 1998261]\nPASS histogram [4096.0, 50.0, 8192.0, 50.0] counts=[1500439, 1499561]\nPASS histogram [4096.0, 99.99, 8192.0, 0.01] counts=[2999693, 307]\nPASS singleton; actual FwgEntry.getXferSize invoked\n",
+  "other_methods_identical_after_javap_owner_normalization": true
+}

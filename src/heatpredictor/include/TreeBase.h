@@ -99,14 +99,6 @@ public:
     int feature = -1;
     double threshold = -1.0;
     PostSplitDistribution post_split_distribution;
-    // An absent numeric candidate is not a request to stop learning.
-    bool is_preprune = false;
-    static BranchFactory make_preprune() {
-        // Keeping the parent distribution has zero information gain.
-        BranchFactory decision(0.0);
-        decision.is_preprune = true;
-        return decision;
-    }
     BranchFactory(const double merit=std::numeric_limits<double>::lowest(),
         const int feature=-1, const double threshold=-1.0,
         PostSplitDistribution post_split_distribution={})
@@ -171,8 +163,7 @@ public:
         res.push_back(this);
         return res;
     }
-    std::vector<BranchFactory<num_features, num_labels>> best_split_suggestions(HoeffdingTree<num_features, num_labels>* tree, 
-        double max_share_to_split, double min_branch_fraction); 
+    std::vector<BranchFactory<num_features, num_labels>> best_split_suggestions(double max_share_to_split, double min_branch_fraction);
     double calculate_promise();
     bool observed_class_distribution_is_pure() const {
         int count = 0;

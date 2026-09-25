@@ -10,7 +10,6 @@ class BranchOrLeaf;
 template <int num_features, int num_labels>
 class HoeffdingTree {
 protected:
-    int max_depth;
     bool binary_split;
     double max_size;
     int memory_estimate_period;
@@ -25,22 +24,17 @@ protected:
     double _train_weight_seen_by_model = 0.0;
     double _last_memory_estimate_at = 0.0;
 public:
-    bool merit_preprune;
     double _max_byte_size;
     BranchOrLeaf<num_features, num_labels>* _root = nullptr;
-    HoeffdingTree(int max_depth = 980,
-        bool binary_split = false,
+    HoeffdingTree(bool binary_split = false,
         double max_size = 100.0,
         int memory_estimate_period = 1000000,
         bool stop_mem_management = false,
-        bool remove_poor_attrs = false,
-        bool merit_preprune = false) : 
-        max_depth(max_depth),
+        bool remove_poor_attrs = false) :
         binary_split(binary_split),
         max_size(max_size), 
         memory_estimate_period(memory_estimate_period),
         stop_mem_management(stop_mem_management),
-        merit_preprune(merit_preprune),
         _max_byte_size(max_size * (1 << 20)) {
         estimate_leaves();
     }

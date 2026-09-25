@@ -1,0 +1,6 @@
+case,valid_nonzero_s3fifo_intervals,minimum_valid_interval_percent,minimum_30s_bin_percent,observed_30s_bins,scope
+bigdata_baleen_v2,182,99.71493728620297,99.89598582325294,14,Secondary diagnostic; excluded telemetry gaps remain unobserved; bins use interval midpoints
+graph_graphchi_psw_v2,190,99.70082995560702,99.85147685438845,14,Secondary diagnostic; excluded telemetry gaps remain unobserved; bins use interval midpoints
+hpc_wrf_continuous_v2,184,99.03288201160541,99.67592639478241,14,Secondary diagnostic; excluded telemetry gaps remain unobserved; bins use interval midpoints
+ai_training_ses_v2,158,98.27677624602333,99.48655129274395,14,Secondary diagnostic; excluded telemetry gaps remain unobserved; bins use interval midpoints
+ai_inference_ses_v2,163,99.87039000824791,99.89614940037566,14,Secondary diagnostic; excluded telemetry gaps remain unobserved; bins use interval midpoints

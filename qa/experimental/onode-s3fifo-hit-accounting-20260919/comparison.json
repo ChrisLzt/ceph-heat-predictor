@@ -1,0 +1,417 @@
+{
+  "cases": {
+    "bigdata_baleen_v2": {
+      "baseline": {
+        "case": "bigdata_baleen_v2",
+        "phase": "baseline",
+        "lru_percent": 93.40485220011429,
+        "s3fifo_percent": 96.00960164599645,
+        "s3fifo_hits": 251982,
+        "s3fifo_misses": 10473,
+        "s3fifo_queries": 262455,
+        "s3fifo_seconds": 417.2580197699958,
+        "lru_seconds": 177.48965972100268,
+        "s3fifo_queries_per_second": 628.9992943566967,
+        "strict_gt95": true,
+        "strict_gt96": true,
+        "resident_onodes_start": 1314,
+        "resident_onodes_peak": 19482,
+        "resident_onodes_end": 19482,
+        "rejected_intervals": {
+          "outside-measurement-window": 6
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 425,
+              "max": 6380
+            },
+            "tracked_mempool_bytes": {
+              "min": 436117753,
+              "max": 844447688
+            },
+            "onode_struct_bytes": {
+              "min": 292400,
+              "max": 4389440
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 445,
+              "max": 6614
+            },
+            "tracked_mempool_bytes": {
+              "min": 343502367,
+              "max": 938444572
+            },
+            "onode_struct_bytes": {
+              "min": 306160,
+              "max": 4550432
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 444,
+              "max": 6488
+            },
+            "tracked_mempool_bytes": {
+              "min": 337666994,
+              "max": 922630021
+            },
+            "onode_struct_bytes": {
+              "min": 305472,
+              "max": 4463744
+            }
+          }
+        },
+        "binary_sha256": "fab74239f8e461a1ef86156545550f0410aad6a1d58285b82bd49e50f8403b5d"
+      },
+      "fixed": {
+        "case": "bigdata_baleen_v2",
+        "phase": "fixed",
+        "lru_percent": 93.00716869891464,
+        "s3fifo_percent": 96.08649926689031,
+        "s3fifo_hits": 250338,
+        "s3fifo_misses": 10196,
+        "s3fifo_queries": 260534,
+        "s3fifo_seconds": 413.73969913433143,
+        "lru_seconds": 179.04962511999952,
+        "s3fifo_queries_per_second": 629.7051033418256,
+        "strict_gt95": true,
+        "strict_gt96": true,
+        "resident_onodes_start": 948,
+        "resident_onodes_peak": 19619,
+        "resident_onodes_end": 19619,
+        "rejected_intervals": {
+          "outside-measurement-window": 5
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 301,
+              "max": 6402
+            },
+            "tracked_mempool_bytes": {
+              "min": 170270208,
+              "max": 851005045
+            },
+            "onode_struct_bytes": {
+              "min": 207776,
+              "max": 4404576
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 356,
+              "max": 6766
+            },
+            "tracked_mempool_bytes": {
+              "min": 183127232,
+              "max": 930183210
+            },
+            "onode_struct_bytes": {
+              "min": 248368,
+              "max": 4655008
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 291,
+              "max": 6451
+            },
+            "tracked_mempool_bytes": {
+              "min": 167596113,
+              "max": 917506605
+            },
+            "onode_struct_bytes": {
+              "min": 201584,
+              "max": 4438288
+            }
+          }
+        },
+        "binary_sha256": "dc39db8fbf8879cccce2e48d85e8f2757d1745d7dedba1776bea219c245a15b4"
+      },
+      "delta_percentage_points": 0.07689762089385965
+    },
+    "graph_graphchi_psw_v2": {
+      "baseline": {
+        "case": "graph_graphchi_psw_v2",
+        "phase": "baseline",
+        "lru_percent": 83.14267930008991,
+        "s3fifo_percent": 91.869869149993,
+        "s3fifo_hits": 150741,
+        "s3fifo_misses": 13340,
+        "s3fifo_queries": 164081,
+        "s3fifo_seconds": 417.4402959616613,
+        "lru_seconds": 177.8800297413351,
+        "s3fifo_queries_per_second": 393.0645929186232,
+        "strict_gt95": false,
+        "strict_gt96": false,
+        "resident_onodes_start": 19974,
+        "resident_onodes_peak": 45280,
+        "resident_onodes_end": 45280,
+        "rejected_intervals": {
+          "outside-measurement-window": 8
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 6557,
+              "max": 15089
+            },
+            "tracked_mempool_bytes": {
+              "min": 863199035,
+              "max": 1104249580
+            },
+            "onode_struct_bytes": {
+              "min": 4511216,
+              "max": 10381232
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 6762,
+              "max": 15551
+            },
+            "tracked_mempool_bytes": {
+              "min": 961767361,
+              "max": 1183473091
+            },
+            "onode_struct_bytes": {
+              "min": 4652256,
+              "max": 10699088
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 6655,
+              "max": 14721
+            },
+            "tracked_mempool_bytes": {
+              "min": 932854389,
+              "max": 1156429145
+            },
+            "onode_struct_bytes": {
+              "min": 4578640,
+              "max": 10128048
+            }
+          }
+        },
+        "binary_sha256": "fab74239f8e461a1ef86156545550f0410aad6a1d58285b82bd49e50f8403b5d"
+      },
+      "fixed": {
+        "case": "graph_graphchi_psw_v2",
+        "phase": "fixed",
+        "lru_percent": 83.10221209426412,
+        "s3fifo_percent": 91.81739349696497,
+        "s3fifo_hits": 149296,
+        "s3fifo_misses": 13305,
+        "s3fifo_queries": 162601,
+        "s3fifo_seconds": 416.3595542529947,
+        "lru_seconds": 177.06546223833476,
+        "s3fifo_queries_per_second": 390.53024804901656,
+        "strict_gt95": false,
+        "strict_gt96": false,
+        "resident_onodes_start": 20492,
+        "resident_onodes_peak": 45739,
+        "resident_onodes_end": 45739,
+        "rejected_intervals": {
+          "outside-measurement-window": 7
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 6684,
+              "max": 15159
+            },
+            "tracked_mempool_bytes": {
+              "min": 877759705,
+              "max": 1108342227
+            },
+            "onode_struct_bytes": {
+              "min": 4599280,
+              "max": 10429392
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 7049,
+              "max": 15791
+            },
+            "tracked_mempool_bytes": {
+              "min": 952621505,
+              "max": 1199830474
+            },
+            "onode_struct_bytes": {
+              "min": 4851088,
+              "max": 10864208
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 6759,
+              "max": 14831
+            },
+            "tracked_mempool_bytes": {
+              "min": 934959807,
+              "max": 1163105914
+            },
+            "onode_struct_bytes": {
+              "min": 4650192,
+              "max": 10203728
+            }
+          }
+        },
+        "binary_sha256": "dc39db8fbf8879cccce2e48d85e8f2757d1745d7dedba1776bea219c245a15b4"
+      },
+      "delta_percentage_points": -0.052475653028025704
+    },
+    "hpc_wrf_continuous_v2": {
+      "baseline": {
+        "case": "hpc_wrf_continuous_v2",
+        "phase": "baseline",
+        "lru_percent": 91.99973166968539,
+        "s3fifo_percent": 89.32969520530887,
+        "s3fifo_hits": 161400,
+        "s3fifo_misses": 19279,
+        "s3fifo_queries": 180679,
+        "s3fifo_seconds": 417.4878194059952,
+        "lru_seconds": 177.23784939499942,
+        "s3fifo_queries_per_second": 432.77669814911354,
+        "strict_gt95": false,
+        "strict_gt96": false,
+        "resident_onodes_start": 45860,
+        "resident_onodes_peak": 59571,
+        "resident_onodes_end": 59206,
+        "rejected_intervals": {
+          "outside-measurement-window": 7
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 15277,
+              "max": 20197
+            },
+            "tracked_mempool_bytes": {
+              "min": 1030156125,
+              "max": 1198657244
+            },
+            "onode_struct_bytes": {
+              "min": 10510576,
+              "max": 13895536
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 15734,
+              "max": 20332
+            },
+            "tracked_mempool_bytes": {
+              "min": 1135518680,
+              "max": 1271773474
+            },
+            "onode_struct_bytes": {
+              "min": 10825680,
+              "max": 13988416
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 14849,
+              "max": 19156
+            },
+            "tracked_mempool_bytes": {
+              "min": 1113908680,
+              "max": 1240074731
+            },
+            "onode_struct_bytes": {
+              "min": 10217488,
+              "max": 13179328
+            }
+          }
+        },
+        "binary_sha256": "fab74239f8e461a1ef86156545550f0410aad6a1d58285b82bd49e50f8403b5d"
+      },
+      "fixed": {
+        "case": "hpc_wrf_continuous_v2",
+        "phase": "fixed",
+        "lru_percent": 91.57044362420781,
+        "s3fifo_percent": 89.96309113278102,
+        "s3fifo_hits": 148440,
+        "s3fifo_misses": 16561,
+        "s3fifo_queries": 165001,
+        "s3fifo_seconds": 385.55865348632994,
+        "lru_seconds": 172.912663576004,
+        "s3fifo_queries_per_second": 427.95304555614166,
+        "strict_gt95": false,
+        "strict_gt96": false,
+        "resident_onodes_start": 46348,
+        "resident_onodes_peak": 59388,
+        "resident_onodes_end": 59388,
+        "rejected_intervals": {
+          "outside-measurement-window": 8,
+          "collection-gap": 1
+        },
+        "sampled_memory_per_osd": {
+          "0": {
+            "resident_onodes": {
+              "min": 15318,
+              "max": 20137
+            },
+            "tracked_mempool_bytes": {
+              "min": 1000453171,
+              "max": 1203476604
+            },
+            "onode_struct_bytes": {
+              "min": 10538784,
+              "max": 13854256
+            }
+          },
+          "1": {
+            "resident_onodes": {
+              "min": 16006,
+              "max": 20145
+            },
+            "tracked_mempool_bytes": {
+              "min": 1132414136,
+              "max": 1270250620
+            },
+            "onode_struct_bytes": {
+              "min": 11012128,
+              "max": 13859760
+            }
+          },
+          "2": {
+            "resident_onodes": {
+              "min": 15024,
+              "max": 19233
+            },
+            "tracked_mempool_bytes": {
+              "min": 1116398173,
+              "max": 1247484192
+            },
+            "onode_struct_bytes": {
+              "min": 10336512,
+              "max": 13232304
+            }
+          }
+        },
+        "binary_sha256": "dc39db8fbf8879cccce2e48d85e8f2757d1745d7dedba1776bea219c245a15b4"
+      },
+      "delta_percentage_points": 0.6333959274721508
+    }
+  },
+  "cache_settings_identical": true,
+  "full_five_case_acceptance": false,
+  "original_server_verified": false,
+  "case_order": [
+    "bigdata_baleen_v2",
+    "graph_graphchi_psw_v2",
+    "hpc_wrf_continuous_v2"
+  ],
+  "source_sha256": {
+    "src/os/bluestore/BlueStore.cc": "8d775122049c271efab2b8366f7ea17a3db90c0fc188b8d0d29c58bb427f9d55",
+    "src/os/bluestore/BlueStore.h": "87e451bf8e208bc618e8219beba4f546e088e0c599db7a67c36c6be1a2bad938",
+    "src/test/objectstore/test_bluestore_onode_cache.cc": "60c7544709f40c30d7228e2851adc3fe3fd9a9c530bdfd3ea7e5bad83a83052f"
+  }
+}

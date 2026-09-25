@@ -2721,6 +2721,22 @@ void OSD::asok_command(
     f->close_section();
   } else if (service.object_hp.handle_command(prefix, cmdmap, f)) {
     // The module owns HP command semantics and output.
+  } else if (prefix == "onode_cache status") {
+    ret = store->get_onode_cache_policy(f);
+    if (ret < 0) {
+      ss << "Onode cache status unavailable: " << cpp_strerror(ret);
+    }
+  } else if (prefix == "onode_cache policy") {
+    string policy;
+    if (!cmd_getval(cmdmap, "policy", policy)) {
+      ret = -EINVAL;
+      ss << "policy must be lru or s3fifo";
+    } else {
+      ret = store->set_onode_cache_policy(policy, f);
+      if (ret < 0) {
+        ss << "Cannot change Onode cache policy: " << cpp_strerror(ret);
+      }
+    }
   } else if (prefix == "flush_journal") {
     store->flush_journal();
   } else if (prefix == "dump_ops_in_flight" ||
@@ -4020,6 +4036,14 @@ void OSD::final_init()
 					 "high-level status of OSD");
   ceph_assert(r == 0);
   service.object_hp.register_commands(admin_socket, asok_hook);
+  r = admin_socket->register_command("onode_cache status", asok_hook,
+                                     "Show effective Onode cache policy and lookup counters");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command(
+    "onode_cache policy name=policy,type=CephChoices,strings=lru|s3fifo",
+    asok_hook,
+    "Switch Onode cache policy online without dropping cached objects or counters");
+  ceph_assert(r == 0);
   r = admin_socket->register_command("flush_journal",
                                      asok_hook,
                                      "flush the journal to permanent store");

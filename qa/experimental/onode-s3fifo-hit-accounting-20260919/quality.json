@@ -1,0 +1,274 @@
+{
+  "runs": {
+    "baseline/bigdata_baleen_v2": {
+      "workload_returncode": 0,
+      "sample_count": 267,
+      "inventories": {
+        "before": {
+          "file_count": 29819,
+          "capacity_bytes": 202163355648,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "bigdata_baleen_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "8922502e074c9344548eaf03d532955c60e6d0b3d96ddcf53f9ed28f12f28c37",
+          "entries": 29821
+        },
+        "after": {
+          "file_count": 29819,
+          "capacity_bytes": 202163355648,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "bigdata_baleen_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "8922502e074c9344548eaf03d532955c60e6d0b3d96ddcf53f9ed28f12f28c37",
+          "entries": 29821
+        }
+      }
+    },
+    "baseline/graph_graphchi_psw_v2": {
+      "workload_returncode": 0,
+      "sample_count": 252,
+      "inventories": {
+        "before": {
+          "file_count": 2048,
+          "capacity_bytes": 137438953472,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "graph_graphchi_psw_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "ffeeaab10792f0e34cbc6b030ad938581c4573bebb588194041de374e7ccc494",
+          "entries": 2050
+        },
+        "after": {
+          "file_count": 2048,
+          "capacity_bytes": 137438953472,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "graph_graphchi_psw_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "ffeeaab10792f0e34cbc6b030ad938581c4573bebb588194041de374e7ccc494",
+          "entries": 2050
+        }
+      }
+    },
+    "baseline/hpc_wrf_continuous_v2": {
+      "workload_returncode": 0,
+      "sample_count": 243,
+      "inventories": {
+        "before": {
+          "file_count": 1792,
+          "capacity_bytes": 120259084288,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "hpc_wrf_continuous_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "da3196b7b160334ed85350616623608fc2f9d376169ae7bbe878d6ef01cc02fc",
+          "entries": 1794
+        },
+        "after": {
+          "file_count": 1792,
+          "capacity_bytes": 120259084288,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "hpc_wrf_continuous_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "da3196b7b160334ed85350616623608fc2f9d376169ae7bbe878d6ef01cc02fc",
+          "entries": 1794
+        }
+      }
+    },
+    "fixed/bigdata_baleen_v2": {
+      "workload_returncode": 0,
+      "sample_count": 233,
+      "inventories": {
+        "before": {
+          "file_count": 29819,
+          "capacity_bytes": 202163355648,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "bigdata_baleen_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "8922502e074c9344548eaf03d532955c60e6d0b3d96ddcf53f9ed28f12f28c37",
+          "entries": 29821
+        },
+        "after": {
+          "file_count": 29819,
+          "capacity_bytes": 202163355648,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "bigdata_baleen_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "8922502e074c9344548eaf03d532955c60e6d0b3d96ddcf53f9ed28f12f28c37",
+          "entries": 29821
+        }
+      }
+    },
+    "fixed/graph_graphchi_psw_v2": {
+      "workload_returncode": 0,
+      "sample_count": 211,
+      "inventories": {
+        "before": {
+          "file_count": 2048,
+          "capacity_bytes": 137438953472,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "graph_graphchi_psw_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "ffeeaab10792f0e34cbc6b030ad938581c4573bebb588194041de374e7ccc494",
+          "entries": 2050
+        },
+        "after": {
+          "file_count": 2048,
+          "capacity_bytes": 137438953472,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "graph_graphchi_psw_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "ffeeaab10792f0e34cbc6b030ad938581c4573bebb588194041de374e7ccc494",
+          "entries": 2050
+        }
+      }
+    },
+    "fixed/hpc_wrf_continuous_v2": {
+      "workload_returncode": 0,
+      "sample_count": 201,
+      "inventories": {
+        "before": {
+          "file_count": 1792,
+          "capacity_bytes": 120259084288,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "hpc_wrf_continuous_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "da3196b7b160334ed85350616623608fc2f9d376169ae7bbe878d6ef01cc02fc",
+          "entries": 1794
+        },
+        "after": {
+          "file_count": 1792,
+          "capacity_bytes": 120259084288,
+          "verification": "stat counts/sizes/allocated extents; no content read",
+          "id": "hpc_wrf_continuous_v2",
+          "mount": {
+            "target": "/mnt/ceph-lab/cephfs",
+            "fstype": "ceph",
+            "source": "10.10.1.1:6789:/"
+          },
+          "state": "ready",
+          "identity_sha256": "da3196b7b160334ed85350616623608fc2f9d376169ae7bbe878d6ef01cc02fc",
+          "entries": 1794
+        }
+      }
+    }
+  },
+  "invalid_intervals": [
+    {
+      "phase": "fixed",
+      "case": "hpc_wrf_continuous_v2",
+      "reason": "collection-gap",
+      "before_seq": 187,
+      "after_seq": 188,
+      "per_osd": {
+        "0": {
+          "begin_elapsed": 552.0278005599976,
+          "end_elapsed": 583.3258564472198,
+          "duration": 31.298056312996778,
+          "instance_unchanged": true,
+          "policy_before": "s3fifo",
+          "policy_after": "s3fifo"
+        },
+        "1": {
+          "begin_elapsed": 552.0368831157684,
+          "end_elapsed": 583.3347179889679,
+          "duration": 31.297835132005275,
+          "instance_unchanged": true,
+          "policy_before": "s3fifo",
+          "policy_after": "s3fifo"
+        },
+        "2": {
+          "begin_elapsed": 552.0280838012695,
+          "end_elapsed": 583.3260273933411,
+          "duration": 31.297943947996828,
+          "instance_unchanged": true,
+          "policy_before": "s3fifo",
+          "policy_after": "s3fifo"
+        }
+      }
+    }
+  ],
+  "unit_tests": {
+    "baseline-onode": {
+      "tests": "12",
+      "failures": "3",
+      "disabled": "0",
+      "errors": "0",
+      "failed_names": [
+        "OverlappingHitsPromoteReusedOnode",
+        "ReferenceReleaseIsNotAnotherHit",
+        "GhostShrinkKeepsMostRecentEvictions"
+      ]
+    },
+    "fixed-onode": {
+      "tests": "12",
+      "failures": "0",
+      "disabled": "0",
+      "errors": "0",
+      "failed_names": []
+    },
+    "fixed-types": {
+      "tests": "27",
+      "failures": "0",
+      "disabled": "0",
+      "errors": "0",
+      "failed_names": []
+    }
+  },
+  "vdbench_evidence_sha256": "662058459d6014be200887fbc5299941af01f5839d2f97517bfaca5036347bd1",
+  "acceptance_pass": false,
+  "original_server_verified": false,
+  "note": "Completed diagnostic pair; not a complete five-workload acceptance run."
+}

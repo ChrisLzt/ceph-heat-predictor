@@ -1,0 +1,9 @@
+case,prefetch,scope,loaded,used,unused_removed,scanned,db_reads,encoded_bytes,errors,oversized,queue_full,pressure_pauses,first_use_percent
+bigdata_baleen_v2,off,first sample through restore-to-LRU acknowledgement,0,0,0,0,0,0,0,0,0,0,
+bigdata_baleen_v2,on,first sample through restore-to-LRU acknowledgement,176942,10214,0,185015,176942,85670497,0,0,0,0,5.7725130268675615
+graph_graphchi_psw_v2,off,first sample through restore-to-LRU acknowledgement,0,0,0,0,0,0,0,0,0,0,
+graph_graphchi_psw_v2,on,first sample through restore-to-LRU acknowledgement,165962,8922,0,184757,165962,81805500,0,0,0,0,5.375929429628469
+ai_training_ses_v2,off,first sample through restore-to-LRU acknowledgement,0,0,0,0,0,0,0,0,0,0,
+ai_training_ses_v2,on,first sample through restore-to-LRU acknowledgement,159605,8034,0,184470,159605,77040286,0,0,0,0,5.033676889821748
+ai_inference_ses_v2,off,first sample through restore-to-LRU acknowledgement,0,0,0,0,0,0,0,0,0,0,
+ai_inference_ses_v2,on,first sample through restore-to-LRU acknowledgement,159854,4835,0,184599,159854,80152611,0,0,0,0,3.0246349794187197

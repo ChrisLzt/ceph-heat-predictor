@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <algorithm>
+#include <cmath>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/algorithm/string.hpp>
@@ -27,6 +28,7 @@
 #include "include/cpp-btree/btree_set.h"
 
 #include "BlueStore.h"
+#include "OnodeCache.h"
 #include "bluestore_common.h"
 #include "simple_bitmap.h"
 #include "os/kv.h"
@@ -1096,143 +1098,6 @@ int64_t BlueStore::GarbageCollector::estimate(
   return expected_for_release - expected_allocations;
 }
 
-// LruOnodeCacheShard
-struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
-  typedef boost::intrusive::list<
-    BlueStore::Onode,
-    boost::intrusive::member_hook<
-      BlueStore::Onode,
-      boost::intrusive::list_member_hook<>,
-      &BlueStore::Onode::lru_item> > list_t;
-
-  list_t lru;
-
-  explicit LruOnodeCacheShard(CephContext *cct) : BlueStore::OnodeCacheShard(cct) {}
-
-  void _add(BlueStore::Onode* o, int level) override
-  {
-    o->set_cached();
-    if (o->pin_nref == 1) {
-      (level > 0) ? lru.push_front(*o) : lru.push_back(*o);
-      o->cache_age_bin = age_bins.front();
-      *(o->cache_age_bin) += 1;
-    }
-    ++num; // we count both pinned and unpinned entries
-    dout(20) << __func__ << " " << this << " " << o->oid << " added, num="
-             << num << dendl;
-  }
-  void _rm(BlueStore::Onode* o) override
-  {
-    o->clear_cached();
-    if (o->lru_item.is_linked()) {
-      *(o->cache_age_bin) -= 1;
-      lru.erase(lru.iterator_to(*o));
-    }
-    ceph_assert(num);
-    --num;
-    dout(20) << __func__ << " " << this << " " << " " << o->oid << " removed, num=" << num << dendl;
-  }
-
-  void maybe_unpin(BlueStore::Onode* o) override
-  {
-    OnodeCacheShard* ocs = this;
-    ocs->lock.lock();
-    // It is possible that during waiting split_cache moved us to different OnodeCacheShard.
-    while (ocs != o->c->get_onode_cache()) {
-      ocs->lock.unlock();
-      ocs = o->c->get_onode_cache();
-      ocs->lock.lock();
-    }
-    if (o->is_cached() && o->pin_nref == 1) {
-      if(!o->lru_item.is_linked()) {
-        if (o->exists) {
-	  lru.push_front(*o);
-	  o->cache_age_bin = age_bins.front();
-	  *(o->cache_age_bin) += 1;
-	  dout(20) << __func__ << " " << this << " " << o->oid << " unpinned"
-                   << dendl;
-        } else {
-	  ceph_assert(num);
-	  --num;
-	  o->clear_cached();
-	  dout(20) << __func__ << " " << this << " " << o->oid << " removed"
-                   << dendl;
-          // remove will also decrement nref
-          o->c->onode_space._remove(o->oid);
-        }
-      } else if (o->exists) {
-        // move onode within LRU
-        lru.erase(lru.iterator_to(*o));
-        lru.push_front(*o);
-        if (o->cache_age_bin != age_bins.front()) {
-          *(o->cache_age_bin) -= 1;
-          o->cache_age_bin = age_bins.front();
-          *(o->cache_age_bin) += 1;
-        }
-        dout(20) << __func__ << " " << this << " " << o->oid << " touched"
-                 << dendl;
-      }
-    }
-    ocs->lock.unlock();
-  }
-
-  void _trim_to(uint64_t new_size) override
-  {
-    if (new_size >= lru.size()) {
-      return; // don't even try
-    } 
-    uint64_t n = num - new_size; // note: we might get empty LRU
-                                 // before n == 0 due to pinned
-                                 // entries. And hence being unable
-                                 // to reach new_size target.
-    while (n-- > 0 && lru.size() > 0) {
-      BlueStore::Onode *o = &lru.back();
-      lru.pop_back();
-
-      dout(20) << __func__ << "  rm " << o->oid << " "
-               << o->nref << " " << o->cached << dendl;
-
-      *(o->cache_age_bin) -= 1;
-      if (o->pin_nref > 1) {
-        dout(20) << __func__ << " " << this << " " << " " << " " << o->oid << dendl;
-      } else {
-	ceph_assert(num);
-        --num;
-        o->clear_cached();
-        o->c->onode_space._remove(o->oid);
-      }
-    }
-  }
-  void _move_pinned(OnodeCacheShard *to, BlueStore::Onode *o) override
-  {
-    if (to == this) {
-      return;
-    }
-    _rm(o);
-    ceph_assert(o->nref > 1);
-    to->_add(o, 0);
-  }
-  void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) override
-  {
-    std::lock_guard l(lock);
-    *onodes += num;
-    *pinned_onodes += num - lru.size();
-  }
-};
-
-// OnodeCacheShard
-BlueStore::OnodeCacheShard *BlueStore::OnodeCacheShard::create(
-    CephContext* cct,
-    string type,
-    PerfCounters *logger)
-{
-  BlueStore::OnodeCacheShard *c = nullptr;
-  // Currently we only implement an LRU cache for onodes
-  c = new LruOnodeCacheShard(cct);
-  c->logger = logger;
-  return c;
-}
-
 // LruBufferCacheShard
 struct LruBufferCacheShard : public BlueStore::BufferCacheShard {
   typedef boost::intrusive::list<
@@ -1674,9 +1539,12 @@ BlueStore::BufferCacheShard *BlueStore::BufferCacheShard::create(
     PerfCounters *logger)
 {
   BufferCacheShard *c = nullptr;
-  if (type == "lru")
+  // S3FIFO is currently only implemented for Onode cache;
+  // for Buffer cache, fall back to the default 2q algorithm.
+  std::string effective_type = (type == "s3fifo") ? "2q" : type;
+  if (effective_type == "lru")
     c = new LruBufferCacheShard(cct);
-  else if (type == "2q")
+  else if (effective_type == "2q")
     c = new TwoQBufferCacheShard(cct);
   else
     ceph_abort_msg("unrecognized cache type");
@@ -1958,7 +1826,45 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::add_onode(const ghobject_t& oid,
 void BlueStore::OnodeSpace::_remove(const ghobject_t& oid)
 {
   ldout(cache->cct, 20) << __func__ << " " << oid << " " << dendl;
+  auto p = onode_map.find(oid);
+  if (p != onode_map.end()) {
+    cache->_prefetch_removed(p->second.get());
+  }
   onode_map.erase(oid);
+}
+
+BlueStore::OnodeSpace::PrefetchAdmission
+BlueStore::OnodeSpace::prefetch_admission(const ghobject_t& oid)
+{
+  std::lock_guard l(cache->lock);
+  if (cache->_get_policy() != OnodeCacheShard::Policy::S3FIFO) {
+    return PrefetchAdmission::inactive;
+  }
+  if (onode_map.find(oid) != onode_map.end()) {
+    return PrefetchAdmission::resident;
+  }
+  const auto limit = cache->max.load();
+  return cache->_get_num() < limit - limit / 10 ?
+    PrefetchAdmission::ready : PrefetchAdmission::full;
+}
+
+bool BlueStore::OnodeSpace::add_prefetched(
+  OnodeRef& o, const std::atomic<uint64_t>* generation,
+  uint64_t expected_generation)
+{
+  std::lock_guard l(cache->lock);
+  const auto limit = cache->max.load();
+  if ((generation && generation->load() != expected_generation) ||
+      !o->exists || cache->_get_policy() != OnodeCacheShard::Policy::S3FIFO ||
+      cache->_get_num() >= limit - limit / 10 ||
+      !onode_map.emplace(o->oid, o).second) {
+    return false;
+  }
+  o->prefetched = true;
+  cache->_add(o.get(), 1);
+  ++cache->prefetch_loaded;
+  // No demand touch/counter, and no eviction to make room for speculation.
+  return true;
 }
 
 BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
@@ -1977,9 +1883,14 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
                             << " " << p->second->nref
                             << " " << p->second->cached
 			    << dendl;
-      // This will pin onode and implicitly touch the cache when Onode
-      // eventually will become unpinned
+      // S3FIFO records each lookup under the shard lock; LRU still updates
+      // recency when the onode eventually becomes unpinned.
       o = p->second;
+      if (o->prefetched) {
+        o->prefetched = false;
+        ++cache->prefetch_used;
+      }
+      cache->_touch(o.get());
 
       cache->logger->inc(l_bluestore_onode_hits);
     }
@@ -1993,6 +1904,7 @@ void BlueStore::OnodeSpace::clear()
   std::lock_guard l(cache->lock);
   ldout(cache->cct, 10) << __func__ << " " << onode_map.size()<< dendl;
   for (auto &p : onode_map) {
+    cache->_prefetch_removed(p.second.get());
     cache->_rm(p.second.get());
   }
   onode_map.clear();
@@ -2022,6 +1934,7 @@ void BlueStore::OnodeSpace::rename(
   if (pn != onode_map.end()) {
     ldout(cache->cct, 30) << __func__ << "  removing target " << pn->second
 			  << dendl;
+    cache->_prefetch_removed(pn->second.get());
     cache->_rm(pn->second.get());
     onode_map.erase(pn);
   }
@@ -4088,6 +4001,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   }
 
   OnodeRef o = onode_space.lookup(oid);
+  store->onode_cache->schedule(this);
   if (o)
     return o;
 
@@ -4370,6 +4284,7 @@ void BlueStore::MempoolThread::_resize_shards(bool interval_stats)
       kv_onode_alloc = binned_kv_onode_cache->get_committed_size();
     }
   }
+  store->onode_cache->set_meta_budget(std::max<int64_t>(0, meta_alloc));
   
   if (interval_stats) {
     dout(5) << __func__  << " cache_size: " << cache_size
@@ -4400,9 +4315,7 @@ void BlueStore::MempoolThread::_resize_shards(bool interval_stats)
   dout(30) << __func__ << " max_shard_onodes: " << max_shard_onodes
                  << " max_shard_buffer: " << max_shard_buffer << dendl;
 
-  for (auto i : store->onode_cache_shards) {
-    i->set_max(max_shard_onodes);
-  }
+  store->onode_cache->set_shard_quotas(max_shard_onodes);
   for (auto i : store->buffer_cache_shards) {
     i->set_max(max_shard_buffer);
   }
@@ -4616,6 +4529,13 @@ void BlueStore::handle_discard(interval_set<uint64_t>& to_release)
 BlueStore::BlueStore(CephContext *cct, const string& path)
   : BlueStore(cct, path, 0) {}
 
+int BlueStore::OnodeCache::read_onode_record(
+  const ghobject_t& oid, std::string* key, bufferlist* value) const
+{
+  get_object_key(cct, oid, key);
+  return store->db->get(PREFIX_OBJ, key->c_str(), key->size(), value);
+}
+
 BlueStore::BlueStore(CephContext *cct,
   const string& path,
   uint64_t _min_alloc_size)
@@ -4629,7 +4549,8 @@ BlueStore::BlueStore(CephContext *cct,
 #endif
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
-    mempool_thread(this)
+    mempool_thread(this),
+    onode_cache(std::make_unique<OnodeCache>(this))
 {
   _init_logger();
   cct->_conf.add_observer(this);
@@ -5245,17 +5166,17 @@ void BlueStore::_init_logger()
   b.add_u64(l_bluestore_buffer_bytes, "buffer_bytes",
 	    "Number of buffer bytes in cache",
 	     NULL,
-	     PerfCountersBuilder::PRIO_DEBUGONLY,
+	     PerfCountersBuilder::PRIO_USEFUL,
 	     unit_t(UNIT_BYTES));
   b.add_u64_counter(l_bluestore_buffer_hit_bytes, "buffer_hit_bytes",
 	    "Sum for bytes of read hit in the cache",
 	    NULL,
-	    PerfCountersBuilder::PRIO_DEBUGONLY,
+	    PerfCountersBuilder::PRIO_USEFUL,
 	    unit_t(UNIT_BYTES));
   b.add_u64_counter(l_bluestore_buffer_miss_bytes, "buffer_miss_bytes",
 	    "Sum for bytes of read missed in the cache",
 	    NULL,
-	    PerfCountersBuilder::PRIO_DEBUGONLY,
+	    PerfCountersBuilder::PRIO_USEFUL,
 	    unit_t(UNIT_BYTES));
   //****************************************
 
@@ -7668,22 +7589,17 @@ int BlueStore::dump_bluefs_sizes(ostream& out)
 
 void BlueStore::set_cache_shards(unsigned num)
 {
-  dout(10) << __func__ << " " << num << dendl;
-  size_t oold = onode_cache_shards.size();
-  size_t bold = buffer_cache_shards.size();
-  ceph_assert(num >= oold && num >= bold);
-  onode_cache_shards.resize(num);
-  buffer_cache_shards.resize(num);
-  for (unsigned i = oold; i < num; ++i) {
-    onode_cache_shards[i] = 
-        OnodeCacheShard::create(cct, cct->_conf->bluestore_cache_type,
-                                 logger);
-  }
-  for (unsigned i = bold; i < num; ++i) {
-    buffer_cache_shards[i] = 
-        BufferCacheShard::create(cct, cct->_conf->bluestore_cache_type,
-                                 logger);
-  }
+  onode_cache->set_shards(num);
+}
+
+int BlueStore::set_onode_cache_policy(const std::string& policy, Formatter* f)
+{
+  return onode_cache->set_policy(policy, f);
+}
+
+int BlueStore::get_onode_cache_policy(Formatter* f)
+{
+  return onode_cache->get_policy(f);
 }
 
 //---------------------------------------------
@@ -7782,6 +7698,7 @@ int BlueStore::_mount()
   }
 
   mounted = true;
+  onode_cache->init();
   return 0;
 }
 
@@ -7795,6 +7712,7 @@ int BlueStore::umount()
   ceph_assert(alloc);
 
   if (!_kv_only) {
+    onode_cache->shutdown();
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
     if (bdev->is_smr()) {

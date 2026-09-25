@@ -1,0 +1,12 @@
+{
+  "run_id": "fixed8g-ses-postprepare-001",
+  "complete_cases": 5,
+  "all_cases_strict_gt95": true,
+  "all_cases_strict_gt96": true,
+  "pooled_hits": 11245660,
+  "pooled_misses": 13891,
+  "pooled_onode_percent": 99.87662918352605,
+  "equal_case_mean_percent": 99.86345733925343,
+  "certification_claim": false,
+  "scope": "Onode lookup ratio on the disclosed CloudLab FUSE path and fixed cache budget"
+}

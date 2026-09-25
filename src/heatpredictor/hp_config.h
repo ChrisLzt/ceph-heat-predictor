@@ -11,11 +11,19 @@ static constexpr size_t NUM_FEATURES = 7;
 
 // Adaptive Random Forest model.
 static constexpr int HP_ARF_N_MODELS = 25;
-static constexpr int HP_ARF_MAX_FEATURES = NUM_FEATURES;
+// Nearest integer sqrt, matching River for integer feature counts.
+constexpr int hp_arf_sqrt_features(size_t count) {
+    size_t root = 0;
+    while ((root + 1) * (root + 1) <= count) ++root;
+    return static_cast<int>(count - root * root > root ? root + 1 : root);
+}
+static constexpr int HP_ARF_MAX_FEATURES = hp_arf_sqrt_features(NUM_FEATURES);
+static constexpr int HP_GAUSSIAN_SPLIT_CANDIDATES = 10;
+static constexpr uint64_t HP_MODEL_POLICY_VERSION = 6; // Class-mean midpoint fallback when all original cuts fail.
 static constexpr int HP_ARF_SEED = 591422;
-static constexpr int HP_ARF_GRACE_PERIOD = 100;
-static constexpr int HP_ARF_LAMBDA = 4;
-static constexpr double HP_ARF_DELTA = 0.001;
+static constexpr int HP_ARF_GRACE_PERIOD = 50;
+static constexpr int HP_ARF_LAMBDA = 6;
+static constexpr double HP_ARF_DELTA = 0.01;
 static constexpr double HP_ARF_TAU = 0.05;
 static constexpr double HP_ARF_MAX_SHARE_TO_SPLIT = 0.99;
 static constexpr double HP_ARF_MIN_BRANCH_FRACTION = 0.01;

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="12" failures="0" disabled="0" errors="0" time="0.039" timestamp="2026-09-19T11:35:52.846" name="AllTests">
+  <testsuite name="OnodeCacheSwitch" tests="9" failures="0" disabled="0" skipped="0" errors="0" time="0.036" timestamp="2026-09-19T11:35:52.846">
+    <testcase name="WarmRoundTripPreservesEntriesBinsAndCounters" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.846" classname="OnodeCacheSwitch" />
+    <testcase name="PinnedAndNonexistentOnodesSurviveSwitch" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.846" classname="OnodeCacheSwitch" />
+    <testcase name="MainGhostAndIdempotentSwitch" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.846" classname="OnodeCacheSwitch" />
+    <testcase name="OverlappingHitsPromoteReusedOnode" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.846" classname="OnodeCacheSwitch" />
+    <testcase name="ReferenceReleaseIsNotAnotherHit" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:35:52.846" classname="OnodeCacheSwitch" />
+    <testcase name="GhostShrinkKeepsMostRecentEvictions" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.847" classname="OnodeCacheSwitch" />
+    <testcase name="StaleUnpinDispatchesToDestinationShard" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.847" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentLookupsAndRepeatedSwitches" status="run" result="completed" time="0.025" timestamp="2026-09-19T11:35:52.847" classname="OnodeCacheSwitch" />
+    <testcase name="ConcurrentEvictionInsertionAndSwitch" status="run" result="completed" time="0.01" timestamp="2026-09-19T11:35:52.872" classname="OnodeCacheSwitch" />
+  </testsuite>
+  <testsuite name="OnodeCachePolicy" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.003" timestamp="2026-09-19T11:35:52.882">
+    <testcase name="StoreFanoutStatusAndInvalidPolicy" status="run" result="completed" time="0.001" timestamp="2026-09-19T11:35:52.882" classname="OnodeCachePolicy" />
+    <testcase name="FactoryKeepsStartupCompatibility" status="run" result="completed" time="0" timestamp="2026-09-19T11:35:52.883" classname="OnodeCachePolicy" />
+    <testcase name="InvalidS3fifoTunablesLeaveLruUnchanged" status="run" result="completed" time="0.002" timestamp="2026-09-19T11:35:52.883" classname="OnodeCachePolicy" />
+  </testsuite>
+</testsuites>

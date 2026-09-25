@@ -1,0 +1,134 @@
+{
+  "recorded_wall": 1789823981.489291,
+  "status": {
+    "fsid": "a8746e2b-01fd-4a15-83f5-bf410dc5555e",
+    "health": {
+      "status": "HEALTH_WARN",
+      "checks": {
+        "POOL_NO_REDUNDANCY": {
+          "severity": "HEALTH_WARN",
+          "summary": {
+            "message": "3 pool(s) have no replicas configured",
+            "count": 3
+          },
+          "muted": false
+        }
+      },
+      "mutes": []
+    },
+    "election_epoch": 5,
+    "quorum": [
+      0
+    ],
+    "quorum_names": [
+      "lab"
+    ],
+    "quorum_age": 117255,
+    "monmap": {
+      "epoch": 2,
+      "min_mon_release_name": "quincy",
+      "num_mons": 1
+    },
+    "osdmap": {
+      "epoch": 324,
+      "num_osds": 3,
+      "num_up_osds": 3,
+      "osd_up_since": 1789821525,
+      "num_in_osds": 3,
+      "osd_in_since": 1789787150,
+      "num_remapped_pgs": 0
+    },
+    "pgmap": {
+      "pgs_by_state": [
+        {
+          "state_name": "active+clean",
+          "count": 137
+        }
+      ],
+      "num_pgs": 137,
+      "num_pools": 3,
+      "num_objects": 185422,
+      "data_bytes": 711175637455,
+      "bytes_used": 713845272576,
+      "bytes_avail": 272793440256,
+      "bytes_total": 986638712832
+    },
+    "fsmap": {
+      "epoch": 4,
+      "id": 1,
+      "up": 1,
+      "in": 1,
+      "max": 1,
+      "by_rank": [
+        {
+          "filesystem_id": 1,
+          "rank": 0,
+          "name": "lab",
+          "status": "up:active",
+          "gid": 14133
+        }
+      ],
+      "up:standby": 0
+    },
+    "mgrmap": {
+      "available": true,
+      "num_standbys": 0,
+      "modules": [
+        "iostat"
+      ],
+      "services": {}
+    },
+    "servicemap": {
+      "epoch": 189,
+      "modified": "2026-09-19T13:09:44.944337+0000",
+      "services": {}
+    },
+    "progress_events": {}
+  },
+  "balancer": {
+    "active": true,
+    "last_optimize_duration": "0:00:00.002837",
+    "last_optimize_started": "Sat Sep 19 13:18:53 2026",
+    "mode": "upmap",
+    "no_optimization_needed": true,
+    "optimize_result": "Unable to find further optimization, or pool(s) pg_num is decreasing, or distribution is already perfect",
+    "plans": []
+  },
+  "osd_flags": "sortbitwise,recovery_deletes,purged_snapdirs,pglog_hardlimit",
+  "restored": {
+    "baseline": {
+      "0": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      },
+      "1": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      },
+      "2": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      }
+    },
+    "fixed": {
+      "0": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      },
+      "1": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      },
+      "2": {
+        "policy": "lru",
+        "all_shards_lru": true,
+        "hp_enabled": false
+      }
+    }
+  }
+}

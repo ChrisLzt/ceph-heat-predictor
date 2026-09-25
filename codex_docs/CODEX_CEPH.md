@@ -215,9 +215,16 @@ object 不受 LRU 上限淘汰，因此 `heat_map` 总量可能高于100万。
 
 ## 模型、训练与并发
 
-模型为 `PipelineClassifier(StandardScaler, ARFClassifier)`：
+模型直接使用 `ARFClassifier`，训练、预测和快照均不使用StandardScaler：
 
-- 25棵树、7个候选 feature、seed `591422`。
+- 25棵树、7维输入，每叶固定无放回随机选 `round(sqrt(7))=3` 维，seed `591422`。
+- 2026-09-25起按River选定8项设置：Poisson λ=6、grace_period=50（加权样本）、
+  delta=0.01、GaussianSplitter每特征10个历史min/max间等距内部切点。
+- 新子叶继承类别权重后，以继承总权重作为last_split_attempt_at起点，等待50个
+  新增加权样本才尝试分裂；根叶从0开始。快照保留该状态。
+- 不使用空候选预剪枝；仅评估有效数值切点，同收益稳定排序。
+  多个无效候选不会因为缺少有效切点而被当作显式停用。详见[RIVER_SETTINGS.md](RIVER_SETTINGS.md)。
+- 森林投票按普通Accuracy加权，MC叶输出和ADWIN关闭策略保留。
 - 预测阈值固定 `0.50`，冷热训练权重均为 `1.0`。
 - warning 与 drift detector 固定不触发；现有树继续在线学习，但不创建后台树或替换
   当前树。
@@ -260,14 +267,13 @@ OSD 将同一个 `HeatPredictorStatus` 发布到 PerfCounters 时串行化写者
 ### 分裂候选与叶子停用
 
 叶子类别占比超过 `max_share_to_split` 时，本轮不尝试分裂，继续累计样本。
-常量特征或未通过 `min_branch_fraction` 的候选不参加 Hoeffding 比较；没有有效候选
-时继续学习，不能把默认 `feature=-1` 占位值解释为停用请求。
-只有显式启用 `merit_preprune` 且选中预剪枝候选时，才在分裂决策路径停用叶子。
-该候选明确标记为预剪枝，信息增益为0。当前模型默认不启用它。
-最大深度和内存限制引起的停用仍保留。
+已删除空候选预剪枝、对应开关及无效占位候选。所有原数值切点无效时，补选定特征的冷热类别均值中点；要求两类有观测、均值与收益有限、收益>0且两侧估算权重占比>1%。仍无有效候选则继续学习；
+仅有一个有效切点时选取它，多个有效切点仍使用Hoeffding界及tau决定是否分裂。
+有效候选同收益时保留特征顺序。无观察器也不会导致叶子停用。
+已删除固定最大深度上限；内存预算引起的停用仍保留。深度仅记录树结构位置。
 
 在 `dev` 运行 `bash test_sh/test_hp_model_regressions.sh`，覆盖暂时无候选后恢复冷热
-学习、预测快照隔离、深度/内存限制、后台训练、并发统计和 Trace 回放契约。
+学习、预测快照隔离、原深度边界继续分裂及内存限制、后台训练、并发统计和 Trace 回放契约。
 设置 `HP_SANITIZERS=address,undefined` 可执行相同用例的 sanitizer 检查。
 算法探针显式开启其训练/预测 fixture；生产默认关闭状态不变。
 该脚本不使用 Ceph build 目录或库，另覆盖关闭时不创建模型、重新启用、到期回调

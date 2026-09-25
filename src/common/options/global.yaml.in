@@ -4691,6 +4691,74 @@ options:
   enum_values:
   - 2q
   - lru
+  - s3fifo
+  with_legacy: true
+- name: bluestore_cache_s3fifo_small_ratio
+  type: float
+  level: advanced
+  desc: Ratio of total onode cache entries allocated to the Small FIFO in S3FIFO
+  default: 0.10
+  with_legacy: true
+- name: bluestore_onode_prefetch
+  type: bool
+  level: dev
+  desc: Experimental bounded metadata prefetch for active PGs while using S3FIFO
+  long_desc: Disabled under LRU. Scans each demand-accessed PG once per S3FIFO
+    activation, without changing demand lookup counters or Heat Predictor.
+    Does not prefetch object data. Bounded pressure reclamation is controlled
+    separately by bluestore_onode_prefetch_reclaim.
+  default: false
+- name: bluestore_onode_prefetch_reclaim
+  type: bool
+  level: dev
+  desc: Reclaim evictable S3FIFO metadata under Onode prefetch pressure
+  long_desc: Only used when Onode prefetch is configured and active. Reuses
+    normal cache eviction with bounded work, without raising metadata budgets
+    or changing demand hit counters. Disable for an opportunistic-only control.
+  default: true
+- name: bluestore_onode_prefetch_rate
+  type: uint
+  level: dev
+  desc: Maximum Onode candidates examined per second per OSD by prefetch
+  default: 1024
+  min: 1
+  max: 16384
+- name: bluestore_onode_prefetch_max_queued
+  type: uint
+  level: dev
+  desc: Maximum PG cursors queued for Onode prefetch
+  default: 256
+  min: 1
+  max: 4096
+- name: bluestore_onode_prefetch_max_record
+  type: size
+  level: dev
+  desc: Maximum encoded Onode metadata value accepted for prefetch decoding
+  default: 1_M
+  min: 1024
+  max: 16_M
+- name: bluestore_cache_s3fifo_rebalance_shards
+  type: bool
+  level: advanced
+  desc: Let busy S3FIFO onode shards borrow unused entry quotas within the existing metadata budget
+  long_desc: Only applies when all onode shards use S3FIFO. LRU retains equal
+    shard quotas. Does not increase the metadata allocation, change buffer cache
+    budgets, or consume Heat Predictor output. Pinned entries can still exceed
+    eviction targets, as with the original cache.
+  default: false
+  flags:
+  - runtime
+- name: bluestore_cache_s3fifo_ghost_ratio
+  type: float
+  level: advanced
+  desc: Ratio of ghost queue capacity to total onode cache entries in S3FIFO
+  default: 0.90
+  with_legacy: true
+- name: bluestore_cache_s3fifo_promotion_threshold
+  type: uint
+  level: advanced
+  desc: Frequency threshold for promoting an onode from Small to Main FIFO in S3FIFO
+  default: 2
   with_legacy: true
 - name: bluestore_2q_cache_kin_ratio
   type: float
